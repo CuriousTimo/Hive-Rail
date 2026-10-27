@@ -10,7 +10,7 @@ Hive-Rail is being built to help separate groups of model railway modules operat
 
 This is a very early simulation and networking prototype. It has no connections to a command station, booster, track sensor, signal, or relay. It cannot drive a train or protect a layout. Its RocNet support currently validates and relays test frames over Zenoh only; it is not connected to a local RocNet transport.
 
-Zenoh peer scouting currently discovers nodes on a single local network using `224.0.0.224:7446`, distinct from RocNet/RocRail's `224.0.0.1:4321`. It has only been smoke-tested between two processes on this Mac; discovery across two physical computers is not yet verified.
+Zenoh peer scouting discovers nodes on a single local network using `224.0.0.224:7446`, distinct from RocNet/RocRail's `224.0.0.1:4321`. Peer discovery and heartbeat recovery have been smoke-tested between macOS, Windows, and Linux computers on one LAN. Cross-subnet discovery has not been tested.
 
 ## Intended use
 
@@ -28,7 +28,7 @@ These are goals, not finished features. Today this beta can check a module profi
 - **Development, simulation, and observer computers:** Windows 10 or later, macOS, and Linux.
 - **Computers intended to live with the layout:** Linux single-board computers such as Raspberry Pi or Orange Pi, connected to suitable railway control hardware.
 
-These are intended targets, not a claim of tested compatibility. So far, the Rust scaffold has been built and tested on macOS only. Windows and Linux builds still need testing, and no Raspberry Pi, Orange Pi, command station, booster, or other real railway hardware has been tested.
+These are intended targets, not a claim of full tested compatibility. GitHub CI builds and tests on Windows, macOS, and Linux; networked runtime has been smoke-tested on all three desktop platforms on one LAN. Raspberry Pi/Orange Pi builds have not been tested, and no command station, booster, sensor, or other real railway hardware has been tested.
 
 The detailed design, unresolved engineering questions, and [RocNet compatibility matrix](https://github.com/CuriousTimo/Hive-Rail/wiki/RocNet-Compatibility-Matrix) are in the [Hive-Rail wiki](https://github.com/CuriousTimo/Hive-Rail/wiki).
 
@@ -56,13 +56,14 @@ The roadmap follows the [wiki design specification](https://github.com/CuriousTi
 	- [ ] **2.5** Run seeded scenarios and verify the simulation invariants.
 - [ ] **Phase 3: Mesh and safety**
 	- [x] **3.1** Exchange Zenoh heartbeat messages between two nodes; smoke-tested over loopback.
-	- [ ] **3.2** Test heartbeat timeout and peer-loss behavior across machines and networks.
-	- [x] **3.3** Add native Zenoh multicast peer scouting; smoke-tested between two local processes (physical-LAN test still needed).
+	- [x] **3.2** Verify heartbeat timeout and recovery between macOS, Windows, and Linux nodes on one LAN; cross-subnet behavior remains untested.
+	- [x] **3.3** Add native Zenoh multicast peer scouting; smoke-tested across three desktop OSes on one LAN.
 	- [ ] **3.4** Implement confirmed node bindings and link status.
 	- [ ] **3.5** Keep boundary signals at Stop unless every proceed condition is fresh and healthy.
 	- [ ] **3.6** Add the SafetyActor and priority emergency command path.
 	- [ ] **3.7** Test short-circuit propagation and record measured timing.
-	- [ ] **3.8** Define and test bidirectional RocNet message carriage over Zenoh.
+	- [x] **3.8** Relay and decode RocNet locomotive frames from Windows and Linux to macOS over Zenoh.
+	- [ ] **3.9** Test bidirectional RocNet message carriage and message/request behavior over Zenoh.
 - [ ] **Phase 4: Handoff and lease**
 	- [ ] **4.1** Implement locomotive district ownership, controller leases, and dead-man timeout.
 	- [ ] **4.2** Implement seam arbitration and the transfer-block handoff state machine.
