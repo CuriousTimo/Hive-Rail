@@ -8,7 +8,9 @@ Hive-Rail is being built to help separate groups of model railway modules operat
 
 > **EARLY BETA: USE AT YOUR OWN RISK.** This software has not been tested on real hardware. It is not production-ready or a safety system. Do not connect it to or use it to control a live layout.
 
-This is a very early simulation and networking prototype. It has no connections to a command station, booster, track sensor, signal, or relay. It cannot drive a train or protect a layout.
+This is a very early simulation and networking prototype. It has no connections to a command station, booster, track sensor, signal, or relay. It cannot drive a train or protect a layout. Its RocNet support currently validates and relays test frames over Zenoh only; it is not connected to a local RocNet transport.
+
+Zenoh peer scouting currently discovers nodes on a single local network using `224.0.0.224:7446`, distinct from RocNet/RocRail's `224.0.0.1:4321`. It has only been smoke-tested between two processes on this Mac; discovery across two physical computers is not yet verified.
 
 ## Intended use
 
@@ -55,11 +57,12 @@ The roadmap follows the [wiki design specification](https://github.com/CuriousTi
 - [ ] **Phase 3: Mesh and safety**
 	- [x] **3.1** Exchange Zenoh heartbeat messages between two nodes; smoke-tested over loopback.
 	- [ ] **3.2** Test heartbeat timeout and peer-loss behavior across machines and networks.
-	- [ ] **3.3** Implement Zenoh discovery and confirmed node/link state.
-	- [ ] **3.4** Keep boundary signals at Stop unless every proceed condition is fresh and healthy.
-	- [ ] **3.5** Add the SafetyActor and priority emergency command path.
-	- [ ] **3.6** Test short-circuit propagation and record measured timing.
-	- [ ] **3.7** Define and test bidirectional RocNet message carriage over Zenoh.
+	- [x] **3.3** Add native Zenoh multicast peer scouting; smoke-tested between two local processes (physical-LAN test still needed).
+	- [ ] **3.4** Implement confirmed node bindings and link status.
+	- [ ] **3.5** Keep boundary signals at Stop unless every proceed condition is fresh and healthy.
+	- [ ] **3.6** Add the SafetyActor and priority emergency command path.
+	- [ ] **3.7** Test short-circuit propagation and record measured timing.
+	- [ ] **3.8** Define and test bidirectional RocNet message carriage over Zenoh.
 - [ ] **Phase 4: Handoff and lease**
 	- [ ] **4.1** Implement locomotive district ownership, controller leases, and dead-man timeout.
 	- [ ] **4.2** Implement seam arbitration and the transfer-block handoff state machine.
@@ -96,20 +99,34 @@ Pushing a tag such as `v0.1.0-beta.1` runs the same checks, builds a native desk
 
 ## Run two networked simulation nodes
 
-Choose one computer as the listener. Replace `<MAC-LAN-IP>` on the second computer with the listener's LAN address. Both nodes must use the same session name and distinct node IDs.
+Start one node on each computer on the same LAN. Both must use the same session name and distinct node IDs. In peer mode, Zenoh's native multicast scouting discovers peers automatically; manual endpoints are optional overrides.
 
-On the listener (macOS):
+On macOS:
 
 ```sh
-cargo run -- --mode node --session bench --id mac --listen tcp/0.0.0.0:7447
+cargo run -- --mode node --session bench --id mac
 ```
 
-On the peer (Windows PowerShell):
+On Windows PowerShell:
 
 ```powershell
-cargo run -- --mode node --session bench --id windows --connect tcp/<MAC-LAN-IP>:7447
+cargo run -- --mode node --session bench --id windows
 ```
 
-Allow inbound TCP port 7447 through the listener's firewall. The nodes publish a heartbeat every 250 ms on `hive/{session}/node/{id}/hb`. If a known peer's heartbeat is missing for 750 ms, the node logs it as stale. These are draft starting values from the wiki, not validated safety timings.
+Allow Zenoh peer traffic through each computer's firewall, including multicast scouting at `224.0.0.224:7446` and the peer transport. This is intentionally separate from RocNet/RocRail's UDP multicast `224.0.0.1:4321`; Hive-Rail does not use RocRail's group for node discovery. The nodes publish a heartbeat every 250 ms on `hive/{session}/node/{id}/hb`. If a known peer's heartbeat is missing for 750 ms, the node logs it as stale. These are draft starting values from the wiki, not validated safety timings.
+
+To send the RocNet identify request after a peer is online:
+
+```sh
+cargo run -- --mode node --session bench --id mac --rocnet-address 1 --identify
+```
+
+To relay the RocNet reference's unicast speed frame to locomotive address `291`:
+
+```sh
+cargo run -- --mode node --session bench --id mac --send-rocnet-hex '@0001230001020203304140'
+```
+
+The receiver prints the decoded frame. No physical RocNet UDP, TCP, MQTT, or serial interface is connected yet.
 
 This prototype currently tests only Zenoh peer connectivity and heartbeat freshness. It does not yet test link-binding confirmation, command leases, handoff state machines, partitions, or the simulation invariants across nodes. Do not treat it as a safety system or use it to control a layout.

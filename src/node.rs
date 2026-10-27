@@ -1,3 +1,4 @@
+use crate::rocnet::RocNetFrame;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, error::Error, time::Duration};
 use tokio::time::{self, Instant, MissedTickBehavior};
@@ -5,6 +6,8 @@ use zenoh::config::Config;
 
 const HEARTBEAT_INTERVAL: Duration = Duration::from_millis(250);
 const HEARTBEAT_TIMEOUT: Duration = Duration::from_millis(750);
+const ZENOH_SCOUTING_ADDRESS: &str = "224.0.0.224:7446";
+const ROCNET_UDP_MULTICAST: &str = "224.0.0.1:4321";
 
 #[derive(Debug)]
 struct NodeArgs {
@@ -12,6 +15,9 @@ struct NodeArgs {
     id: String,
     listen: Option<String>,
     connect: Option<String>,
+    rocnet_address: Option<u16>,
+    identify: bool,
+    send_rocnet_hex: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -21,10 +27,21 @@ struct Heartbeat {
     power: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct RocNetMeshEnvelope {
+    origin_node: String,
+    frame_ascii_hex: String,
+}
+
 pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> {
     let options = parse_args(args)?;
     let mut config = Config::default();
     config.insert_json5("mode", "\"peer\"")?;
+    config.insert_json5("scouting/multicast/enabled", "true")?;
+    config.insert_json5(
+        "scouting/multicast/address",
+        &format!("\"{ZENOH_SCOUTING_ADDRESS}\""),
+    )?;
 
     if let Some(endpoint) = &options.listen {
         config.insert_json5("listen/endpoints", &format!("[\"{endpoint}\"]"))?;
@@ -38,8 +55,21 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
     let subscriber_key = format!("hive/{}/node/*/hb", options.session);
     let publisher = session.declare_publisher(key).await?;
     let subscriber = session.declare_subscriber(subscriber_key).await?;
+    let rocnet_key = format!("hive/{}/rocnet/frame", options.session);
+    let rocnet_publisher = session.declare_publisher(rocnet_key.clone()).await?;
+    let rocnet_subscriber = session.declare_subscriber(rocnet_key).await?;
     let mut peers: HashMap<String, (Instant, bool)> = HashMap::new();
     let mut sequence = 0_u64;
+    let mut pending_frame = if options.identify {
+        let address = options
+            .rocnet_address
+            .ok_or("--identify requires --rocnet-address")?;
+        Some(RocNetFrame::stationary_identify_request(0, address))
+    } else if let Some(frame) = options.send_rocnet_hex.as_deref() {
+        Some(RocNetFrame::from_ascii_hex(frame)?)
+    } else {
+        None
+    };
     let mut heartbeat = time::interval(HEARTBEAT_INTERVAL);
     heartbeat.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
@@ -47,7 +77,10 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
         "node {} joined session {}; heartbeat key: hive/{}/node/{}/hb",
         options.id, options.session, options.session, options.id
     );
-    println!("simulation only; no hardware drivers are connected");
+    println!(
+        "Zenoh multicast scouting: {ZENOH_SCOUTING_ADDRESS} (RocNet UDP multicast {ROCNET_UDP_MULTICAST} is not used for Hive-Rail discovery)"
+    );
+    println!("simulation only; no local RocNet transport or hardware is connected");
 
     loop {
         tokio::select! {
@@ -64,6 +97,14 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                 };
                 publisher.put(serde_json::to_vec(&message)?).await?;
                 refresh_peer_states(&mut peers);
+                if let Some(frame) = pending_frame.take_if(|_| peers.values().any(|(_, online)| *online)) {
+                    let envelope = RocNetMeshEnvelope {
+                        origin_node: options.id.clone(),
+                        frame_ascii_hex: frame.to_ascii_hex(),
+                    };
+                    rocnet_publisher.put(serde_json::to_vec(&envelope)?).await?;
+                    println!("published RocNet frame over Zenoh: {}", envelope.frame_ascii_hex);
+                }
             }
             sample = subscriber.recv_async() => {
                 let sample = sample?;
@@ -81,6 +122,24 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                             message.node, message.seq, message.power
                         );
                     }
+                }
+            }
+            sample = rocnet_subscriber.recv_async() => {
+                let sample = sample?;
+                let payload = sample.payload().to_bytes();
+                let envelope: RocNetMeshEnvelope = serde_json::from_slice(payload.as_ref())?;
+                if envelope.origin_node != options.id {
+                    let frame = RocNetFrame::from_ascii_hex(&envelope.frame_ascii_hex)?;
+                    println!(
+                        "RocNet frame from {} via Zenoh: net={}, recipient={}, sender={}, group={}, code={}, data={:02X?}",
+                        envelope.origin_node,
+                        frame.network_id(),
+                        frame.recipient_id(),
+                        frame.sender_id(),
+                        frame.group(),
+                        frame.code(),
+                        frame.data()
+                    );
                 }
             }
         }
@@ -104,26 +163,37 @@ fn parse_args(args: Vec<String>) -> Result<NodeArgs, Box<dyn Error + Send + Sync
     let mut id = None;
     let mut listen = None;
     let mut connect = None;
+    let mut rocnet_address = None;
+    let mut identify = false;
+    let mut send_rocnet_hex = None;
     let mut args = args.into_iter();
 
     while let Some(flag) = args.next() {
-        let value = args
-            .next()
-            .ok_or_else(|| format!("missing value after {flag}"))?;
         match flag.as_str() {
-            "--session" => session = Some(value),
-            "--id" => id = Some(value),
-            "--listen" => listen = Some(value),
-            "--connect" => connect = Some(value),
+            "--identify" => identify = true,
+            "--session" => session = Some(next_value(&mut args, &flag)?),
+            "--id" => id = Some(next_value(&mut args, &flag)?),
+            "--listen" => listen = Some(next_value(&mut args, &flag)?),
+            "--connect" => connect = Some(next_value(&mut args, &flag)?),
+            "--send-rocnet-hex" => send_rocnet_hex = Some(next_value(&mut args, &flag)?),
+            "--rocnet-address" => {
+                let value = next_value(&mut args, &flag)?;
+                rocnet_address = Some(value.parse::<u16>().map_err(|_| {
+                    format!("invalid RocNet address '{value}'; expected an integer from 0 to 65535")
+                })?);
+            }
             _ => return Err(format!("unknown node option: {flag}").into()),
         }
     }
 
-    if listen.is_none() && connect.is_none() {
-        return Err("node mode requires --listen and/or --connect".into());
-    }
     if listen.is_some() && connect.is_some() {
         return Err("choose either --listen or --connect for this prototype".into());
+    }
+    if identify && send_rocnet_hex.is_some() {
+        return Err("choose either --identify or --send-rocnet-hex".into());
+    }
+    if identify && rocnet_address.is_none() {
+        return Err("--identify requires --rocnet-address".into());
     }
 
     Ok(NodeArgs {
@@ -131,5 +201,65 @@ fn parse_args(args: Vec<String>) -> Result<NodeArgs, Box<dyn Error + Send + Sync
         id: id.ok_or("missing --id")?,
         listen,
         connect,
+        rocnet_address,
+        identify,
+        send_rocnet_hex,
     })
+}
+
+fn next_value(
+    args: &mut impl Iterator<Item = String>,
+    flag: &str,
+) -> Result<String, Box<dyn Error + Send + Sync>> {
+    args.next()
+        .ok_or_else(|| format!("missing value after {flag}").into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_args, ROCNET_UDP_MULTICAST, ZENOH_SCOUTING_ADDRESS};
+
+    #[test]
+    fn default_peer_mode_does_not_require_manual_endpoints() {
+        let args = parse_args(vec![
+            "--session".into(),
+            "bench".into(),
+            "--id".into(),
+            "node-a".into(),
+        ])
+        .unwrap();
+
+        assert!(args.listen.is_none());
+        assert!(args.connect.is_none());
+    }
+
+    #[test]
+    fn zenoh_scouting_is_separate_from_rocnet_multicast() {
+        assert_ne!(ZENOH_SCOUTING_ADDRESS, ROCNET_UDP_MULTICAST);
+    }
+
+    #[test]
+    fn rocnet_identify_requires_a_local_protocol_address() {
+        let missing_address = parse_args(vec![
+            "--session".into(),
+            "bench".into(),
+            "--id".into(),
+            "node-a".into(),
+            "--identify".into(),
+        ]);
+        assert!(missing_address.is_err());
+
+        let with_address = parse_args(vec![
+            "--session".into(),
+            "bench".into(),
+            "--id".into(),
+            "node-a".into(),
+            "--rocnet-address".into(),
+            "42".into(),
+            "--identify".into(),
+        ])
+        .unwrap();
+        assert!(with_address.identify);
+        assert_eq!(with_address.rocnet_address, Some(42));
+    }
 }

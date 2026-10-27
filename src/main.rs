@@ -1,5 +1,6 @@
 mod node;
 mod profile;
+mod rocnet;
 mod simulation;
 
 use std::{env, path::Path, process::ExitCode};
@@ -54,9 +55,12 @@ fn print_help() {
         "Hive-Rail simulation scaffold\n\n\
          Usage:\n\
          cargo run -- --mode simulation\n\
-         cargo run -- --mode node --session <name> --id <id> (--listen <endpoint> | --connect <endpoint>)\n\
+         cargo run -- --mode node --session <name> --id <id> [--listen <endpoint> | --connect <endpoint>]\n\
+         cargo run -- --mode node --session <name> --id <id> --rocnet-address <0-65535> --identify\n\
+         cargo run -- --mode node --session <name> --id <id> --send-rocnet-hex <@frame>\n\
          cargo run -- --validate-profile <path>\n\
          cargo run -- --help\n\n\
-         Node mode exchanges simulation heartbeats only. No hardware drivers are connected."
+         Node mode uses Zenoh LAN peer scouting and can exchange simulation RocNet frames.\n\
+         No local RocNet transport or railway hardware is connected."
     );
 }
