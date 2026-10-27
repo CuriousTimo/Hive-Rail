@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "cluster_id": "02.01.0d.00.00.42",
+  "friendly_name": "Example Y-Branch Station",
+  "hardware_setup": {
+    "command_station_type": "DCC_EX_Serial",
+    "connection_type": "Serial",
+    "connection_address": "/dev/ttyUSB0"
+  },
+  "declared_ports": [
+    {
+      "port_id": "A",
+      "label": "West Main",
+      "boundary": {
+        "sync": "independent",
+        "transfer_block": true,
+        "edge_sensor": 104,
+        "seam_sensor": 105,
+        "seam_relay": 41,
+        "signal": 21
+      }
+    },
+    {
+      "port_id": "B",
+      "label": "East Siding"
+    }
+  ],
+  "modules": [
+    {
+      "module_id": "example_module_01",
+      "friendly_name": "Example Windmill Line",
+      "length_mm": 1200,
+      "devices": [
+        { "type": "relay", "local_address": 40, "purpose": "windmill_motor" },
+        { "type": "turnout", "local_address": 12, "purpose": "main_entry_switch" }
+      ]
+    }
+  ]
+}

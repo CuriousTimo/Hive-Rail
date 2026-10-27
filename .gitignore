@@ -1,0 +1,23 @@
+# ---------- macOS ----------
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+
+# AppleDouble resource forks and macOS volume metadata
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.apdisk
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+
+# ---------- Rust ----------
+/target/

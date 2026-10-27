@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 160" role="img" aria-labelledby="title description">
+  <title id="title">Hive-Rail</title>
+  <desc id="description">A rail junction inside a honeycomb hexagon, beside the Hive-Rail wordmark.</desc>
+  <defs>
+    <linearGradient id="hive" x1="20" y1="16" x2="132" y2="132" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#f3bd55" />
+      <stop offset="1" stop-color="#d98c35" />
+    </linearGradient>
+  </defs>
+  <g transform="translate(10 10)">
+    <path d="M72 4 128 36v64l-56 32-56-32V36z" fill="#f5f2e8" stroke="#17483e" stroke-width="6" stroke-linejoin="round" />
+    <path d="M34 76h37l28-23h18M34 96h43l28-23h12" fill="none" stroke="#17483e" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="M43 69v34M57 69v34M72 78v25M88 70v24" fill="none" stroke="url(#hive)" stroke-width="5" stroke-linecap="round" />
+    <circle cx="35" cy="86" r="7" fill="#d98c35" stroke="#f5f2e8" stroke-width="3" />
+    <circle cx="117" cy="53" r="7" fill="#d98c35" stroke="#f5f2e8" stroke-width="3" />
+    <circle cx="117" cy="73" r="7" fill="#d98c35" stroke="#f5f2e8" stroke-width="3" />
+  </g>
+  <text x="165" y="83" fill="#17483e" font-family="Avenir Next, Montserrat, sans-serif" font-size="52" font-weight="800" letter-spacing="1">HIVE</text>
+  <text x="326" y="83" fill="#c9772d" font-family="Avenir Next, Montserrat, sans-serif" font-size="52" font-weight="500" letter-spacing="1">RAIL</text>
+  <path d="M168 101h298" stroke="#17483e" stroke-width="2" opacity=".28" />
+  <text x="168" y="127" fill="#45645b" font-family="Avenir Next, Montserrat, sans-serif" font-size="13" font-weight="600" letter-spacing="2.4">DISTRIBUTED MODEL RAILWAY</text>
+</svg>
