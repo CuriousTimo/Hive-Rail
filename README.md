@@ -90,7 +90,7 @@ cargo run -- --validate-profile examples/module_profile.json
 
 GitHub Actions runs formatting, Clippy, tests, and a build on Linux, macOS, and Windows for pushes and pull requests. These checks cover desktop software only; they do not test Raspberry Pi or Orange Pi boards or any real railway hardware.
 
-Pushing a tag such as `v0.1.0-beta.1` runs the same checks, builds a native desktop executable on each platform, and publishes a GitHub prerelease with the executables and SHA-256 checksums. These are simulation-only early-beta builds, not hardware-ready software.
+Pushing a tag such as `v0.1.0-beta.1` runs the same checks, builds a native desktop executable on each platform, and publishes a GitHub prerelease with the executables and SHA-256 checksums. The macOS executable is ad-hoc signed to match the project's local Tauri test setup; it is not Developer ID signed or notarized. Gatekeeper may still require manual approval before opening a downloaded copy. These are simulation-only early-beta builds, not hardware-ready software.
 
 ## Run two networked simulation nodes
 

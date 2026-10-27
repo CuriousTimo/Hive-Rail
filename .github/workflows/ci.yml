@@ -45,6 +45,14 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         run: cargo build --locked --release
 
+      - name: Ad-hoc sign macOS executable
+        if: startsWith(github.ref, 'refs/tags/v') && runner.os == 'macOS'
+        run: codesign --force --sign - target/release/hive-rail
+
+      - name: Verify macOS signature
+        if: startsWith(github.ref, 'refs/tags/v') && runner.os == 'macOS'
+        run: codesign --verify --strict --verbose=2 target/release/hive-rail
+
       - name: Package beta executable
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
