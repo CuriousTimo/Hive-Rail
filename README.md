@@ -28,11 +28,11 @@ These are goals, not finished features. Today this beta can check a module profi
 
 These are intended targets, not a claim of tested compatibility. So far, the Rust scaffold has been built and tested on macOS only. Windows and Linux builds still need testing, and no Raspberry Pi, Orange Pi, command station, booster, or other real railway hardware has been tested.
 
-The detailed design, unresolved engineering questions, and [RocNet compatibility matrix](../Hive-Rail.wiki/RocNet-Compatibility-Matrix.md) are in the [Hive-Rail wiki](../Hive-Rail.wiki/Home.md).
+The detailed design, unresolved engineering questions, and [RocNet compatibility matrix](https://github.com/CuriousTimo/Hive-Rail/wiki/RocNet-Compatibility-Matrix) are in the [Hive-Rail wiki](https://github.com/CuriousTimo/Hive-Rail/wiki).
 
 ## Planned phases
 
-The roadmap follows the [wiki design specification](../Hive-Rail.wiki/Hive%E2%80%90Rail:-Architecture-and-Design-Specification.md). Check items as they are completed; a phase is complete only when its gate is met.
+The roadmap follows the [wiki design specification](https://github.com/CuriousTimo/Hive-Rail/wiki/Hive%E2%80%90Rail:-Architecture-and-Design-Specification). Check items as they are completed; a phase is complete only when its gate is met.
 
 - [ ] **Phase 0: Bench spike**
 	- [ ] **0.1** Bench-test the transfer block and changeover relay with real decoders, including decoder keep-alive behavior.
