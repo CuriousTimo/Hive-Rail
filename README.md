@@ -28,7 +28,7 @@ These are goals, not finished features. Today this beta can check a module profi
 
 These are intended targets, not a claim of tested compatibility. So far, the Rust scaffold has been built and tested on macOS only. Windows and Linux builds still need testing, and no Raspberry Pi, Orange Pi, command station, booster, or other real railway hardware has been tested.
 
-The detailed design and unresolved engineering questions are in the [Hive-Rail wiki](../Hive-Rail.wiki/Hive%E2%80%90Rail:-Architecture-and-Design-Specification.md).
+The detailed design, unresolved engineering questions, and [RocNet compatibility matrix](../Hive-Rail.wiki/RocNet-Compatibility-Matrix.md) are in the [Hive-Rail wiki](../Hive-Rail.wiki/Home.md).
 
 ## Planned phases
 
@@ -59,6 +59,7 @@ The roadmap follows the [wiki design specification](../Hive-Rail.wiki/Hive%E2%80
 	- [ ] **3.4** Keep boundary signals at Stop unless every proceed condition is fresh and healthy.
 	- [ ] **3.5** Add the SafetyActor and priority emergency command path.
 	- [ ] **3.6** Test short-circuit propagation and record measured timing.
+	- [ ] **3.7** Define and test bidirectional RocNet message carriage over Zenoh.
 - [ ] **Phase 4: Handoff and lease**
 	- [ ] **4.1** Implement locomotive district ownership, controller leases, and dead-man timeout.
 	- [ ] **4.2** Implement seam arbitration and the transfer-block handoff state machine.
@@ -68,6 +69,7 @@ The roadmap follows the [wiki design specification](../Hive-Rail.wiki/Hive%E2%80
 	- [ ] **5.1** Implement and replay-test the DCC-EX serial driver using recorded transcripts.
 	- [ ] **5.2** Add the LocoNet controller proxy for FRED/Fredi.
 	- [ ] **5.3** Bench-test on an isolated layout section before any wider trial.
+	- [ ] **5.4** Add local RocNet adapters for compatible module equipment.
 - [ ] **Phase 6: Peripherals**
 	- [ ] **6.1** Add observer and operator interfaces.
 	- [ ] **6.2** Add ESP32 accessory controls and displays after validating the gateway approach.
