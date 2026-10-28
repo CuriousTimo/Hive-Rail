@@ -10,6 +10,26 @@ const MOBILE_GROUP: u8 = 2;
 const MOBILE_VELOCITY_ACTION: u8 = 2;
 const STATIONARY_GROUP: u8 = 3;
 const STATIONARY_IDENTIFY_ACTION: u8 = 8;
+const CLOCK_GROUP: u8 = 7;
+const CLOCK_SET_ACTION: u8 = 1;
+const CLOCK_SYNC_ACTION: u8 = 2;
+
+/// RocNet group 7 clock action: `set` changes the clock, `sync` restores phase.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClockAction {
+    Set,
+    Sync,
+}
+
+/// Group 7 clock data. A divider of 0 means the clock is paused (Hive-Rail convention,
+/// matching LocoNet's rate 0).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ClockUpdate {
+    pub action: ClockAction,
+    pub hour: u8,
+    pub minute: u8,
+    pub divider: u8,
+}
 
 /// Bits 6 and 5 of the code byte.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -161,6 +181,42 @@ impl RocNetFrame {
         )
     }
 
+    /// Group 7 clock: year (2 bytes), month, day, hour, minute, temperature, divider,
+    /// brightness. Hive-Rail keeps no date, temperature or brightness, so those are 0.
+    pub fn clock(sender_id: u16, update: ClockUpdate) -> Self {
+        let action = match update.action {
+            ClockAction::Set => CLOCK_SET_ACTION,
+            ClockAction::Sync => CLOCK_SYNC_ACTION,
+        };
+        Self::new(
+            0,
+            0,
+            sender_id,
+            CLOCK_GROUP,
+            FrameType::Request,
+            action,
+            &[0, 0, 0, 0, update.hour, update.minute, 0, update.divider, 0],
+        )
+    }
+
+    pub fn clock_update(&self) -> Option<ClockUpdate> {
+        if self.group() != CLOCK_GROUP {
+            return None;
+        }
+        let action = match self.action() {
+            CLOCK_SET_ACTION => ClockAction::Set,
+            CLOCK_SYNC_ACTION => ClockAction::Sync,
+            _ => return None,
+        };
+        let data = self.data();
+        (data.len() >= 8 && data[4] < 24 && data[5] < 60).then(|| ClockUpdate {
+            action,
+            hour: data[4],
+            minute: data[5],
+            divider: data[7],
+        })
+    }
+
     pub fn as_bytes(&self) -> &[u8] {
         &self.bytes
     }
@@ -226,6 +282,22 @@ impl RocNetFrame {
                 self.recipient_id(),
                 first.unwrap_or_default()
             ),
+            (CLOCK_GROUP, _, _) => match self.clock_update() {
+                Some(clock) => format!(
+                    "clock {} {:02}:{:02} {}",
+                    match clock.action {
+                        ClockAction::Set => "set",
+                        ClockAction::Sync => "sync",
+                    },
+                    clock.hour,
+                    clock.minute,
+                    match clock.divider {
+                        0 => "paused".to_owned(),
+                        divider => format!("x{divider}"),
+                    }
+                ),
+                None => format!("clock action {} {kind}", self.action()),
+            },
             (STATIONARY_GROUP, STATIONARY_IDENTIFY_ACTION, _) => {
                 format!("stationary identify {kind}")
             }
@@ -284,8 +356,25 @@ fn describe_status(status: u8) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{FrameType, RocNetError, RocNetFrame};
+    use super::{ClockAction, ClockUpdate, FrameType, RocNetError, RocNetFrame};
     use crate::power::PowerRequest;
+
+    #[test]
+    fn clock_frames_round_trip() {
+        let update = ClockUpdate {
+            action: ClockAction::Sync,
+            hour: 6,
+            minute: 42,
+            divider: 4,
+        };
+        let frame = RocNetFrame::clock(101, update);
+        assert_eq!(
+            frame.to_hex(),
+            "00 00 00 00 65 07 02 09 00 00 00 00 06 2A 00 04 00"
+        );
+        assert_eq!(frame.clock_update(), Some(update));
+        assert_eq!(frame.describe(), "clock sync 06:42 x4");
+    }
 
     #[test]
     fn parses_and_preserves_reference_broadcast_frame() {

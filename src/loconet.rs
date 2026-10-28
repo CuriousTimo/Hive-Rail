@@ -15,6 +15,9 @@ const OPC_RQ_SL_DATA: u8 = 0xBB;
 const OPC_LOCO_ADR: u8 = 0xBF;
 const OPC_SL_RD_DATA: u8 = 0xE7;
 const OPC_WR_SL_DATA: u8 = 0xEF;
+const FAST_CLOCK_SLOT: u8 = 0x7B;
+/// Throttle IDs `7F 7x` are reserved for PCs; Rocrail uses `7F 70` and JMRI `7F 71`.
+pub const HIVE_RAIL_CLOCK_ID: [u8; 2] = [0x7F, 0x7E];
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum LocoNetError {
@@ -30,6 +33,19 @@ pub enum LocoNetError {
     Checksum,
     #[error("invalid hexadecimal byte {0:?}")]
     InvalidHex(String),
+}
+
+/// Fast clock as carried in slot 123. Minutes are stored as `(255 - (60 - m)) & 0x7F`
+/// and hours as `(256 - (24 - h)) & 0x7F`, as JMRI does and Rocrail's recording confirms.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FastClockSlot {
+    /// 0 freezes the clock.
+    pub rate: u8,
+    pub hour: u8,
+    pub minute: u8,
+    /// Clock control bit 6: the slot holds valid clock information.
+    pub valid: bool,
+    pub setter: [u8; 2],
 }
 
 /// One complete LocoNet message, including its checksum.
@@ -93,6 +109,44 @@ impl LocoNetMessage {
         Self::with_checksum(&[opcode])
     }
 
+    /// Writes slot 123 so every throttle and central follows Hive-Rail's clock.
+    pub fn fast_clock_write(hour: u8, minute: u8, rate: u8, track_status: u8) -> Self {
+        let [id1, id2] = HIVE_RAIL_CLOCK_ID;
+        Self::with_checksum(&[
+            OPC_WR_SL_DATA,
+            0x0E,
+            FAST_CLOCK_SLOT,
+            rate & 0x7F,
+            0x7F,
+            0x7F,
+            (255 - (60 - minute % 60)) & 0x7F,
+            track_status & 0x7F,
+            (256 - u16::from(24 - hour % 24)) as u8 & 0x7F,
+            0x00,
+            0x70,
+            id1,
+            id2,
+        ])
+    }
+
+    /// Slot 123 contents from a slot read or write.
+    pub fn fast_clock(&self) -> Option<FastClockSlot> {
+        let b = &self.bytes;
+        if !matches!(self.opcode(), OPC_SL_RD_DATA | OPC_WR_SL_DATA)
+            || b.len() != 14
+            || b[2] != FAST_CLOCK_SLOT
+        {
+            return None;
+        }
+        Some(FastClockSlot {
+            rate: b[3],
+            minute: (60 - ((255 - b[6]) & 0x7F) % 60) % 60,
+            hour: (24 - ((256 - u16::from(b[8])) as u8 & 0x7F) % 24) % 24,
+            valid: b[10] & 0x40 != 0,
+            setter: [b[11], b[12]],
+        })
+    }
+
     fn with_checksum(body: &[u8]) -> Self {
         let checksum = body.iter().fold(0xFF, |sum, byte| sum ^ byte);
         let mut bytes = body.to_vec();
@@ -128,6 +182,22 @@ impl LocoNetMessage {
     /// Short decoded form for the CLI log.
     pub fn describe(&self) -> String {
         let b = &self.bytes;
+        if let Some(clock) = self.fast_clock() {
+            let name = if self.opcode() == OPC_WR_SL_DATA {
+                "WR_SL_DATA"
+            } else {
+                "SL_RD_DATA"
+            };
+            let state = match (clock.valid, clock.rate) {
+                (false, _) => "not set".to_owned(),
+                (true, 0) => "frozen".to_owned(),
+                (true, rate) => format!("x{rate}"),
+            };
+            return format!(
+                "{name}  fast clock {:02}:{:02} {state}, set by {:02X} {:02X}",
+                clock.hour, clock.minute, clock.setter[0], clock.setter[1]
+            );
+        }
         match self.opcode() {
             OPC_BUSY => "BUSY".into(),
             OPC_GPOFF => "GPOFF       power off".into(),
@@ -323,5 +393,39 @@ mod tests {
         let slot_read =
             LocoNetMessage::from_hex("E7 0E 05 23 0C 00 20 07 00 00 00 00 00 1B").unwrap();
         assert_eq!(slot_read.describe(), "SL_RD_DATA  slot 5");
+    }
+
+    #[test]
+    fn fast_clock_matches_rocrail_recording() {
+        // Recorded from Rocrail over LocoNet TCP at 14:23:28, 14:23:59 and 14:25:01.
+        for (hex, minute) in [
+            ("EF 0E 7B 01 7F 7F 5A 04 76 00 70 7F 70 33", 23),
+            ("EF 0E 7B 01 7F 7F 5B 04 76 00 70 7F 70 32", 24),
+            ("EF 0E 7B 01 7F 7F 5C 04 76 00 70 7F 70 35", 25),
+        ] {
+            let clock = LocoNetMessage::from_hex(hex).unwrap().fast_clock().unwrap();
+            assert_eq!((clock.hour, clock.minute, clock.rate), (14, minute, 1));
+            assert!(clock.valid);
+            assert_eq!(clock.setter, [0x7F, 0x70]);
+        }
+
+        // Rocrail's slot server before any clock was set.
+        let unset = LocoNetMessage::from_hex("E7 0E 7B 00 7F 7F 00 04 00 00 70 7F 70 16").unwrap();
+        assert_eq!(
+            unset.describe(),
+            "SL_RD_DATA  fast clock 00:53 frozen, set by 7F 70"
+        );
+
+        // Hive-Rail's write differs from Rocrail's only in the setter ID.
+        let ours = LocoNetMessage::fast_clock_write(14, 23, 1, 0x04);
+        assert_eq!(ours.to_hex(), "EF 0E 7B 01 7F 7F 5A 04 76 00 70 7F 7E 3D");
+        for minute in 0..60 {
+            let clock = LocoNetMessage::fast_clock_write(23, minute, 4, 0x07)
+                .fast_clock()
+                .unwrap();
+            assert_eq!((clock.hour, clock.minute), (23, minute));
+        }
+        assert!(LocoNetMessage::from_bytes(ours.as_bytes()).is_ok());
+        assert_eq!(ours.fast_clock().unwrap().setter, super::HIVE_RAIL_CLOCK_ID);
     }
 }

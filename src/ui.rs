@@ -33,6 +33,7 @@ pub struct Dashboard {
     pub rocnet_id: u16,
     pub local_power: PowerState,
     pub last_request: String,
+    pub clock: String,
     pub loconet: String,
     pub scouting: String,
     pub heartbeat_interval: Duration,
@@ -41,12 +42,19 @@ pub struct Dashboard {
     pub cli_output: Vec<String>,
 }
 
+pub enum ClockChange {
+    ToggleRunning,
+    Rate(i8),
+    Hours(i16),
+}
+
 pub enum UiCommand {
     None,
     Quit,
     Power(PowerRequest),
     /// Emergency stop in every district; each district resumes on its own.
     GlobalStop,
+    Clock(ClockChange),
     SimulateShort,
 }
 
@@ -90,6 +98,13 @@ impl TerminalUi {
                 KeyCode::Char('0') => return Ok(UiCommand::Power(PowerRequest::Off)),
                 KeyCode::Char('h') => return Ok(UiCommand::Power(PowerRequest::Halt)),
                 KeyCode::Char('E') => return Ok(UiCommand::GlobalStop),
+                KeyCode::Char('c') => return Ok(UiCommand::Clock(ClockChange::ToggleRunning)),
+                KeyCode::Char('+') | KeyCode::Char('=') => {
+                    return Ok(UiCommand::Clock(ClockChange::Rate(1)));
+                }
+                KeyCode::Char('-') => return Ok(UiCommand::Clock(ClockChange::Rate(-1))),
+                KeyCode::Char(']') => return Ok(UiCommand::Clock(ClockChange::Hours(1))),
+                KeyCode::Char('[') => return Ok(UiCommand::Clock(ClockChange::Hours(-1))),
                 KeyCode::Char('s') => return Ok(UiCommand::SimulateShort),
                 KeyCode::PageUp => self.scroll_back = self.scroll_back.saturating_add(5),
                 KeyCode::Up => self.scroll_back = self.scroll_back.saturating_add(1),
@@ -143,8 +158,14 @@ fn render(frame: &mut Frame<'_>, dashboard: &Dashboard, scroll_back: usize) {
                 dashboard.node_id, dashboard.rocnet_id, dashboard.session
             )),
             Span::styled(
-                format!("  {}", Local::now().format("%Y-%m-%d %H:%M:%S")),
-                Style::default().fg(Color::Yellow),
+                format!("  FAST CLOCK {}", dashboard.clock),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!("   wall {}", Local::now().format("%H:%M:%S")),
+                Style::default().fg(Color::Gray),
             ),
         ]),
         Line::from(vec![
@@ -258,6 +279,10 @@ fn render(frame: &mut Frame<'_>, dashboard: &Dashboard, scroll_back: usize) {
         ]),
         Line::from(Span::styled(
             "1  District power on  |  0  District power off  |  h  District emergency stop  |  E  GLOBAL emergency stop  |  s  Simulate short",
+            Style::default().fg(Color::Gray),
+        )),
+        Line::from(Span::styled(
+            "c  Fast clock run/pause  |  + -  Clock rate  |  [ ]  Clock hour back/forward",
             Style::default().fg(Color::Gray),
         )),
         Line::from(Span::styled(

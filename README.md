@@ -10,7 +10,7 @@ The nodes speak [RocNet over Zenoh](https://github.com/CuriousTimo/Hive-Rail/wik
 
 > **EARLY BETA: USE AT YOUR OWN RISK.** This software has not been tested on real hardware. It is not production-ready or a safety system. Do not connect it to or use it to control a live layout.
 
-This is a very early simulation and networking prototype. It has no connections to a command station, booster, track sensor, signal, or relay. It cannot drive a train or protect a layout. Its RocNet support currently validates and relays test frames over Zenoh only; it is not connected to a local RocNet transport.
+This is a very early simulation and networking prototype. Each node runs a simulated command station; it has no connection to a real command station, booster, track sensor, signal, or relay. It cannot drive a train or protect a layout. Rocrail or JMRI can connect to a node over LocoNet TCP for power and the fast clock. Its RocNet support carries power, short and clock frames over Zenoh; it is not connected to a local RocNet transport yet.
 
 Zenoh peer scouting discovers nodes on a single local network using `224.0.0.224:7446`, distinct from RocNet/RocRail's `224.0.0.1:4321`, which a node joins only when it runs the RocNet UDP adapter. Peer discovery and heartbeat recovery have been smoke-tested between macOS, Windows, and Linux computers on one LAN. Cross-subnet discovery has not been tested.
 
@@ -25,7 +25,7 @@ Think of each future Hive-Rail node as a small signal box for one part of a modu
 - Give every district its own power on/off and report its power state and short circuits to every node, so the rest of the layout keeps running. Share one fast clock across all nodes.
 - Later: serve FRED/Fredi throttles on every module as one distributed command station.
 
-These are goals, not finished features. Today this beta can check a module profile, check a simple booster-exclusivity example, and exchange network heartbeats between computers. It cannot yet carry out the railway-control jobs above.
+These are goals, not finished features. Today this beta can check a module profile, check a simple booster-exclusivity example, exchange network heartbeats between computers, switch simulated district power (with a global emergency stop), report simulated shorts to every node, run one fast clock across the mesh, and talk LocoNet over TCP with Rocrail. It cannot yet carry out the railway-control jobs above.
 
 ## Intended computers
 
@@ -70,8 +70,8 @@ The roadmap follows the [wiki design specification](https://github.com/CuriousTi
 	- [ ] **3.9** Test bidirectional RocNet message carriage and message/request behavior over Zenoh.
 - [ ] **Phase 4: RocNet mesh** (current focus, in this order)
 	- [x] **4.1** Switch power per district and report every district's power and short circuits to all nodes as RocNet status events; tested with Rocrail over LocoNet TCP.
-	- [ ] **4.2** Share one fast clock across the mesh (RocNet clock group) and show it on every node.
-	- [ ] **4.3** Keep the CLI view clear: node and power overview, event pane, decoded RocNet log, `--plain` output.
+	- [x] **4.2** Share one fast clock across the mesh (RocNet clock group), commanded by Hive-Rail, shown on every node and written to LocoNet slot 123; tested between two nodes. Rocrail following the clock is still to be tested.
+	- [ ] **4.3** Keep the CLI view clear: node and power overview, event pane, decoded RocNet and LocoNet log, `--plain` output. Partly done: dashboard with district power, fast clock and neighbour table; decoded log lines.
 	- [ ] **4.4** Carry binary RocNet frames on routed Zenoh keys, with origin metadata for loop prevention.
 	- [ ] **4.5** Add the RocNet UDP adapter for Rocrail, with one bridge per LAN segment.
 	- [ ] **4.6** Route loco velocity and function commands to the district owner's simulated DCC-EX.
@@ -83,11 +83,11 @@ The roadmap follows the [wiki design specification](https://github.com/CuriousTi
 	- [ ] **5.4** Pass the simulation exit criteria before connecting hardware.
 - [ ] **Phase 6: Hardware drivers**
 	- [ ] **6.1** Implement and replay-test the DCC-EX serial driver using recorded transcripts.
-	- [ ] **6.2** Add the LocoNet adapter (codec, USB serial and LocoNet over TCP); pass stage 2 with an Intellibox Basic and IntelliSwitch.
+	- [ ] **6.2** Add the LocoNet adapter (codec, USB serial and LocoNet over TCP); pass stage 2 with an Intellibox Basic and IntelliSwitch. Codec and LocoNet over TCP (text and binary clients) are done; USB serial is not.
 	- [ ] **6.3** Bench-test on an isolated layout section before any wider trial.
 	- [ ] **6.4** Add local RocNet adapters for compatible module equipment.
 - [ ] **Phase 7: Peripherals**
-	- [x] **7.1** Add a read-only terminal dashboard for node, neighbor heartbeat state, and local clock.
+	- [x] **7.1** Add a terminal dashboard for node, neighbor heartbeat state, district power and fast clock.
 	- [ ] **7.2** Add operator controls after the safety model is implemented.
 	- [ ] **7.3** Add ESP32 accessory controls and displays after validating the gateway approach.
 	- [ ] **7.4** Add other non-safety-critical displays and timetable features.
@@ -110,7 +110,18 @@ cargo run -- --mode simulation
 cargo run -- --validate-profile examples/module_profile.json
 ```
 
-GitHub Actions runs formatting, Clippy, tests, and a build on Linux, macOS, and Windows for pushes and pull requests. These checks cover desktop software only; they do not test Raspberry Pi or Orange Pi boards or any real railway hardware.
+GitHub Actions runs formatting, Clippy, tests, and a build on Linux, macOS, and Windows for pull requests, beta tags, and manual runs (**Run workflow** on GitHub). Pushes to `main` do not run CI; run the checks locally instead. These checks cover desktop software only; they do not test Raspberry Pi or Orange Pi boards or any real railway hardware.
+
+### Local checks and builds
+
+On a Mac, the same checks and the cross-builds run locally without Docker. They need the Rust targets `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu` and `x86_64-pc-windows-gnu`, plus [cargo-zigbuild](https://github.com/rust-cross/cargo-zigbuild) with Zig (`pip3 install --user ziglang`) and, for packages, `cargo-deb`.
+
+```sh
+scripts/check.sh     # fmt, Clippy, tests, then release and test binaries in dist/<target>/
+scripts/package.sh   # macOS arm64, Windows x86_64 and amd64/arm64 .deb in dist/packages/
+```
+
+`dist/` and `target/` are ignored by git. The Linux binaries need glibc 2.30 or later.
 
 Pushing a tag such as `v0.1.0-beta.1` runs the same checks, builds a native desktop executable on each platform, and publishes a GitHub prerelease with the executables and SHA-256 checksums. The macOS executable is ad-hoc signed to match the project's local Tauri test setup; it is not Developer ID signed or notarized. Gatekeeper may still require manual approval before opening a downloaded copy. These are simulation-only early-beta builds, not hardware-ready software.
 
@@ -118,7 +129,7 @@ Pushing a tag such as `v0.1.0-beta.1` runs the same checks, builds a native desk
 
 Start one node on each computer on the same LAN. Both must use the same session name and distinct node IDs. In peer mode, Zenoh's native multicast scouting discovers peers automatically; manual endpoints are optional overrides.
 
-When run in an interactive terminal, node mode opens a dashboard with the local clock, discovered neighbors, heartbeat age/state, sequence, and reported power state. The **Raw CLI output** pane retains up to 200 lines; use `Up`/`Down` or `PgUp`/`PgDn` to scroll, `Home` for the oldest line, and `End` to follow the latest. Press `q`, `Esc`, or `Ctrl+C` to exit. Add `--plain` for log output in scripts or non-interactive terminals.
+When run in an interactive terminal, node mode opens a dashboard with the fast clock, this district's power and the last power request, the LocoNet status, discovered neighbors with their RocNet ID, heartbeat age/state, sequence, and reported power state. The **Raw CLI output** pane retains up to 200 lines; use `Up`/`Down` or `PgUp`/`PgDn` to scroll, `Home` for the oldest line, and `End` to follow the latest. Press `q`, `Esc`, or `Ctrl+C` to exit. Add `--plain` for log output in scripts or non-interactive terminals.
 
 On macOS:
 
@@ -146,9 +157,9 @@ To relay the RocNet reference's unicast speed frame to locomotive address `291`:
 cargo run -- --mode node --session bench --id mac --send-rocnet-hex '@0001230001020203304140'
 ```
 
-The receiver prints the decoded frame. No physical RocNet UDP, TCP, MQTT, or serial interface is connected yet.
+The receiver prints the decoded frame. No physical RocNet UDP, TCP, MQTT, or serial interface is connected yet. Each node needs its own `--rocnet-address` (default 100); the dashboard warns when two nodes share one.
 
-## District power with Rocrail over LocoNet TCP
+## District power and fast clock with Rocrail over LocoNet TCP
 
 Every node runs a simulated command station for its own district. There is no layout-wide power switch: a power request only switches the district of the node that receives it, so the other districts keep running. The one exception is the global emergency stop (`E`), sent as a RocNet halt on `hive/{session}/rn/cs/all`: every district stops its trains and then resumes on its own. Each node reports its district's power as a RocNet status event on `hive/{session}/rn/cs/node/{id}` and in its heartbeat, and every other node shows it in its neighbour table.
 
@@ -173,7 +184,12 @@ In Rocrail, add a LocoNet command station using LocoNet over TCP with host `loca
 | `h` | Emergency stop for this node's district |
 | `E` | Global emergency stop: every district halts its trains (power stays on); each district resumes with `1` |
 | `s` | Simulate a short in this node's district; other nodes show `SHORT` for it |
+| `c` | Fast clock run or pause, on every node |
+| `+` / `-` | Fast clock rate up or down (1 to 60) |
+| `]` / `[` | Fast clock one hour forward or back |
+
+**Fast clock:** Hive-Rail commands the clock. Start it with `c` on any node; every node shows it in the dashboard header and writes it to its LocoNet clients as slot 123, so Rocrail and throttles follow. Turn off Rocrail's own LocoNet clock sync: clock writes from LocoNet clients are ignored and reported.
 
 A short is reported, not spread: only the affected district loses power, and Rocrail sees power off if it is connected to that node. The neighbouring districts will later hold their boundary signals at Stop. Allow TCP port 1234 through the Windows firewall if Rocrail runs on another computer.
 
-This prototype currently tests Zenoh peer connectivity, heartbeat freshness, and simulated district power and short reporting. It does not yet test link-binding confirmation, command leases, handoff state machines, partitions, or the simulation invariants across nodes. Do not treat it as a safety system or use it to control a layout.
+This prototype currently tests Zenoh peer connectivity, heartbeat freshness, simulated district power and short reporting, and the fast clock. It does not yet test link-binding confirmation, command leases, handoff state machines, partitions, or the simulation invariants across nodes. Do not treat it as a safety system or use it to control a layout.

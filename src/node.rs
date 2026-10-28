@@ -1,14 +1,15 @@
 use crate::{
+    clock::FastClock,
     lbserver::{self, LbEvent, LbServerHandle},
-    loconet::LocoNetMessage,
-    power::{PowerRequest, SimulatedCommandStation},
-    rocnet::RocNetFrame,
-    ui::{Dashboard, PeerRow, TerminalUi, UiCommand},
+    loconet::{LocoNetMessage, HIVE_RAIL_CLOCK_ID},
+    power::{PowerRequest, PowerState, SimulatedCommandStation},
+    rocnet::{ClockAction, ClockUpdate, RocNetFrame},
+    ui::{ClockChange, Dashboard, PeerRow, TerminalUi, UiCommand},
 };
 use chrono::Local;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     error::Error,
     io::{self, IsTerminal},
     time::Duration,
@@ -161,6 +162,13 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
         .congestion_control(CongestionControl::Block)
         .allowed_destination(Locality::Remote)
         .await?;
+    let clock_publisher = session
+        .declare_publisher(format!("hive/{}/rn/ck", options.session))
+        .allowed_destination(Locality::Remote)
+        .await?;
+    let clock_subscriber = session
+        .declare_subscriber(format!("hive/{}/rn/ck", options.session))
+        .await?;
     let command_station_subscriber = session
         .declare_subscriber(format!("hive/{}/rn/cs/**", options.session))
         .await?;
@@ -191,6 +199,12 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
         echo: tui.is_none(),
     };
     let mut sequence = 0_u64;
+    let mut clock = FastClock::new(Instant::now());
+    // Last clock state written to LocoNet: minute of day, running, rate.
+    let mut clock_written: Option<(u16, bool, u8)> = None;
+    let mut clock_writers_warned: HashSet<std::net::SocketAddr> = HashSet::new();
+    let mut clock_tick = time::interval(Duration::from_millis(100));
+    clock_tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
     let mut pending_frame = if options.identify {
         let address = options
             .rocnet_address
@@ -288,6 +302,9 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                                 message.seq,
                                 message.power
                             ));
+                            if clock.known() {
+                                publish_clock(&clock_publisher, rocnet_id, ClockAction::Sync, &clock, &mut log).await?;
+                            }
                             if message.rocnet_id == Some(rocnet_id) {
                                 log.event(format!(
                                     "WARNING peer {} uses the same RocNet ID {rocnet_id} as this node; give each node its own --rocnet-address",
@@ -338,6 +355,8 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
             event = next_loconet_event(&mut loconet_events) => match event {
                 Some(LbEvent::Connected(peer)) => {
                     loconet_clients += 1;
+                    // Give the new client the current clock on the next tick.
+                    clock_written = None;
                     log.event(format!("LocoNet client {peer} connected"));
                 }
                 Some(LbEvent::FormatDetected { peer, format }) => {
@@ -345,6 +364,7 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                 }
                 Some(LbEvent::Disconnected { peer, reason }) => {
                     loconet_clients = loconet_clients.saturating_sub(1);
+                    clock_writers_warned.remove(&peer);
                     match reason {
                         Some(reason) => log.event(format!("LocoNet client {peer} disconnected: {reason}")),
                         None => log.event(format!("LocoNet client {peer} disconnected")),
@@ -356,12 +376,64 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                         let origin = format!("{} LocoNet", options.id);
                         handle_power_request(request, RequestSource::LocoNet, &origin, &mut power, &outputs, &mut log).await?;
                     }
+                    if let Some(slot) = message.fast_clock() {
+                        if slot.valid && slot.setter != HIVE_RAIL_CLOCK_ID && message.opcode() == 0xEF && clock_writers_warned.insert(peer) {
+                            log.event(format!(
+                                "Ignored fast clock write from {peer} ({:02}:{:02}): Hive-Rail commands the clock; turn off the client's clock sync",
+                                slot.hour, slot.minute
+                            ));
+                        }
+                    }
                 }
                 Some(LbEvent::Rejected { peer, input, reason }) => {
                     log.line(format!("[ln  ] <- rejected from {peer}: {input} ({reason})"));
                 }
                 None => loconet_events = None,
             },
+            sample = clock_subscriber.recv_async() => {
+                let sample = sample?;
+                let origin = sample_origin(&sample);
+                match RocNetFrame::from_bytes(sample.payload().to_bytes().as_ref()) {
+                    Ok(frame) => match frame.clock_update() {
+                        Some(update) => {
+                            log.line(format!("[mesh] <- {}  {}  from {origin}", frame.to_hex(), frame.describe()));
+                            let was = clock.label(Instant::now());
+                            let rate = if update.divider == 0 { clock.rate() } else { update.divider };
+                            clock.set(u16::from(update.hour) * 60 + u16::from(update.minute), rate, update.divider != 0, Instant::now());
+                            if update.action == ClockAction::Set {
+                                log.event(format!("Fast clock set by {origin}: {was} -> {}", clock.label(Instant::now())));
+                            }
+                        }
+                        None => log.line(format!("[mesh] <- ignored clock frame from {origin}: {}", frame.describe())),
+                    },
+                    Err(error) => log.line(format!("[mesh] <- ignored invalid clock frame from {origin}: {error}")),
+                }
+            }
+            _ = clock_tick.tick() => {
+                let now = Instant::now();
+                if clock.known() {
+                    let state = (clock.minute_of_day(now), clock.running(), clock.rate());
+                    if clock_written != Some(state) {
+                        let minute_ticked = clock_written.is_some_and(|(minute, ..)| minute != state.0);
+                        clock_written = Some(state);
+                        // The clock master keeps every node in phase on each fast minute.
+                        let master = peers.iter().all(|(id, peer)| !peer.online || options.id < *id);
+                        if minute_ticked && master {
+                            publish_clock(&clock_publisher, rocnet_id, ClockAction::Sync, &clock, &mut log).await?;
+                        }
+                        if let Some(server) = outputs.loconet {
+                            let message = LocoNetMessage::fast_clock_write(
+                                (state.0 / 60) as u8,
+                                (state.0 % 60) as u8,
+                                if state.1 { state.2 } else { 0 },
+                                loconet_track_status(power.station.state()),
+                            );
+                            server.send(&message);
+                            log.line(format!("[ln  ] -> {}  {}", message.to_hex(), message.describe()));
+                        }
+                    }
+                }
+            }
             _ = display_tick.tick(), if tui.is_some() => {
                 let command = match tui.as_mut() {
                     Some(ui) => ui.handle_input()?,
@@ -379,6 +451,17 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                         log.line(format!("[mesh] -> {}  {}", frame.to_hex(), frame.describe()));
                         log.event("GLOBAL EMERGENCY STOP sent to every district".to_owned());
                         handle_power_request(PowerRequest::Halt, RequestSource::Dashboard, &options.id, &mut power, &outputs, &mut log).await?;
+                    }
+                    UiCommand::Clock(change) => {
+                        let now = Instant::now();
+                        let was = clock.label(now);
+                        match change {
+                            ClockChange::ToggleRunning => clock.toggle_running(now),
+                            ClockChange::Rate(delta) => clock.change_rate(delta, now),
+                            ClockChange::Hours(delta) => clock.shift_hours(delta, now),
+                        }
+                        log.event(format!("Fast clock set here: {was} -> {}", clock.label(now)));
+                        publish_clock(&clock_publisher, rocnet_id, ClockAction::Set, &clock, &mut log).await?;
                     }
                     UiCommand::SimulateShort => {
                         if power.station.simulate_short() {
@@ -410,6 +493,7 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                         rocnet_id,
                         local_power: power.station.state(),
                         last_request: power.last_request.clone(),
+                        clock: clock.label(Instant::now()),
                         loconet: match options.loconet_tcp {
                             Some(port) => format!("TCP :{port}, {loconet_clients} client(s)"),
                             None => "off".to_owned(),
@@ -465,6 +549,44 @@ async fn handle_power_request(
         publish_power_status(outputs, power, log).await?;
     }
     Ok(())
+}
+
+async fn publish_clock(
+    publisher: &Publisher<'static>,
+    rocnet_id: u16,
+    action: ClockAction,
+    clock: &FastClock,
+    log: &mut CliLog,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let minute = clock.minute_of_day(Instant::now());
+    let frame = RocNetFrame::clock(
+        rocnet_id,
+        ClockUpdate {
+            action,
+            hour: (minute / 60) as u8,
+            minute: (minute % 60) as u8,
+            divider: if clock.running() { clock.rate() } else { 0 },
+        },
+    );
+    publisher
+        .put(frame.as_bytes().to_vec())
+        .attachment(rocnet_id.to_string())
+        .await?;
+    log.line(format!(
+        "[mesh] -> {}  {}",
+        frame.to_hex(),
+        frame.describe()
+    ));
+    Ok(())
+}
+
+/// LocoNet `TRK` byte: bit 0 power on, bit 1 set when not idle, bit 2 LocoNet 1.1.
+fn loconet_track_status(state: PowerState) -> u8 {
+    match state {
+        PowerState::On => 0x07,
+        PowerState::EmergencyStop => 0x05,
+        PowerState::Off | PowerState::Short => 0x04,
+    }
 }
 
 async fn publish_power_status(
