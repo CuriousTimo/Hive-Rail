@@ -2,6 +2,7 @@ mod node;
 mod profile;
 mod rocnet;
 mod simulation;
+mod ui;
 
 use std::{env, path::Path, process::ExitCode};
 
@@ -58,8 +59,10 @@ fn print_help() {
          cargo run -- --mode node --session <name> --id <id> [--listen <endpoint> | --connect <endpoint>]\n\
          cargo run -- --mode node --session <name> --id <id> --rocnet-address <0-65535> --identify\n\
          cargo run -- --mode node --session <name> --id <id> --send-rocnet-hex <@frame>\n\
+         cargo run -- --mode node --session <name> --id <id> --plain\n\
          cargo run -- --validate-profile <path>\n\
          cargo run -- --help\n\n\
+         Interactive node mode shows a neighbor/heartbeat dashboard; --plain keeps log output.\n\
          Node mode uses Zenoh LAN peer scouting and can exchange simulation RocNet frames.\n\
          No local RocNet transport or railway hardware is connected."
     );

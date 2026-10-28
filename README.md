@@ -75,9 +75,10 @@ The roadmap follows the [wiki design specification](https://github.com/CuriousTi
 	- [ ] **5.3** Bench-test on an isolated layout section before any wider trial.
 	- [ ] **5.4** Add local RocNet adapters for compatible module equipment.
 - [ ] **Phase 6: Peripherals**
-	- [ ] **6.1** Add observer and operator interfaces.
-	- [ ] **6.2** Add ESP32 accessory controls and displays after validating the gateway approach.
-	- [ ] **6.3** Add other non-safety-critical displays and timetable features.
+	- [x] **6.1** Add a read-only terminal dashboard for node, neighbor heartbeat state, and local clock.
+	- [ ] **6.2** Add operator controls after the safety model is implemented.
+	- [ ] **6.3** Add ESP32 accessory controls and displays after validating the gateway approach.
+	- [ ] **6.4** Add other non-safety-critical displays and timetable features.
 
 Phase 0 measurements are gates, not paperwork: timing assumptions and hardware behavior must be verified before safety or handoff features are treated as ready for a live layout.
 
@@ -101,6 +102,8 @@ Pushing a tag such as `v0.1.0-beta.1` runs the same checks, builds a native desk
 ## Run two networked simulation nodes
 
 Start one node on each computer on the same LAN. Both must use the same session name and distinct node IDs. In peer mode, Zenoh's native multicast scouting discovers peers automatically; manual endpoints are optional overrides.
+
+When run in an interactive terminal, node mode opens a dashboard with the local clock, discovered neighbors, heartbeat age/state, sequence, and reported power state. The **Raw CLI output** pane retains up to 200 lines; use `Up`/`Down` or `PgUp`/`PgDn` to scroll, `Home` for the oldest line, and `End` to follow the latest. Press `q`, `Esc`, or `Ctrl+C` to exit. Add `--plain` for log output in scripts or non-interactive terminals.
 
 On macOS:
 
