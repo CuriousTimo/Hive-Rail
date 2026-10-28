@@ -177,7 +177,7 @@ fn render(frame: &mut Frame<'_>, dashboard: &Dashboard, scroll_back: usize) {
                 label,
                 Style::default().fg(color).add_modifier(Modifier::BOLD),
             )),
-            Cell::from(format!("{} ms ago", peer.last_seen.as_millis())),
+            Cell::from(format_age(peer.last_seen)),
             Cell::from(peer.sequence.to_string()),
             Cell::from(Span::styled(peer.power.clone(), power_style(&peer.power))),
         ])
@@ -272,4 +272,33 @@ fn power_style(label: &str) -> Style {
         _ => Color::Red,
     };
     Style::default().fg(color).add_modifier(Modifier::BOLD)
+}
+
+/// Human-readable age: milliseconds while a peer is fresh, then seconds, minutes and hours.
+fn format_age(age: Duration) -> String {
+    let seconds = age.as_secs();
+    if age < Duration::from_secs(1) {
+        format!("{} ms ago", age.as_millis())
+    } else if seconds < 60 {
+        format!("{:.1} s ago", age.as_secs_f64())
+    } else if seconds < 3600 {
+        format!("{}m {:02}s ago", seconds / 60, seconds % 60)
+    } else {
+        format!("{}h {:02}m ago", seconds / 3600, seconds % 3600 / 60)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_age;
+    use std::time::Duration;
+
+    #[test]
+    fn age_switches_units_as_it_grows() {
+        assert_eq!(format_age(Duration::from_millis(80)), "80 ms ago");
+        assert_eq!(format_age(Duration::from_millis(1_500)), "1.5 s ago");
+        assert_eq!(format_age(Duration::from_secs(59)), "59.0 s ago");
+        assert_eq!(format_age(Duration::from_secs(125)), "2m 05s ago");
+        assert_eq!(format_age(Duration::from_secs(3_725)), "1h 02m ago");
+    }
 }
