@@ -3,6 +3,7 @@ name = "hive-rail"
 version = "0.1.0"
 edition = "2021"
 description = "Simulation-first foundation for the Hive-Rail node"
+license = "Apache-2.0"
 
 [dependencies]
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
@@ -13,3 +14,8 @@ serde_json = "1"
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time"] }
 zenoh = "1.5"
+[package.metadata.deb]
+maintainer = "Curious T!mo <36850613+CuriousTimo@users.noreply.github.com>"
+# Set explicitly because dpkg-shlibdeps is unavailable when packaging on macOS.
+depends = "libc6 (>= 2.30)"
+section = "misc"
