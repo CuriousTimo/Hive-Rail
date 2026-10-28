@@ -1,12 +1,17 @@
 name: Rust CI
 
+# Day-to-day checks run locally with scripts/check.sh. CI runs only for
+# beta tags, pull requests and manual runs, not for every push to main.
 on:
   push:
-    branches: [main]
     tags: ["v*-beta*"]
   pull_request:
     branches: [main]
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read

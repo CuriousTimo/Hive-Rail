@@ -21,3 +21,4 @@ Temporary Items
 
 # ---------- Rust ----------
 /target/
+/dist/
