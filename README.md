@@ -22,7 +22,7 @@ Think of each future Hive-Rail node as a small signal box for one part of a modu
 - Leave a boundary signal at **STOP** when a neighbor is missing or a power problem is reported.
 - Coordinate a locomotive handoff between separately powered sections. The design aims to prevent two boosters from powering the same rail at once.
 - Allow only one controller at a time to drive each locomotive.
-- Share global power on/off and one fast clock across all nodes, and report short circuits to every node.
+- Give every district its own power on/off and report its power state and short circuits to every node, so the rest of the layout keeps running. Share one fast clock across all nodes.
 - Later: serve FRED/Fredi throttles on every module as one distributed command station.
 
 These are goals, not finished features. Today this beta can check a module profile, check a simple booster-exclusivity example, and exchange network heartbeats between computers. It cannot yet carry out the railway-control jobs above.
@@ -69,7 +69,7 @@ The roadmap follows the [wiki design specification](https://github.com/CuriousTi
 	- [x] **3.8** Relay and decode RocNet locomotive frames from Windows and Linux to macOS over Zenoh.
 	- [ ] **3.9** Test bidirectional RocNet message carriage and message/request behavior over Zenoh.
 - [ ] **Phase 4: RocNet mesh** (current focus, in this order)
-	- [x] **4.1** Share global power on/off and halt across all nodes as RocNet frames, and report short circuits from every node; tested with Rocrail over LocoNet TCP.
+	- [x] **4.1** Switch power per district and report every district's power and short circuits to all nodes as RocNet status events; tested with Rocrail over LocoNet TCP.
 	- [ ] **4.2** Share one fast clock across the mesh (RocNet clock group) and show it on every node.
 	- [ ] **4.3** Keep the CLI view clear: node and power overview, event pane, decoded RocNet log, `--plain` output.
 	- [ ] **4.4** Carry binary RocNet frames on routed Zenoh keys, with origin metadata for loop prevention.
@@ -148,9 +148,9 @@ cargo run -- --mode node --session bench --id mac --send-rocnet-hex '@0001230001
 
 The receiver prints the decoded frame. No physical RocNet UDP, TCP, MQTT, or serial interface is connected yet.
 
-## Global power with Rocrail over LocoNet TCP
+## District power with Rocrail over LocoNet TCP
 
-Every node runs a simulated command station. Layout power requests travel between nodes as RocNet command station frames on `hive/{session}/rn/cs/all`, and each node reports its own district's power as a RocNet status event on `hive/{session}/rn/cs/node/{id}` and in its heartbeat.
+Every node runs a simulated command station for its own district. There is no layout-wide power switch: a power request only switches the district of the node that receives it, so the other districts keep running. The one exception is the global emergency stop (`E`), sent as a RocNet halt on `hive/{session}/rn/cs/all`: every district stops its trains and then resumes on its own. Each node reports its district's power as a RocNet status event on `hive/{session}/rn/cs/node/{id}` and in its heartbeat, and every other node shows it in its neighbour table.
 
 On the Windows PC, start the node with a LocoNet over TCP port for Rocrail:
 
@@ -164,15 +164,16 @@ On the MacBook:
 cargo run -- --mode node --session bench --id mac --rocnet-address 101
 ```
 
-In Rocrail, add a LocoNet command station using LocoNet over TCP with host `localhost` and port `1234` (the default; `--loconet-tcp <port>` picks another). The node accepts both the LbServer text format and raw binary LocoNet, detected per client. Rocrail's power on, power off and emergency stop then switch both nodes. In either dashboard:
+In Rocrail, add a LocoNet command station using LocoNet over TCP with host `localhost` and port `1234` (the default; `--loconet-tcp <port>` picks another). The node accepts both the LbServer text format and raw binary LocoNet, detected per client. Rocrail's power on, power off and emergency stop then switch the district of the node it is connected to; the other node shows the change. In either dashboard:
 
 | Key | Action |
 | --- | --- |
-| `1` | Layout power on, on every node |
-| `0` | Layout power off, on every node |
-| `h` | Emergency stop, on every node |
-| `s` | Simulate a short in this node's district only; other nodes show `SHORT` for it |
+| `1` | Power on for this node's district |
+| `0` | Power off for this node's district |
+| `h` | Emergency stop for this node's district |
+| `E` | Global emergency stop: every district halts its trains (power stays on); each district resumes with `1` |
+| `s` | Simulate a short in this node's district; other nodes show `SHORT` for it |
 
-A short is reported, not spread: only the affected district loses power, and Rocrail sees power off if it is connected to that node. Allow TCP port 1234 through the Windows firewall if Rocrail runs on another computer.
+A short is reported, not spread: only the affected district loses power, and Rocrail sees power off if it is connected to that node. The neighbouring districts will later hold their boundary signals at Stop. Allow TCP port 1234 through the Windows firewall if Rocrail runs on another computer.
 
-This prototype currently tests Zenoh peer connectivity, heartbeat freshness, and simulated layout power and short reporting. It does not yet test link-binding confirmation, command leases, handoff state machines, partitions, or the simulation invariants across nodes. Do not treat it as a safety system or use it to control a layout.
+This prototype currently tests Zenoh peer connectivity, heartbeat freshness, and simulated district power and short reporting. It does not yet test link-binding confirmation, command leases, handoff state machines, partitions, or the simulation invariants across nodes. Do not treat it as a safety system or use it to control a layout.

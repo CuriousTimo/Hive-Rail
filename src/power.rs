@@ -1,6 +1,7 @@
 use std::fmt;
 
-/// Layout-wide power request, from RocNet group 1 or LocoNet GPON/GPOFF/IDLE.
+/// Power request for one district, from RocNet group 1 or LocoNet GPON/GPOFF/IDLE.
+/// There is no layout-wide power: every district keeps running independently.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PowerRequest {
     On,

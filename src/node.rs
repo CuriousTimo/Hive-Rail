@@ -69,11 +69,12 @@ struct PeerState {
     rocnet_id: Option<u16>,
 }
 
-/// Where a power request came from, which decides where it still has to be sent.
+/// Where a power request came from, which decides where it still has to be echoed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RequestSource {
     Dashboard,
     LocoNet,
+    /// The global emergency stop from another node.
     Mesh,
 }
 
@@ -102,14 +103,13 @@ impl CliLog {
 struct PowerOutputs<'a> {
     node_id: &'a str,
     rocnet_id: u16,
-    requests: &'a Publisher<'static>,
     status: &'a Publisher<'static>,
     loconet: Option<&'a LbServerHandle>,
 }
 
 struct PowerControl {
     station: SimulatedCommandStation,
-    layout: String,
+    last_request: String,
 }
 
 pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> {
@@ -144,8 +144,9 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
     let rocnet_key = format!("hive/{}/rocnet/frame", options.session);
     let rocnet_publisher = session.declare_publisher(rocnet_key.clone()).await?;
     let rocnet_subscriber = session.declare_subscriber(rocnet_key).await?;
-    // Own power frames are applied directly, so they are only routed to other nodes.
-    let power_request_publisher = session
+    // The global emergency stop is the only power request that crosses the mesh.
+    // Own requests are applied directly, so they are only routed to other nodes.
+    let global_stop_publisher = session
         .declare_publisher(format!("hive/{}/rn/cs/all", options.session))
         .priority(Priority::RealTime)
         .congestion_control(CongestionControl::Block)
@@ -175,13 +176,12 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
     let outputs = PowerOutputs {
         node_id: &options.id,
         rocnet_id,
-        requests: &power_request_publisher,
         status: &power_status_publisher,
         loconet: loconet_server.as_ref(),
     };
     let mut power = PowerControl {
         station: SimulatedCommandStation::new(),
-        layout: "no request yet".to_owned(),
+        last_request: "no request yet".to_owned(),
     };
 
     let mut peers: HashMap<String, PeerState> = HashMap::new();
@@ -323,8 +323,12 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                     Ok(frame) => {
                         log.line(format!("[mesh] <- {}  {}  from {origin}", frame.to_hex(), frame.describe()));
                         if sample.key_expr().as_str().ends_with("/rn/cs/all") {
-                            if let Some(request) = frame.power_request_kind() {
-                                handle_power_request(request, RequestSource::Mesh, &origin, &mut power, &outputs, &mut log).await?;
+                            match frame.power_request_kind() {
+                                Some(PowerRequest::Halt) => {
+                                    handle_power_request(PowerRequest::Halt, RequestSource::Mesh, &origin, &mut power, &outputs, &mut log).await?;
+                                }
+                                Some(request) => log.line(format!("[mesh] <- ignored layout-wide {request} from {origin}; power is per district")),
+                                None => {}
                             }
                         }
                     }
@@ -369,6 +373,13 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                     UiCommand::Power(request) => {
                         handle_power_request(request, RequestSource::Dashboard, &options.id, &mut power, &outputs, &mut log).await?;
                     }
+                    UiCommand::GlobalStop => {
+                        let frame = RocNetFrame::power_request(rocnet_id, PowerRequest::Halt);
+                        global_stop_publisher.put(frame.as_bytes().to_vec()).attachment(options.id.clone()).await?;
+                        log.line(format!("[mesh] -> {}  {}", frame.to_hex(), frame.describe()));
+                        log.event("GLOBAL EMERGENCY STOP sent to every district".to_owned());
+                        handle_power_request(PowerRequest::Halt, RequestSource::Dashboard, &options.id, &mut power, &outputs, &mut log).await?;
+                    }
                     UiCommand::SimulateShort => {
                         if power.station.simulate_short() {
                             log.event("SHORT in this district: power lost without request (simulated)".to_owned());
@@ -398,7 +409,7 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                         node_id: options.id.clone(),
                         rocnet_id,
                         local_power: power.station.state(),
-                        layout_power: power.layout.clone(),
+                        last_request: power.last_request.clone(),
                         loconet: match options.loconet_tcp {
                             Some(port) => format!("TCP :{port}, {loconet_clients} client(s)"),
                             None => "off".to_owned(),
@@ -417,8 +428,8 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
     Ok(())
 }
 
-/// Applies a layout power request here and forwards it to the mesh and LocoNet clients
-/// that have not seen it yet.
+/// Applies a power request to this node's district and echoes it to the local LocoNet
+/// clients that have not seen it yet. Other nodes only see the resulting status.
 async fn handle_power_request(
     request: PowerRequest,
     source: RequestSource,
@@ -427,19 +438,6 @@ async fn handle_power_request(
     outputs: &PowerOutputs<'_>,
     log: &mut CliLog,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    if source != RequestSource::Mesh {
-        let frame = RocNetFrame::power_request(outputs.rocnet_id, request);
-        outputs
-            .requests
-            .put(frame.as_bytes().to_vec())
-            .attachment(origin.to_owned())
-            .await?;
-        log.line(format!(
-            "[mesh] -> {}  {}",
-            frame.to_hex(),
-            frame.describe()
-        ));
-    }
     if source != RequestSource::LocoNet {
         if let Some(server) = outputs.loconet {
             let message = LocoNetMessage::power_request(request);
@@ -457,11 +455,11 @@ async fn handle_power_request(
         PowerRequest::Off => "OFF",
         PowerRequest::Halt => "STOP",
     };
-    power.layout = format!(
+    power.last_request = format!(
         "{label}  ({request} from {origin}, {})",
         Local::now().format("%H:%M:%S")
     );
-    log.event(format!("Layout {request} requested by {origin}"));
+    log.event(format!("District {request} requested by {origin}"));
     if power.station.apply(request) {
         log.event(format!("District power {}", power.station.state().label()));
         publish_power_status(outputs, power, log).await?;

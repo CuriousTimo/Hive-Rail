@@ -32,7 +32,7 @@ pub struct Dashboard {
     pub node_id: String,
     pub rocnet_id: u16,
     pub local_power: PowerState,
-    pub layout_power: String,
+    pub last_request: String,
     pub loconet: String,
     pub scouting: String,
     pub heartbeat_interval: Duration,
@@ -45,6 +45,8 @@ pub enum UiCommand {
     None,
     Quit,
     Power(PowerRequest),
+    /// Emergency stop in every district; each district resumes on its own.
+    GlobalStop,
     SimulateShort,
 }
 
@@ -87,6 +89,7 @@ impl TerminalUi {
                 KeyCode::Char('1') => return Ok(UiCommand::Power(PowerRequest::On)),
                 KeyCode::Char('0') => return Ok(UiCommand::Power(PowerRequest::Off)),
                 KeyCode::Char('h') => return Ok(UiCommand::Power(PowerRequest::Halt)),
+                KeyCode::Char('E') => return Ok(UiCommand::GlobalStop),
                 KeyCode::Char('s') => return Ok(UiCommand::SimulateShort),
                 KeyCode::PageUp => self.scroll_back = self.scroll_back.saturating_add(5),
                 KeyCode::Up => self.scroll_back = self.scroll_back.saturating_add(1),
@@ -150,8 +153,11 @@ fn render(frame: &mut Frame<'_>, dashboard: &Dashboard, scroll_back: usize) {
                 dashboard.local_power.label(),
                 power_style(dashboard.local_power.label()),
             ),
-            Span::styled("   LAYOUT ", Style::default().add_modifier(Modifier::BOLD)),
-            Span::raw(&dashboard.layout_power),
+            Span::styled(
+                "   LAST REQUEST ",
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(&dashboard.last_request),
         ]),
     ])
     .block(
@@ -251,7 +257,7 @@ fn render(frame: &mut Frame<'_>, dashboard: &Dashboard, scroll_back: usize) {
             Span::raw(&dashboard.last_event),
         ]),
         Line::from(Span::styled(
-            "1  Layout power on  |  0  Layout power off  |  h  Emergency stop  |  s  Simulate short here",
+            "1  District power on  |  0  District power off  |  h  District emergency stop  |  E  GLOBAL emergency stop  |  s  Simulate short",
             Style::default().fg(Color::Gray),
         )),
         Line::from(Span::styled(

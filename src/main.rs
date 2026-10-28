@@ -67,7 +67,8 @@ fn print_help() {
          cargo run -- --validate-profile <path>\n\
          cargo run -- --help\n\n\
          Interactive node mode shows a neighbor/heartbeat dashboard; --plain keeps log output.\n\
-         Dashboard keys: 1 layout power on, 0 layout power off, h emergency stop, s simulate short.\n\
+         Dashboard keys: 1 district power on, 0 district power off, h district emergency stop,\n\
+         E global emergency stop (every district), s simulate short.\n\
          --loconet-tcp serves LocoNet over TCP for Rocrail or JMRI, on port 1234 unless given;\n\
          --rocnet-address sets this node's RocNet ID (default 100).\n\
          Node mode uses Zenoh LAN peer scouting and can exchange simulation RocNet frames.\n\
