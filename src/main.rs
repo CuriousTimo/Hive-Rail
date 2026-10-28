@@ -72,6 +72,7 @@ fn print_help() {
          Dashboard keys: 1 district power on, 0 district power off, h district emergency stop,\n\
          E global emergency stop (every district), s simulate short,\n\
          c fast clock run/pause, + - clock rate, [ ] clock hour back/forward.\n\
+         With --plain, the same keys are read one per line from piped stdin (q quits).\n\
          --loconet-tcp serves LocoNet over TCP for Rocrail or JMRI, on port 1234 unless given;\n\
          --rocnet-address sets this node's RocNet ID (default 100).\n\
          Node mode uses Zenoh LAN peer scouting and can exchange simulation RocNet frames.\n\

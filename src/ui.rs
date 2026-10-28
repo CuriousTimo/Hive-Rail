@@ -108,18 +108,6 @@ impl TerminalUi {
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                     return Ok(UiCommand::Quit);
                 }
-                KeyCode::Char('1') => return Ok(UiCommand::Power(PowerRequest::On)),
-                KeyCode::Char('0') => return Ok(UiCommand::Power(PowerRequest::Off)),
-                KeyCode::Char('h') => return Ok(UiCommand::Power(PowerRequest::Halt)),
-                KeyCode::Char('E') => return Ok(UiCommand::GlobalStop),
-                KeyCode::Char('c') => return Ok(UiCommand::Clock(ClockChange::ToggleRunning)),
-                KeyCode::Char('+') | KeyCode::Char('=') => {
-                    return Ok(UiCommand::Clock(ClockChange::Rate(1)));
-                }
-                KeyCode::Char('-') => return Ok(UiCommand::Clock(ClockChange::Rate(-1))),
-                KeyCode::Char(']') => return Ok(UiCommand::Clock(ClockChange::Hours(1))),
-                KeyCode::Char('[') => return Ok(UiCommand::Clock(ClockChange::Hours(-1))),
-                KeyCode::Char('s') => return Ok(UiCommand::SimulateShort),
                 KeyCode::Char('x') | KeyCode::Delete | KeyCode::Backspace => {
                     if let Some(peer_id) = self
                         .selected
@@ -139,6 +127,11 @@ impl TerminalUi {
                 KeyCode::PageDown => self.scroll_back = self.scroll_back.saturating_sub(5),
                 KeyCode::End => self.scroll_back = 0,
                 KeyCode::Home => self.scroll_back = usize::MAX,
+                KeyCode::Char(key) => {
+                    if let Some(command) = command_for_key(key) {
+                        return Ok(command);
+                    }
+                }
                 _ => {}
             }
         }
@@ -166,6 +159,23 @@ impl TerminalUi {
             .draw(|frame| render(frame, dashboard, scroll_back, selected))?;
         Ok(())
     }
+}
+
+/// The node commands shared by the dashboard keys and the lines `--plain` reads on stdin.
+pub fn command_for_key(key: char) -> Option<UiCommand> {
+    Some(match key {
+        '1' => UiCommand::Power(PowerRequest::On),
+        '0' => UiCommand::Power(PowerRequest::Off),
+        'h' => UiCommand::Power(PowerRequest::Halt),
+        'E' => UiCommand::GlobalStop,
+        's' => UiCommand::SimulateShort,
+        'c' => UiCommand::Clock(ClockChange::ToggleRunning),
+        '+' | '=' => UiCommand::Clock(ClockChange::Rate(1)),
+        '-' => UiCommand::Clock(ClockChange::Rate(-1)),
+        ']' => UiCommand::Clock(ClockChange::Hours(1)),
+        '[' => UiCommand::Clock(ClockChange::Hours(-1)),
+        _ => return None,
+    })
 }
 
 impl Drop for TerminalGuard {

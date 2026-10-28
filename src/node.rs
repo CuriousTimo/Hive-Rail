@@ -5,14 +5,16 @@ use crate::{
     locos::{LocoInfo, LocoTable},
     power::{PowerRequest, PowerState, SimulatedCommandStation},
     rocnet::{ClockAction, ClockUpdate, RocNetFrame},
-    ui::{ClockChange, Dashboard, PeerRow, TerminalUi, UiCommand},
+    ui::{command_for_key, ClockChange, Dashboard, PeerRow, TerminalUi, UiCommand},
 };
 use chrono::Local;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     error::Error,
-    io::{self, IsTerminal},
+    io::{self, BufRead, IsTerminal},
+    sync::mpsc as std_mpsc,
+    thread,
     time::Duration,
 };
 use tokio::{
@@ -223,6 +225,14 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
     };
     let mut heartbeat = time::interval(HEARTBEAT_INTERVAL);
     heartbeat.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    // Without the dashboard, the same keys are read as lines from piped stdin, so scripts
+    // can switch district power or simulate a short. A terminal is not read: a `--plain`
+    // node started in the background would be stopped by the shell.
+    let mut stdin_keys = if tui.is_none() && !io::stdin().is_terminal() {
+        Some(spawn_stdin_reader())
+    } else {
+        None
+    };
     let mut display_tick = time::interval(Duration::from_millis(100));
     display_tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
@@ -463,10 +473,10 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                     }
                 }
             }
-            _ = display_tick.tick(), if tui.is_some() => {
+            _ = display_tick.tick(), if tui.is_some() || stdin_keys.is_some() => {
                 let command = match tui.as_mut() {
                     Some(ui) => ui.handle_input()?,
-                    None => UiCommand::None,
+                    None => next_stdin_command(&mut stdin_keys, &mut log),
                 };
                 match command {
                     UiCommand::None => {}
@@ -658,6 +668,55 @@ fn sample_origin(sample: &Sample) -> String {
         .attachment()
         .and_then(|attachment| attachment.try_to_string().ok())
         .map_or_else(|| "unknown".to_owned(), |origin| origin.into_owned())
+}
+
+fn spawn_stdin_reader() -> std_mpsc::Receiver<String> {
+    let (sender, receiver) = std_mpsc::channel();
+    thread::spawn(move || {
+        for line in io::stdin().lock().lines() {
+            let Ok(line) = line else { break };
+            if sender.send(line).is_err() {
+                break;
+            }
+        }
+    });
+    receiver
+}
+
+/// One key line from stdin, as `s` for a short or `0` for power off; `q` quits.
+/// The reader is dropped when stdin closes.
+fn next_stdin_command(
+    keys: &mut Option<std_mpsc::Receiver<String>>,
+    log: &mut CliLog,
+) -> UiCommand {
+    let Some(receiver) = keys else {
+        return UiCommand::None;
+    };
+    match receiver.try_recv() {
+        Ok(line) => {
+            let line = line.trim();
+            let mut chars = line.chars();
+            match (chars.next(), chars.next()) {
+                (Some('q'), None) => UiCommand::Quit,
+                (Some(key), None) => command_for_key(key).unwrap_or_else(|| {
+                    log.line(format!("ignored stdin key {line:?}"));
+                    UiCommand::None
+                }),
+                (None, _) => UiCommand::None,
+                _ => {
+                    log.line(format!(
+                        "ignored stdin line {line:?}; send one key per line"
+                    ));
+                    UiCommand::None
+                }
+            }
+        }
+        Err(std_mpsc::TryRecvError::Empty) => UiCommand::None,
+        Err(std_mpsc::TryRecvError::Disconnected) => {
+            *keys = None;
+            UiCommand::None
+        }
+    }
 }
 
 async fn next_loconet_event(events: &mut Option<mpsc::Receiver<LbEvent>>) -> Option<LbEvent> {

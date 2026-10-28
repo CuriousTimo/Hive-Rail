@@ -192,4 +192,17 @@ In Rocrail, add a LocoNet command station using LocoNet over TCP with host `loca
 
 A short is reported, not spread: only the affected district loses power, and Rocrail sees power off if it is connected to that node. The neighbouring districts will later hold their boundary signals at Stop. Allow TCP port 1234 through the Windows firewall if Rocrail runs on another computer.
 
+## Simulate four dual-track modules
+
+`scripts/simulate-dual-track.sh` starts four nodes on this computer, `module-1` to `module-4`, as dual-track FREMO modules joined into a loop. Loco 3 and loco 10 run clockwise on track 1, loco 23 and loco 1234 counter-clockwise on track 2. A LocoNet throttle in the script drives each loco through the LocoNet over TCP port of the module it is on (12341 to 12344) and hands it to the next module on its track every few seconds: the receiving module takes the loco, and two seconds later the sending module stops it and frees its slot.
+
+Two faults are injected on the way round: `module-3` is switched off from its LocoNet and on again, and `module-2` trips with a simulated short and is switched on again afterwards. A train only moves on when both districts have power; otherwise it waits at the boundary, as the boundary signals are meant to enforce later.
+
+```sh
+scripts/simulate-dual-track.sh              # observer dashboard; q stops the simulation
+scripts/simulate-dual-track.sh --headless   # two laps, then PASS/FAIL checks
+```
+
+The headless run checks the node logs: the switched-off and shorted districts change state and recover, every other node sees each change, the shorted node tells its LocoNet clients power off, the other districts keep power, and no loco enters a district without power. It exits non-zero if a check fails. `DWELL`, `OVERLAP`, `LAPS`, `SESSION` and `BASE_PORT` change the timing, length, session and ports. With `--plain`, a node reads the dashboard keys one per line from piped stdin, which is how the script triggers the short. The handoff is driven by the throttle, not by Hive-Rail: the nodes have no handoff protocol yet.
+
 This prototype currently tests Zenoh peer connectivity, heartbeat freshness, simulated district power and short reporting, and the fast clock. It does not yet test link-binding confirmation, command leases, handoff state machines, partitions, or the simulation invariants across nodes. Do not treat it as a safety system or use it to control a layout.
