@@ -69,7 +69,7 @@ The roadmap follows the [wiki design specification](https://github.com/CuriousTi
 	- [x] **3.8** Relay and decode RocNet locomotive frames from Windows and Linux to macOS over Zenoh.
 	- [ ] **3.9** Test bidirectional RocNet message carriage and message/request behavior over Zenoh.
 - [ ] **Phase 4: RocNet mesh** (current focus, in this order)
-	- [ ] **4.1** Share global power on/off and halt across all nodes as RocNet frames, and report short circuits from every node.
+	- [x] **4.1** Share global power on/off and halt across all nodes as RocNet frames, and report short circuits from every node; tested with Rocrail over LocoNet TCP.
 	- [ ] **4.2** Share one fast clock across the mesh (RocNet clock group) and show it on every node.
 	- [ ] **4.3** Keep the CLI view clear: node and power overview, event pane, decoded RocNet log, `--plain` output.
 	- [ ] **4.4** Carry binary RocNet frames on routed Zenoh keys, with origin metadata for loop prevention.
