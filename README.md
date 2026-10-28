@@ -6,13 +6,13 @@
 
 Hive-Rail is being built to help separate groups of model railway modules operate together as one layout. Instead of relying on one central computer, the plan is for a small computer to look after each powered section of track and share information with the computers looking after neighboring sections.
 
-The primary use case is LocoNet at FREMO meets: operators keep plugging their FRED or Fredi into any module, and Hive-Rail routes their commands to whichever cluster's command station the loco is on. Most clusters are expected to use DCC-EX as their local command station; LocoNet centrals such as the Intellibox are supported by design. See [LocoNet and the Distributed Master](https://github.com/CuriousTimo/Hive-Rail/wiki/LocoNet-and-the-Distributed-Master).
+The nodes speak [RocNet over Zenoh](https://github.com/CuriousTimo/Hive-Rail/wiki/RocNet-on-the-Mesh). Each node connects its own command station and equipment through an adapter: DCC-EX (expected in most clusters), LocoNet centrals such as the Intellibox, and Rocrail. Support for FRED/Fredi walk-around throttles is designed but deferred.
 
 > **EARLY BETA: USE AT YOUR OWN RISK.** This software has not been tested on real hardware. It is not production-ready or a safety system. Do not connect it to or use it to control a live layout.
 
 This is a very early simulation and networking prototype. It has no connections to a command station, booster, track sensor, signal, or relay. It cannot drive a train or protect a layout. Its RocNet support currently validates and relays test frames over Zenoh only; it is not connected to a local RocNet transport.
 
-Zenoh peer scouting discovers nodes on a single local network using `224.0.0.224:7446`, distinct from RocNet/RocRail's `224.0.0.1:4321`. Peer discovery and heartbeat recovery have been smoke-tested between macOS, Windows, and Linux computers on one LAN. Cross-subnet discovery has not been tested.
+Zenoh peer scouting discovers nodes on a single local network using `224.0.0.224:7446`, distinct from RocNet/RocRail's `224.0.0.1:4321`, which a node joins only when it runs the RocNet UDP adapter. Peer discovery and heartbeat recovery have been smoke-tested between macOS, Windows, and Linux computers on one LAN. Cross-subnet discovery has not been tested.
 
 ## Intended use
 
@@ -22,7 +22,8 @@ Think of each future Hive-Rail node as a small signal box for one part of a modu
 - Leave a boundary signal at **STOP** when a neighbor is missing or a power problem is reported.
 - Coordinate a locomotive handoff between separately powered sections. The design aims to prevent two boosters from powering the same rail at once.
 - Allow only one controller at a time to drive each locomotive.
-- Serve LocoNet throttles on every module as one distributed command station, share global power on/off and the fast clock, and report short circuits to every node.
+- Share global power on/off and one fast clock across all nodes, and report short circuits to every node.
+- Later: serve FRED/Fredi throttles on every module as one distributed command station.
 
 These are goals, not finished features. Today this beta can check a module profile, check a simple booster-exclusivity example, and exchange network heartbeats between computers. It cannot yet carry out the railway-control jobs above.
 
@@ -33,7 +34,7 @@ These are goals, not finished features. Today this beta can check a module profi
 
 These are intended targets, not a claim of full tested compatibility. GitHub CI builds and tests on Windows, macOS, and Linux; networked runtime has been smoke-tested on all three desktop platforms on one LAN. Raspberry Pi/Orange Pi builds have not been tested, and no command station, booster, sensor, or other real railway hardware has been tested.
 
-The detailed design, unresolved engineering questions, [LocoNet design](https://github.com/CuriousTimo/Hive-Rail/wiki/LocoNet-and-the-Distributed-Master), [transition zone specification](https://github.com/CuriousTimo/Hive-Rail/wiki/Transition-Zone-Specification) and [RocNet compatibility matrix](https://github.com/CuriousTimo/Hive-Rail/wiki/RocNet-Compatibility-Matrix) are in the [Hive-Rail wiki](https://github.com/CuriousTimo/Hive-Rail/wiki).
+The detailed design, unresolved engineering questions, [RocNet mesh design](https://github.com/CuriousTimo/Hive-Rail/wiki/RocNet-on-the-Mesh), [LocoNet adapter](https://github.com/CuriousTimo/Hive-Rail/wiki/LocoNet-Adapter), [transition zone specification](https://github.com/CuriousTimo/Hive-Rail/wiki/Transition-Zone-Specification) and [RocNet compatibility matrix](https://github.com/CuriousTimo/Hive-Rail/wiki/RocNet-Compatibility-Matrix) are in the [Hive-Rail wiki](https://github.com/CuriousTimo/Hive-Rail/wiki).
 
 ## Planned phases
 
@@ -67,14 +68,14 @@ The roadmap follows the [wiki design specification](https://github.com/CuriousTi
 	- [ ] **3.7** Test short-circuit propagation and record measured timing.
 	- [x] **3.8** Relay and decode RocNet locomotive frames from Windows and Linux to macOS over Zenoh.
 	- [ ] **3.9** Test bidirectional RocNet message carriage and message/request behavior over Zenoh.
-- [ ] **Phase 4: LocoNet and distributed master** (current focus, in this order)
-	- [ ] **4.1** Share global power on/off and emergency stop across all nodes, and report short circuits from every node.
-	- [ ] **4.2** Share one fast clock across the mesh and show it on every node.
-	- [ ] **4.3** Keep the CLI view clear: node and power overview, event pane, decoded LocoNet log, `--plain` output.
-	- [ ] **4.4** Add the LocoNet message codec, with tests based on the LocoNet Personal Use Edition.
-	- [ ] **4.5** Add LocoNet over TCP (LbServer format) and LocoNet over USB serial.
-	- [ ] **4.6** Act as slot master on the throttle bus: throttle slots, dispatch, purge, routing to the district owner.
-	- [ ] **4.7** Pass stage 1: MacBook and Windows nodes with Rocrail over LocoNet over TCP.
+- [ ] **Phase 4: RocNet mesh** (current focus, in this order)
+	- [ ] **4.1** Share global power on/off and halt across all nodes as RocNet frames, and report short circuits from every node.
+	- [ ] **4.2** Share one fast clock across the mesh (RocNet clock group) and show it on every node.
+	- [ ] **4.3** Keep the CLI view clear: node and power overview, event pane, decoded RocNet log, `--plain` output.
+	- [ ] **4.4** Carry binary RocNet frames on routed Zenoh keys, with origin metadata for loop prevention.
+	- [ ] **4.5** Add the RocNet UDP adapter for Rocrail, with one bridge per LAN segment.
+	- [ ] **4.6** Route loco velocity and function commands to the district owner's simulated DCC-EX.
+	- [ ] **4.7** Pass stage 1: MacBook and Windows nodes with Rocrail.
 - [ ] **Phase 5: Handoff and lease**
 	- [ ] **5.1** Implement locomotive district ownership and leases, with LocoNet throttles exempt from the dead-man timeout.
 	- [ ] **5.2** Implement the transition zone state machine, seam arbitration, and the latching relay driver.
@@ -82,7 +83,7 @@ The roadmap follows the [wiki design specification](https://github.com/CuriousTi
 	- [ ] **5.4** Pass the simulation exit criteria before connecting hardware.
 - [ ] **Phase 6: Hardware drivers**
 	- [ ] **6.1** Implement and replay-test the DCC-EX serial driver using recorded transcripts.
-	- [ ] **6.2** Add the LocoNet central driver; pass stage 2 with an Intellibox Basic and IntelliSwitch over a LocoNet USB interface.
+	- [ ] **6.2** Add the LocoNet adapter (codec, USB serial and LocoNet over TCP); pass stage 2 with an Intellibox Basic and IntelliSwitch.
 	- [ ] **6.3** Bench-test on an isolated layout section before any wider trial.
 	- [ ] **6.4** Add local RocNet adapters for compatible module equipment.
 - [ ] **Phase 7: Peripherals**
@@ -90,6 +91,9 @@ The roadmap follows the [wiki design specification](https://github.com/CuriousTi
 	- [ ] **7.2** Add operator controls after the safety model is implemented.
 	- [ ] **7.3** Add ESP32 accessory controls and displays after validating the gateway approach.
 	- [ ] **7.4** Add other non-safety-critical displays and timetable features.
+- [ ] **Phase 8: FRED throttles** (deferred)
+	- [ ] **8.1** Act as slot master on the module LocoNet: throttle slots, dispatch, purge, reconnecting FREDs.
+	- [ ] **8.2** Walk-around test with real FREDs and Fredis.
 
 Phase 0 measurements are gates, not paperwork: timing assumptions and hardware behavior must be verified before safety or handoff features are treated as ready for a live layout.
 
