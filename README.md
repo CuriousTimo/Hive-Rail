@@ -155,7 +155,7 @@ Every node runs a simulated command station. Layout power requests travel betwee
 On the Windows PC, start the node with a LocoNet over TCP port for Rocrail:
 
 ```powershell
-hive-rail.exe --mode node --session bench --id windows --rocnet-address 102 --loconet-tcp 1234
+hive-rail.exe --mode node --session bench --id windows --rocnet-address 102 --loconet-tcp
 ```
 
 On the MacBook:
@@ -164,7 +164,7 @@ On the MacBook:
 cargo run -- --mode node --session bench --id mac --rocnet-address 101
 ```
 
-In Rocrail, add a LocoNet command station using LocoNet over TCP (LbServer) with host `localhost` and port `1234`. Rocrail's power on, power off and emergency stop then switch both nodes. In either dashboard:
+In Rocrail, add a LocoNet command station using LocoNet over TCP with host `localhost` and port `1234` (the default; `--loconet-tcp <port>` picks another). The node accepts both the LbServer text format and raw binary LocoNet, detected per client. Rocrail's power on, power off and emergency stop then switch both nodes. In either dashboard:
 
 | Key | Action |
 | --- | --- |

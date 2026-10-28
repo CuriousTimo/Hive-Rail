@@ -62,13 +62,13 @@ fn print_help() {
          cargo run -- --mode node --session <name> --id <id> [--listen <endpoint> | --connect <endpoint>]\n\
          cargo run -- --mode node --session <name> --id <id> --rocnet-address <0-65535> --identify\n\
          cargo run -- --mode node --session <name> --id <id> --send-rocnet-hex <@frame>\n\
-         cargo run -- --mode node --session <name> --id <id> --loconet-tcp <port>\n\
+         cargo run -- --mode node --session <name> --id <id> --loconet-tcp [port]\n\
          cargo run -- --mode node --session <name> --id <id> --plain\n\
          cargo run -- --validate-profile <path>\n\
          cargo run -- --help\n\n\
          Interactive node mode shows a neighbor/heartbeat dashboard; --plain keeps log output.\n\
          Dashboard keys: 1 layout power on, 0 layout power off, h emergency stop, s simulate short.\n\
-         --loconet-tcp serves LocoNet over TCP (LbServer format) for Rocrail or JMRI;\n\
+         --loconet-tcp serves LocoNet over TCP for Rocrail or JMRI, on port 1234 unless given;\n\
          --rocnet-address sets this node's RocNet ID (default 100).\n\
          Node mode uses Zenoh LAN peer scouting and can exchange simulation RocNet frames.\n\
          No local RocNet transport or railway hardware is connected."

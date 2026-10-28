@@ -29,6 +29,7 @@ const HEARTBEAT_TIMEOUT: Duration = Duration::from_millis(750);
 const ZENOH_SCOUTING_ADDRESS: &str = "224.0.0.224:7446";
 const MAX_CLI_LINES: usize = 200;
 const DEFAULT_ROCNET_ID: u16 = 100;
+const DEFAULT_LOCONET_TCP_PORT: u16 = 1234;
 
 #[derive(Debug)]
 struct NodeArgs {
@@ -546,7 +547,7 @@ fn parse_args(args: Vec<String>) -> Result<NodeArgs, Box<dyn Error + Send + Sync
     let mut send_rocnet_hex = None;
     let mut loconet_tcp = None;
     let mut plain = false;
-    let mut args = args.into_iter();
+    let mut args = args.into_iter().peekable();
 
     while let Some(flag) = args.next() {
         match flag.as_str() {
@@ -564,7 +565,11 @@ fn parse_args(args: Vec<String>) -> Result<NodeArgs, Box<dyn Error + Send + Sync
                 })?);
             }
             "--loconet-tcp" => {
-                let value = next_value(&mut args, &flag)?;
+                // The port is optional; LocoNet over TCP uses 1234 by convention.
+                let Some(value) = args.next_if(|value| !value.starts_with("--")) else {
+                    loconet_tcp = Some(DEFAULT_LOCONET_TCP_PORT);
+                    continue;
+                };
                 loconet_tcp = Some(value.parse::<u16>().map_err(|_| {
                     format!(
                         "invalid LocoNet TCP port '{value}'; expected an integer from 1 to 65535"
@@ -647,6 +652,15 @@ mod tests {
         let mut invalid: Vec<String> = base.iter().map(|arg| (*arg).to_owned()).collect();
         invalid.push("port".into());
         assert!(parse_args(invalid).is_err());
+
+        let without_port: Vec<String> = base.iter().map(|arg| (*arg).to_owned()).collect();
+        assert_eq!(parse_args(without_port).unwrap().loconet_tcp, Some(1234));
+
+        let mut followed_by_flag: Vec<String> = base.iter().map(|arg| (*arg).to_owned()).collect();
+        followed_by_flag.push("--plain".into());
+        let parsed = parse_args(followed_by_flag).unwrap();
+        assert_eq!(parsed.loconet_tcp, Some(1234));
+        assert!(parsed.plain);
     }
 
     #[test]
