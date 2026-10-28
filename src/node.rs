@@ -48,6 +48,9 @@ struct Heartbeat {
     node: String,
     seq: u64,
     power: String,
+    // Missing in heartbeats from nodes built before RocNet IDs were shared.
+    #[serde(default)]
+    rocnet_id: Option<u16>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -62,6 +65,7 @@ struct PeerState {
     online: bool,
     sequence: u64,
     power: String,
+    rocnet_id: Option<u16>,
 }
 
 /// Where a power request came from, which decides where it still has to be sent.
@@ -231,6 +235,7 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                     node: options.id.clone(),
                     seq: sequence,
                     power: power.station.state().label().to_owned(),
+                    rocnet_id: Some(rocnet_id),
                 };
                 publisher.put(serde_json::to_vec(&message)?).await?;
                 for peer_id in refresh_peer_states(&mut peers) {
@@ -267,13 +272,28 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                         online: true,
                         sequence: message.seq,
                         power: message.power.clone(),
+                        rocnet_id: message.rocnet_id,
                     });
                     match previous {
                         Some((true, previous_power)) if previous_power != message.power => {
                             log.event(format!("Peer {} district power {} -> {}", message.node, previous_power, message.power));
                         }
                         Some((true, _)) => {}
-                        _ => log.event(format!("Peer {} online (seq {}, power {})", message.node, message.seq, message.power)),
+                        _ => {
+                            log.event(format!(
+                                "Peer {} online (RocNet {}, seq {}, power {})",
+                                message.node,
+                                message.rocnet_id.map_or_else(|| "unknown".to_owned(), |id| id.to_string()),
+                                message.seq,
+                                message.power
+                            ));
+                            if message.rocnet_id == Some(rocnet_id) {
+                                log.event(format!(
+                                    "WARNING peer {} uses the same RocNet ID {rocnet_id} as this node; give each node its own --rocnet-address",
+                                    message.node
+                                ));
+                            }
+                        }
                     }
                 }
             }
@@ -364,6 +384,7 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                         last_seen: now.duration_since(peer.last_seen),
                         sequence: peer.sequence,
                         power: peer.power.clone(),
+                        rocnet_id: peer.rocnet_id,
                     }).collect();
                     ui.draw(&Dashboard {
                         session: options.session.clone(),
@@ -582,8 +603,8 @@ fn next_value(
 #[cfg(test)]
 mod tests {
     use super::{
-        format_rocnet_received_line, parse_args, record_cli_line, refresh_peer_states, PeerState,
-        HEARTBEAT_TIMEOUT, MAX_CLI_LINES, ZENOH_SCOUTING_ADDRESS,
+        format_rocnet_received_line, parse_args, record_cli_line, refresh_peer_states, Heartbeat,
+        PeerState, HEARTBEAT_TIMEOUT, MAX_CLI_LINES, ZENOH_SCOUTING_ADDRESS,
     };
     use crate::rocnet::RocNetFrame;
     use std::{
@@ -666,6 +687,18 @@ mod tests {
     }
 
     #[test]
+    fn heartbeat_carries_rocnet_id_and_accepts_older_nodes() {
+        let current: Heartbeat =
+            serde_json::from_str(r#"{"node":"windows","seq":7,"power":"ON","rocnet_id":102}"#)
+                .unwrap();
+        assert_eq!(current.rocnet_id, Some(102));
+
+        let older: Heartbeat =
+            serde_json::from_str(r#"{"node":"windows","seq":7,"power":"ON"}"#).unwrap();
+        assert_eq!(older.rocnet_id, None);
+    }
+
+    #[test]
     fn stale_peers_are_reported_once_and_remain_stale() {
         let mut peers = HashMap::from([(
             "node-b".to_owned(),
@@ -674,6 +707,7 @@ mod tests {
                 online: true,
                 sequence: 10,
                 power: "Normal".to_owned(),
+                rocnet_id: Some(102),
             },
         )]);
 

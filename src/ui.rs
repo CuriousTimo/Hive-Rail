@@ -24,6 +24,7 @@ pub struct PeerRow {
     pub last_seen: Duration,
     pub sequence: u64,
     pub power: String,
+    pub rocnet_id: Option<u16>,
 }
 
 pub struct Dashboard {
@@ -168,6 +169,10 @@ fn render(frame: &mut Frame<'_>, dashboard: &Dashboard, scroll_back: usize) {
         };
         Row::new(vec![
             Cell::from(peer.id.clone()),
+            Cell::from(
+                peer.rocnet_id
+                    .map_or_else(|| "-".to_owned(), |id| id.to_string()),
+            ),
             Cell::from(Span::styled(
                 label,
                 Style::default().fg(color).add_modifier(Modifier::BOLD),
@@ -180,9 +185,10 @@ fn render(frame: &mut Frame<'_>, dashboard: &Dashboard, scroll_back: usize) {
     let peers = Table::new(
         rows,
         [
-            Constraint::Percentage(32),
-            Constraint::Percentage(20),
-            Constraint::Percentage(20),
+            Constraint::Percentage(26),
+            Constraint::Percentage(10),
+            Constraint::Percentage(18),
+            Constraint::Percentage(18),
             Constraint::Percentage(12),
             Constraint::Percentage(16),
         ],
@@ -190,6 +196,7 @@ fn render(frame: &mut Frame<'_>, dashboard: &Dashboard, scroll_back: usize) {
     .header(
         Row::new([
             "Neighbor node",
+            "RocNet",
             "Heartbeat",
             "Last seen",
             "Sequence",
