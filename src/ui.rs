@@ -1,4 +1,7 @@
-use crate::power::{PowerRequest, PowerState};
+use crate::{
+    locos::LocoInfo,
+    power::{PowerRequest, PowerState},
+};
 use chrono::Local;
 use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
@@ -25,6 +28,7 @@ pub struct PeerRow {
     pub sequence: u64,
     pub power: String,
     pub rocnet_id: Option<u16>,
+    pub locos: Vec<LocoInfo>,
 }
 
 pub struct Dashboard {
@@ -32,6 +36,8 @@ pub struct Dashboard {
     pub node_id: String,
     pub rocnet_id: u16,
     pub local_power: PowerState,
+    pub local_sequence: u64,
+    pub local_locos: Vec<LocoInfo>,
     pub last_request: String,
     pub clock: String,
     pub loconet: String,
@@ -56,12 +62,18 @@ pub enum UiCommand {
     GlobalStop,
     Clock(ClockChange),
     SimulateShort,
+    /// Forget a stale peer; the node refuses this for a peer that is still online.
+    RemovePeer(String),
 }
 
 pub struct TerminalUi {
     terminal: Terminal<CrosstermBackend<Stdout>>,
     _guard: TerminalGuard,
     scroll_back: usize,
+    /// Selected row in the node table; row 0 is this node.
+    selected: usize,
+    /// Peer IDs in the order last drawn, after this node's row.
+    peer_ids: Vec<String>,
 }
 
 struct TerminalGuard;
@@ -77,6 +89,8 @@ impl TerminalUi {
             terminal,
             _guard: guard,
             scroll_back: 0,
+            selected: 0,
+            peer_ids: Vec::new(),
         })
     }
 
@@ -106,10 +120,23 @@ impl TerminalUi {
                 KeyCode::Char(']') => return Ok(UiCommand::Clock(ClockChange::Hours(1))),
                 KeyCode::Char('[') => return Ok(UiCommand::Clock(ClockChange::Hours(-1))),
                 KeyCode::Char('s') => return Ok(UiCommand::SimulateShort),
+                KeyCode::Char('x') | KeyCode::Delete | KeyCode::Backspace => {
+                    if let Some(peer_id) = self
+                        .selected
+                        .checked_sub(1)
+                        .and_then(|index| self.peer_ids.get(index))
+                    {
+                        return Ok(UiCommand::RemovePeer(peer_id.clone()));
+                    }
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    self.selected = self.selected.saturating_sub(1);
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    self.selected = (self.selected + 1).min(self.peer_ids.len());
+                }
                 KeyCode::PageUp => self.scroll_back = self.scroll_back.saturating_add(5),
-                KeyCode::Up => self.scroll_back = self.scroll_back.saturating_add(1),
                 KeyCode::PageDown => self.scroll_back = self.scroll_back.saturating_sub(5),
-                KeyCode::Down => self.scroll_back = self.scroll_back.saturating_sub(1),
                 KeyCode::End => self.scroll_back = 0,
                 KeyCode::Home => self.scroll_back = usize::MAX,
                 _ => {}
@@ -119,9 +146,24 @@ impl TerminalUi {
     }
 
     pub fn draw(&mut self, dashboard: &Dashboard) -> io::Result<()> {
+        // Keep the cursor on the same peer when peers are added or removed.
+        let selected_id = self
+            .selected
+            .checked_sub(1)
+            .and_then(|index| self.peer_ids.get(index))
+            .cloned();
+        self.peer_ids = dashboard.peers.iter().map(|peer| peer.id.clone()).collect();
+        self.selected = match selected_id {
+            Some(id) => match self.peer_ids.iter().position(|peer_id| *peer_id == id) {
+                Some(index) => index + 1,
+                None => self.selected.min(self.peer_ids.len()),
+            },
+            None => 0,
+        };
         let scroll_back = self.scroll_back;
+        let selected = self.selected;
         self.terminal
-            .draw(|frame| render(frame, dashboard, scroll_back))?;
+            .draw(|frame| render(frame, dashboard, scroll_back, selected))?;
         Ok(())
     }
 }
@@ -133,7 +175,7 @@ impl Drop for TerminalGuard {
     }
 }
 
-fn render(frame: &mut Frame<'_>, dashboard: &Dashboard, scroll_back: usize) {
+fn render(frame: &mut Frame<'_>, dashboard: &Dashboard, scroll_back: usize, selected: usize) {
     let areas = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -188,27 +230,41 @@ fn render(frame: &mut Frame<'_>, dashboard: &Dashboard, scroll_back: usize) {
     );
     frame.render_widget(title, areas[0]);
 
-    let rows = dashboard.peers.iter().map(|peer| {
+    let mut rows = vec![node_row(
+        format!("{} (this node)", dashboard.node_id),
+        Some(dashboard.rocnet_id),
+        Span::styled(
+            "LOCAL",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        "-".to_owned(),
+        dashboard.local_sequence,
+        dashboard.local_power.label(),
+        selected == 0,
+    )];
+    rows.extend(loco_rows(&dashboard.local_locos));
+    for (index, peer) in dashboard.peers.iter().enumerate() {
         let (label, color) = if peer.online {
             ("ONLINE", Color::Green)
         } else {
             ("STALE / STOP", Color::Red)
         };
-        Row::new(vec![
-            Cell::from(peer.id.clone()),
-            Cell::from(
-                peer.rocnet_id
-                    .map_or_else(|| "-".to_owned(), |id| id.to_string()),
-            ),
-            Cell::from(Span::styled(
+        rows.push(node_row(
+            peer.id.clone(),
+            peer.rocnet_id,
+            Span::styled(
                 label,
                 Style::default().fg(color).add_modifier(Modifier::BOLD),
-            )),
-            Cell::from(format_age(peer.last_seen)),
-            Cell::from(peer.sequence.to_string()),
-            Cell::from(Span::styled(peer.power.clone(), power_style(&peer.power))),
-        ])
-    });
+            ),
+            format_age(peer.last_seen),
+            peer.sequence,
+            &peer.power,
+            selected == index + 1,
+        ));
+        rows.extend(loco_rows(&peer.locos));
+    }
     let peers = Table::new(
         rows,
         [
@@ -222,19 +278,19 @@ fn render(frame: &mut Frame<'_>, dashboard: &Dashboard, scroll_back: usize) {
     )
     .header(
         Row::new([
-            "Neighbor node",
+            "Node / loco",
             "RocNet",
             "Heartbeat",
             "Last seen",
             "Sequence",
-            "Power",
+            "Power / F0-F4",
         ])
         .style(Style::default().add_modifier(Modifier::BOLD)),
     )
     .block(
         Block::default()
             .borders(Borders::ALL)
-            .title("LAN neighbors"),
+            .title("Nodes (Up/Down select, x remove stale peer)"),
     );
     frame.render_widget(peers, areas[1]);
 
@@ -242,7 +298,7 @@ fn render(frame: &mut Frame<'_>, dashboard: &Dashboard, scroll_back: usize) {
     let max_log_scroll = dashboard.cli_output.len().saturating_sub(visible_log_lines);
     let log_scroll = max_log_scroll.saturating_sub(scroll_back.min(max_log_scroll));
     let log_title = format!(
-        "Raw CLI output ({}/{}; Up/Down, PgUp/PgDn, Home/End)",
+        "Raw CLI output ({}/{}; PgUp/PgDn, Home/End)",
         log_scroll
             .saturating_add(1)
             .min(dashboard.cli_output.len().max(1)),
@@ -286,13 +342,82 @@ fn render(frame: &mut Frame<'_>, dashboard: &Dashboard, scroll_back: usize) {
             Style::default().fg(Color::Gray),
         )),
         Line::from(Span::styled(
-            "Up/Down, PgUp/PgDn  Scroll log  |  Home/End  Oldest/latest  |  q  Quit",
+            "Up/Down (k/j)  Select node  |  x  Remove stale peer  |  PgUp/PgDn  Scroll log  |  Home/End  Oldest/latest  |  q  Quit",
             Style::default().fg(Color::Gray),
         )),
     ])
     .wrap(Wrap { trim: true })
     .block(Block::default().borders(Borders::ALL).title("Status"));
     frame.render_widget(footer, areas[3]);
+}
+
+fn node_row(
+    id: String,
+    rocnet_id: Option<u16>,
+    heartbeat: Span<'static>,
+    last_seen: String,
+    sequence: u64,
+    power: &str,
+    selected: bool,
+) -> Row<'static> {
+    let marker = if selected { "▶ " } else { "  " };
+    let row = Row::new(vec![
+        Cell::from(format!("{marker}{id}")),
+        Cell::from(rocnet_id.map_or_else(|| "-".to_owned(), |id| id.to_string())),
+        Cell::from(heartbeat),
+        Cell::from(last_seen),
+        Cell::from(sequence.to_string()),
+        Cell::from(Span::styled(power.to_owned(), power_style(power))),
+    ]);
+    if selected {
+        row.style(Style::default().add_modifier(Modifier::REVERSED))
+    } else {
+        row
+    }
+}
+
+/// One indented row per loco under its node: direction and speed.
+fn loco_rows(locos: &[LocoInfo]) -> impl Iterator<Item = Row<'static>> + '_ {
+    locos.iter().map(|loco| {
+        let speed_color = match loco.speed {
+            0 => Color::Gray,
+            1 => Color::Red,
+            _ => Color::Green,
+        };
+        Row::new(vec![
+            Cell::from(format!("    └ {}", loco.label())),
+            Cell::from(""),
+            Cell::from(Span::styled(
+                format!(
+                    "{} {}",
+                    if loco.forward { "▶" } else { "◀" },
+                    loco.direction()
+                ),
+                Style::default().fg(Color::Cyan),
+            )),
+            Cell::from(Span::styled(
+                loco.speed_label(),
+                Style::default()
+                    .fg(speed_color)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Cell::from(""),
+            Cell::from(Line::from(
+                (0..=4)
+                    .map(|number| {
+                        let style = if loco.function_on(number) {
+                            Style::default()
+                                .fg(Color::Yellow)
+                                .add_modifier(Modifier::BOLD)
+                        } else {
+                            Style::default().fg(Color::DarkGray)
+                        };
+                        Span::styled(format!("F{number} "), style)
+                    })
+                    .collect::<Vec<_>>(),
+            )),
+        ])
+    })
 }
 
 fn power_style(label: &str) -> Style {

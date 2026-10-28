@@ -7,6 +7,8 @@ const OPC_GPON: u8 = 0x83;
 const OPC_IDLE: u8 = 0x85;
 const OPC_LOCO_SPD: u8 = 0xA0;
 const OPC_LOCO_DIRF: u8 = 0xA1;
+const OPC_LOCO_SND: u8 = 0xA2;
+const OPC_LOCO_F9F12: u8 = 0xA3;
 const OPC_SW_REQ: u8 = 0xB0;
 const OPC_INPUT_REP: u8 = 0xB2;
 const OPC_LONG_ACK: u8 = 0xB4;
@@ -111,9 +113,23 @@ impl LocoNetMessage {
 
     /// Writes slot 123 so every throttle and central follows Hive-Rail's clock.
     pub fn fast_clock_write(hour: u8, minute: u8, rate: u8, track_status: u8) -> Self {
+        Self::fast_clock_slot(OPC_WR_SL_DATA, hour, minute, rate, track_status)
+    }
+
+    /// Answers a client's `RQ_SL_DATA` for slot 123; Rocrail reads the clock this way.
+    pub fn fast_clock_read(hour: u8, minute: u8, rate: u8, track_status: u8) -> Self {
+        Self::fast_clock_slot(OPC_SL_RD_DATA, hour, minute, rate, track_status)
+    }
+
+    /// Whether this is a client's request for the fast clock slot.
+    pub fn is_fast_clock_request(&self) -> bool {
+        self.opcode() == OPC_RQ_SL_DATA && self.bytes[1] == FAST_CLOCK_SLOT
+    }
+
+    fn fast_clock_slot(opcode: u8, hour: u8, minute: u8, rate: u8, track_status: u8) -> Self {
         let [id1, id2] = HIVE_RAIL_CLOCK_ID;
         Self::with_checksum(&[
-            OPC_WR_SL_DATA,
+            opcode,
             0x0E,
             FAST_CLOCK_SLOT,
             rate & 0x7F,
@@ -127,6 +143,43 @@ impl LocoNetMessage {
             id1,
             id2,
         ])
+    }
+
+    /// A loco slot as the command station reports it: the answer to `LOCO_ADR`,
+    /// `RQ_SL_DATA` and `MOVE_SLOTS`.
+    pub fn loco_slot_read(
+        slot: u8,
+        status: u8,
+        address: u16,
+        speed: u8,
+        dirf: u8,
+        track_status: u8,
+    ) -> Self {
+        Self::with_checksum(&[
+            OPC_SL_RD_DATA,
+            0x0E,
+            slot & 0x7F,
+            status & 0x7F,
+            (address & 0x7F) as u8,
+            speed & 0x7F,
+            dirf & 0x7F,
+            track_status & 0x7F,
+            0x00,
+            (address >> 7 & 0x7F) as u8,
+            0x00,
+            0x00,
+            0x00,
+        ])
+    }
+
+    /// Asks the slot master for a slot's contents.
+    pub fn request_slot_data(slot: u8) -> Self {
+        Self::with_checksum(&[OPC_RQ_SL_DATA, slot & 0x7F, 0x00])
+    }
+
+    /// Acknowledges or refuses a request; `code` 0 means refused.
+    pub fn long_ack(opcode: u8, code: u8) -> Self {
+        Self::with_checksum(&[OPC_LONG_ACK, opcode & 0x7F, code & 0x7F])
     }
 
     /// Slot 123 contents from a slot read or write.
@@ -204,14 +257,29 @@ impl LocoNetMessage {
             OPC_GPON => "GPON        power on".into(),
             OPC_IDLE => "IDLE        emergency stop".into(),
             OPC_LOCO_SPD => format!("LOCO_SPD    slot {} speed {}", b[1], b[2]),
+            // DIRF: 0 0 DIR F0 F4 F3 F2 F1; DIR set means reverse.
             OPC_LOCO_DIRF => format!(
-                "LOCO_DIRF   slot {} {}",
+                "LOCO_DIRF   slot {} {}, F0-F4 on: {}",
                 b[1],
                 if b[2] & 0x20 != 0 {
-                    "forward"
-                } else {
                     "reverse"
-                }
+                } else {
+                    "forward"
+                },
+                functions_on(
+                    &[(0x10, 0), (0x01, 1), (0x02, 2), (0x04, 3), (0x08, 4)],
+                    b[2]
+                )
+            ),
+            OPC_LOCO_SND => format!(
+                "LOCO_SND    slot {}, F5-F8 on: {}",
+                b[1],
+                functions_on(&[(0x01, 5), (0x02, 6), (0x04, 7), (0x08, 8)], b[2])
+            ),
+            OPC_LOCO_F9F12 => format!(
+                "LOCO_F9F12  slot {}, F9-F12 on: {}",
+                b[1],
+                functions_on(&[(0x01, 9), (0x02, 10), (0x04, 11), (0x08, 12)], b[2])
             ),
             OPC_SW_REQ => format!(
                 "SW_REQ      switch {} {} {}",
@@ -291,6 +359,20 @@ impl StreamDecoder {
             messages.push(LocoNetMessage::from_bytes(&bytes));
         }
         messages
+    }
+}
+
+/// Lists the functions whose bit is set, as `F1 F3`, or `none`.
+fn functions_on(bits: &[(u8, u8)], value: u8) -> String {
+    let on: Vec<String> = bits
+        .iter()
+        .filter(|(mask, _)| value & mask != 0)
+        .map(|(_, number)| format!("F{number}"))
+        .collect();
+    if on.is_empty() {
+        "none".into()
+    } else {
+        on.join(" ")
     }
 }
 
@@ -393,6 +475,25 @@ mod tests {
         let slot_read =
             LocoNetMessage::from_hex("E7 0E 05 23 0C 00 20 07 00 00 00 00 00 1B").unwrap();
         assert_eq!(slot_read.describe(), "SL_RD_DATA  slot 5");
+
+        // Recorded from Rocrail over LocoNet TCP: slot 1 forward with F1 and F2 on.
+        let dirf = LocoNetMessage::from_hex("A1 01 03 5C").unwrap();
+        assert_eq!(
+            dirf.describe(),
+            "LOCO_DIRF   slot 1 forward, F0-F4 on: F1 F2"
+        );
+
+        let reverse = LocoNetMessage::from_hex("A1 01 30 6F").unwrap();
+        assert_eq!(
+            reverse.describe(),
+            "LOCO_DIRF   slot 1 reverse, F0-F4 on: F0"
+        );
+
+        let sound = LocoNetMessage::from_hex("A2 01 00 5C").unwrap();
+        assert_eq!(sound.describe(), "LOCO_SND    slot 1, F5-F8 on: none");
+
+        let f9 = LocoNetMessage::from_hex("A3 01 05 58").unwrap();
+        assert_eq!(f9.describe(), "LOCO_F9F12  slot 1, F9-F12 on: F9 F11");
     }
 
     #[test]
@@ -417,6 +518,18 @@ mod tests {
         );
 
         // Hive-Rail's write differs from Rocrail's only in the setter ID.
+        let read = LocoNetMessage::fast_clock_read(9, 5, 4, 0x07);
+        assert_eq!(
+            read.describe(),
+            "SL_RD_DATA  fast clock 09:05 x4, set by 7F 7E"
+        );
+        assert!(LocoNetMessage::from_hex("BB 7B 00 3F")
+            .unwrap()
+            .is_fast_clock_request());
+        assert!(!LocoNetMessage::from_hex("BB 01 00 45")
+            .unwrap()
+            .is_fast_clock_request());
+
         let ours = LocoNetMessage::fast_clock_write(14, 23, 1, 0x04);
         assert_eq!(ours.to_hex(), "EF 0E 7B 01 7F 7F 5A 04 76 00 70 7F 7E 3D");
         for minute in 0..60 {

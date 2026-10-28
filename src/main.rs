@@ -1,6 +1,7 @@
 mod clock;
 mod lbserver;
 mod loconet;
+mod locos;
 mod node;
 mod power;
 mod profile;

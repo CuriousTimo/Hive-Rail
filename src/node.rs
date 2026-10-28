@@ -2,6 +2,7 @@ use crate::{
     clock::FastClock,
     lbserver::{self, LbEvent, LbServerHandle},
     loconet::{LocoNetMessage, HIVE_RAIL_CLOCK_ID},
+    locos::{LocoInfo, LocoTable},
     power::{PowerRequest, PowerState, SimulatedCommandStation},
     rocnet::{ClockAction, ClockUpdate, RocNetFrame},
     ui::{ClockChange, Dashboard, PeerRow, TerminalUi, UiCommand},
@@ -53,6 +54,9 @@ struct Heartbeat {
     // Missing in heartbeats from nodes built before RocNet IDs were shared.
     #[serde(default)]
     rocnet_id: Option<u16>,
+    // Missing in heartbeats from nodes built before locos were shared.
+    #[serde(default)]
+    locos: Vec<LocoInfo>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -68,6 +72,7 @@ struct PeerState {
     sequence: u64,
     power: String,
     rocnet_id: Option<u16>,
+    locos: Vec<LocoInfo>,
 }
 
 /// Where a power request came from, which decides where it still has to be echoed.
@@ -181,6 +186,7 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
         None => (None, None),
     };
     let mut loconet_clients = 0_usize;
+    let mut locos = LocoTable::default();
     let outputs = PowerOutputs {
         node_id: &options.id,
         rocnet_id,
@@ -251,6 +257,7 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                     seq: sequence,
                     power: power.station.state().label().to_owned(),
                     rocnet_id: Some(rocnet_id),
+                    locos: locos.locos(),
                 };
                 publisher.put(serde_json::to_vec(&message)?).await?;
                 for peer_id in refresh_peer_states(&mut peers) {
@@ -288,6 +295,7 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                         sequence: message.seq,
                         power: message.power.clone(),
                         rocnet_id: message.rocnet_id,
+                        locos: message.locos,
                     });
                     match previous {
                         Some((true, previous_power)) if previous_power != message.power => {
@@ -360,6 +368,8 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                     log.event(format!("LocoNet client {peer} connected"));
                 }
                 Some(LbEvent::FormatDetected { peer, format }) => {
+                    // Messages are skipped until the format is known; send the clock now.
+                    clock_written = None;
                     log.event(format!("LocoNet client {peer} uses the {format} format"));
                 }
                 Some(LbEvent::Disconnected { peer, reason }) => {
@@ -372,9 +382,28 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                 }
                 Some(LbEvent::Received { peer, message }) => {
                     log.line(format!("[ln  ] <- {}  {}  from {peer}", message.to_hex(), message.describe()));
+                    for reply in locos.apply(&message, loconet_track_status(power.station.state())) {
+                        if let Some(server) = outputs.loconet {
+                            server.send(&reply);
+                            log.line(format!("[ln  ] -> {}  {}", reply.to_hex(), reply.describe()));
+                        }
+                    }
                     if let Some(request) = message.power_request_kind() {
                         let origin = format!("{} LocoNet", options.id);
                         handle_power_request(request, RequestSource::LocoNet, &origin, &mut power, &outputs, &mut log).await?;
+                    }
+                    if message.is_fast_clock_request() && clock.known() {
+                        let minute = clock.minute_of_day(Instant::now());
+                        let reply = LocoNetMessage::fast_clock_read(
+                            (minute / 60) as u8,
+                            (minute % 60) as u8,
+                            if clock.running() { clock.rate() } else { 0 },
+                            loconet_track_status(power.station.state()),
+                        );
+                        if let Some(server) = outputs.loconet {
+                            server.send(&reply);
+                            log.line(format!("[ln  ] -> {}  {}", reply.to_hex(), reply.describe()));
+                        }
                     }
                     if let Some(slot) = message.fast_clock() {
                         if slot.valid && slot.setter != HIVE_RAIL_CLOCK_ID && message.opcode() == 0xEF && clock_writers_warned.insert(peer) {
@@ -463,6 +492,16 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                         log.event(format!("Fast clock set here: {was} -> {}", clock.label(now)));
                         publish_clock(&clock_publisher, rocnet_id, ClockAction::Set, &clock, &mut log).await?;
                     }
+                    UiCommand::RemovePeer(peer_id) => match peers.get(&peer_id) {
+                        Some(peer) if peer.online => {
+                            log.event(format!("Peer {peer_id} is online; only stale peers can be removed"));
+                        }
+                        Some(_) => {
+                            peers.remove(&peer_id);
+                            log.event(format!("Removed stale peer {peer_id}; it returns if its heartbeat resumes"));
+                        }
+                        None => {}
+                    },
                     UiCommand::SimulateShort => {
                         if power.station.simulate_short() {
                             log.event("SHORT in this district: power lost without request (simulated)".to_owned());
@@ -479,19 +518,24 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                 }
                 if let Some(ui) = tui.as_mut() {
                     let now = Instant::now();
-                    let peers = peers.iter().map(|(id, peer)| PeerRow {
+                    let mut peers: Vec<PeerRow> = peers.iter().map(|(id, peer)| PeerRow {
                         id: id.clone(),
                         online: peer.online,
                         last_seen: now.duration_since(peer.last_seen),
                         sequence: peer.sequence,
                         power: peer.power.clone(),
                         rocnet_id: peer.rocnet_id,
+                        locos: peer.locos.clone(),
                     }).collect();
+                    // A fixed order keeps the cursor on the same peer between frames.
+                    peers.sort_by(|a, b| a.id.cmp(&b.id));
                     ui.draw(&Dashboard {
                         session: options.session.clone(),
                         node_id: options.id.clone(),
                         rocnet_id,
                         local_power: power.station.state(),
+                        local_sequence: sequence,
+                        local_locos: locos.locos(),
                         last_request: power.last_request.clone(),
                         clock: clock.label(Instant::now()),
                         loconet: match options.loconet_tcp {
@@ -836,6 +880,16 @@ mod tests {
         let older: Heartbeat =
             serde_json::from_str(r#"{"node":"windows","seq":7,"power":"ON"}"#).unwrap();
         assert_eq!(older.rocnet_id, None);
+        assert!(older.locos.is_empty());
+
+        let with_locos: Heartbeat = serde_json::from_str(
+            r#"{"node":"mac","seq":3,"power":"ON","rocnet_id":101,"locos":[{"slot":1,"address":3,"speed":41,"forward":false,"functions":3}]}"#,
+        )
+        .unwrap();
+        assert_eq!(with_locos.locos[0].label(), "loco 3");
+        assert_eq!(with_locos.locos[0].direction(), "reverse");
+        assert_eq!(with_locos.locos[0].speed_label(), "speed 40");
+        assert!(with_locos.locos[0].function_on(0) && with_locos.locos[0].function_on(1));
     }
 
     #[test]
@@ -848,6 +902,7 @@ mod tests {
                 sequence: 10,
                 power: "Normal".to_owned(),
                 rocnet_id: Some(102),
+                locos: Vec::new(),
             },
         )]);
 

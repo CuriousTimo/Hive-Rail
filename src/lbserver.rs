@@ -129,11 +129,14 @@ struct Client {
 }
 
 impl Client {
-    /// Writes a bus message in this client's format. Text is used until the format is known.
+    /// Writes a bus message in this client's format. Until the client has sent something
+    /// its format is unknown and bus messages are skipped: text sent to a binary client
+    /// such as Rocrail would be read as garbage.
     async fn write_message(&mut self, message: &LocoNetMessage) -> io::Result<()> {
         match self.format {
+            None => Ok(()),
             Some(ClientFormat::Binary) => self.writer.write_all(message.as_bytes()).await,
-            Some(ClientFormat::Text) | None => {
+            Some(ClientFormat::Text) => {
                 self.writer
                     .write_all(format!("RECEIVE {}\r\n", message.to_hex()).as_bytes())
                     .await

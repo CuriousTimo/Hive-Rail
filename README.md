@@ -129,7 +129,7 @@ Pushing a tag such as `v0.1.0-beta.1` runs the same checks, builds a native desk
 
 Start one node on each computer on the same LAN. Both must use the same session name and distinct node IDs. In peer mode, Zenoh's native multicast scouting discovers peers automatically; manual endpoints are optional overrides.
 
-When run in an interactive terminal, node mode opens a dashboard with the fast clock, this district's power and the last power request, the LocoNet status, discovered neighbors with their RocNet ID, heartbeat age/state, sequence, and reported power state. The **Raw CLI output** pane retains up to 200 lines; use `Up`/`Down` or `PgUp`/`PgDn` to scroll, `Home` for the oldest line, and `End` to follow the latest. Press `q`, `Esc`, or `Ctrl+C` to exit. Add `--plain` for log output in scripts or non-interactive terminals.
+When run in an interactive terminal, node mode opens a dashboard with the fast clock, this district's power and the last power request, and the LocoNet status. The node table lists this node first, then the discovered neighbors with their RocNet ID, heartbeat age/state, sequence, and reported power state. Under each node it lists the locos driven through that node's LocoNet by address, with direction, speed and F0 to F4. Use `Up`/`Down` to select a node and `x` (or `Delete`) to remove a stale neighbor; it returns if its heartbeat resumes. The **Raw CLI output** pane retains up to 200 lines; use `PgUp`/`PgDn` to scroll, `Home` for the oldest line, and `End` to follow the latest. Press `q`, `Esc`, or `Ctrl+C` to exit. Add `--plain` for log output in scripts or non-interactive terminals.
 
 On macOS:
 
@@ -175,7 +175,7 @@ On the MacBook:
 cargo run -- --mode node --session bench --id mac --rocnet-address 101
 ```
 
-In Rocrail, add a LocoNet command station using LocoNet over TCP with host `localhost` and port `1234` (the default; `--loconet-tcp <port>` picks another). The node accepts both the LbServer text format and raw binary LocoNet, detected per client. Rocrail's power on, power off and emergency stop then switch the district of the node it is connected to; the other node shows the change. In either dashboard:
+In Rocrail, add a LocoNet command station using LocoNet over TCP with host `localhost` and port `1234` (the default; `--loconet-tcp <port>` picks another). The node accepts both the LbServer text format and raw binary LocoNet, detected per client. The node is the slot master for its district: it answers `LOCO_ADR` and assigns the slots, so turn off Rocrail's own LocoNet slot server; otherwise Rocrail never asks for a loco address and the dashboard cannot show it. Rocrail's power on, power off and emergency stop then switch the district of the node it is connected to; the other node shows the change. In either dashboard:
 
 | Key | Action |
 | --- | --- |
