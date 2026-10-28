@@ -1,3 +1,4 @@
+use crate::power::{PowerRequest, PowerState};
 use chrono::Local;
 use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
@@ -28,11 +29,22 @@ pub struct PeerRow {
 pub struct Dashboard {
     pub session: String,
     pub node_id: String,
+    pub rocnet_id: u16,
+    pub local_power: PowerState,
+    pub layout_power: String,
+    pub loconet: String,
     pub scouting: String,
     pub heartbeat_interval: Duration,
     pub last_event: String,
     pub peers: Vec<PeerRow>,
     pub cli_output: Vec<String>,
+}
+
+pub enum UiCommand {
+    None,
+    Quit,
+    Power(PowerRequest),
+    SimulateShort,
 }
 
 pub struct TerminalUi {
@@ -57,7 +69,7 @@ impl TerminalUi {
         })
     }
 
-    pub fn handle_input(&mut self) -> io::Result<bool> {
+    pub fn handle_input(&mut self) -> io::Result<UiCommand> {
         while event::poll(Duration::ZERO)? {
             let Event::Key(key) = event::read()? else {
                 continue;
@@ -67,10 +79,14 @@ impl TerminalUi {
             }
 
             match key.code {
-                KeyCode::Char('q') | KeyCode::Esc => return Ok(true),
+                KeyCode::Char('q') | KeyCode::Esc => return Ok(UiCommand::Quit),
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                    return Ok(true);
+                    return Ok(UiCommand::Quit);
                 }
+                KeyCode::Char('1') => return Ok(UiCommand::Power(PowerRequest::On)),
+                KeyCode::Char('0') => return Ok(UiCommand::Power(PowerRequest::Off)),
+                KeyCode::Char('h') => return Ok(UiCommand::Power(PowerRequest::Halt)),
+                KeyCode::Char('s') => return Ok(UiCommand::SimulateShort),
                 KeyCode::PageUp => self.scroll_back = self.scroll_back.saturating_add(5),
                 KeyCode::Up => self.scroll_back = self.scroll_back.saturating_add(1),
                 KeyCode::PageDown => self.scroll_back = self.scroll_back.saturating_sub(5),
@@ -80,7 +96,7 @@ impl TerminalUi {
                 _ => {}
             }
         }
-        Ok(false)
+        Ok(UiCommand::None)
     }
 
     pub fn draw(&mut self, dashboard: &Dashboard) -> io::Result<()> {
@@ -102,30 +118,41 @@ fn render(frame: &mut Frame<'_>, dashboard: &Dashboard, scroll_back: usize) {
     let areas = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),
+            Constraint::Length(4),
             Constraint::Min(5),
             Constraint::Length(8),
-            Constraint::Length(4),
+            Constraint::Length(5),
         ])
         .split(frame.area());
 
-    let title = Paragraph::new(Line::from(vec![
-        Span::styled(
-            " HIVE-RAIL ",
-            Style::default()
-                .fg(Color::Black)
-                .bg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::raw(format!(
-            "  Node: {}  Session: {}",
-            dashboard.node_id, dashboard.session
-        )),
-        Span::styled(
-            format!("  {}", Local::now().format("%Y-%m-%d %H:%M:%S")),
-            Style::default().fg(Color::Yellow),
-        ),
-    ]))
+    let title = Paragraph::new(vec![
+        Line::from(vec![
+            Span::styled(
+                " HIVE-RAIL ",
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(format!(
+                "  Node: {} (RocNet {})  Session: {}",
+                dashboard.node_id, dashboard.rocnet_id, dashboard.session
+            )),
+            Span::styled(
+                format!("  {}", Local::now().format("%Y-%m-%d %H:%M:%S")),
+                Style::default().fg(Color::Yellow),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("DISTRICT ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::styled(
+                dashboard.local_power.label(),
+                power_style(dashboard.local_power.label()),
+            ),
+            Span::styled("   LAYOUT ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(&dashboard.layout_power),
+        ]),
+    ])
     .block(
         Block::default()
             .borders(Borders::ALL)
@@ -147,7 +174,7 @@ fn render(frame: &mut Frame<'_>, dashboard: &Dashboard, scroll_back: usize) {
             )),
             Cell::from(format!("{} ms ago", peer.last_seen.as_millis())),
             Cell::from(peer.sequence.to_string()),
-            Cell::from(peer.power.clone()),
+            Cell::from(Span::styled(peer.power.clone(), power_style(&peer.power))),
         ])
     });
     let peers = Table::new(
@@ -202,8 +229,9 @@ fn render(frame: &mut Frame<'_>, dashboard: &Dashboard, scroll_back: usize) {
             ),
             Span::raw(&dashboard.scouting),
             Span::raw(format!(
-                "  |  Heartbeat: {} ms",
-                dashboard.heartbeat_interval.as_millis()
+                "  |  Heartbeat: {} ms  |  LocoNet: {}",
+                dashboard.heartbeat_interval.as_millis(),
+                dashboard.loconet
             )),
         ]),
         Line::from(vec![
@@ -216,6 +244,10 @@ fn render(frame: &mut Frame<'_>, dashboard: &Dashboard, scroll_back: usize) {
             Span::raw(&dashboard.last_event),
         ]),
         Line::from(Span::styled(
+            "1  Layout power on  |  0  Layout power off  |  h  Emergency stop  |  s  Simulate short here",
+            Style::default().fg(Color::Gray),
+        )),
+        Line::from(Span::styled(
             "Up/Down, PgUp/PgDn  Scroll log  |  Home/End  Oldest/latest  |  q  Quit",
             Style::default().fg(Color::Gray),
         )),
@@ -223,4 +255,14 @@ fn render(frame: &mut Frame<'_>, dashboard: &Dashboard, scroll_back: usize) {
     .wrap(Wrap { trim: true })
     .block(Block::default().borders(Borders::ALL).title("Status"));
     frame.render_widget(footer, areas[3]);
+}
+
+fn power_style(label: &str) -> Style {
+    let color = match label {
+        "ON" => Color::Green,
+        "OFF" => Color::Gray,
+        "STOP" => Color::Yellow,
+        _ => Color::Red,
+    };
+    Style::default().fg(color).add_modifier(Modifier::BOLD)
 }

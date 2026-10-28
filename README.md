@@ -148,4 +148,31 @@ cargo run -- --mode node --session bench --id mac --send-rocnet-hex '@0001230001
 
 The receiver prints the decoded frame. No physical RocNet UDP, TCP, MQTT, or serial interface is connected yet.
 
-This prototype currently tests only Zenoh peer connectivity and heartbeat freshness. It does not yet test link-binding confirmation, command leases, handoff state machines, partitions, or the simulation invariants across nodes. Do not treat it as a safety system or use it to control a layout.
+## Global power with Rocrail over LocoNet TCP
+
+Every node runs a simulated command station. Layout power requests travel between nodes as RocNet command station frames on `hive/{session}/rn/cs/all`, and each node reports its own district's power as a RocNet status event on `hive/{session}/rn/cs/node/{id}` and in its heartbeat.
+
+On the Windows PC, start the node with a LocoNet over TCP port for Rocrail:
+
+```powershell
+hive-rail.exe --mode node --session bench --id windows --rocnet-address 102 --loconet-tcp 1234
+```
+
+On the MacBook:
+
+```sh
+cargo run -- --mode node --session bench --id mac --rocnet-address 101
+```
+
+In Rocrail, add a LocoNet command station using LocoNet over TCP (LbServer) with host `localhost` and port `1234`. Rocrail's power on, power off and emergency stop then switch both nodes. In either dashboard:
+
+| Key | Action |
+| --- | --- |
+| `1` | Layout power on, on every node |
+| `0` | Layout power off, on every node |
+| `h` | Emergency stop, on every node |
+| `s` | Simulate a short in this node's district only; other nodes show `SHORT` for it |
+
+A short is reported, not spread: only the affected district loses power, and Rocrail sees power off if it is connected to that node. Allow TCP port 1234 through the Windows firewall if Rocrail runs on another computer.
+
+This prototype currently tests Zenoh peer connectivity, heartbeat freshness, and simulated layout power and short reporting. It does not yet test link-binding confirmation, command leases, handoff state machines, partitions, or the simulation invariants across nodes. Do not treat it as a safety system or use it to control a layout.
