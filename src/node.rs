@@ -335,9 +335,15 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                     loconet_clients += 1;
                     log.event(format!("LocoNet client {peer} connected"));
                 }
-                Some(LbEvent::Disconnected(peer)) => {
+                Some(LbEvent::FormatDetected { peer, format }) => {
+                    log.event(format!("LocoNet client {peer} uses the {format} format"));
+                }
+                Some(LbEvent::Disconnected { peer, reason }) => {
                     loconet_clients = loconet_clients.saturating_sub(1);
-                    log.event(format!("LocoNet client {peer} disconnected"));
+                    match reason {
+                        Some(reason) => log.event(format!("LocoNet client {peer} disconnected: {reason}")),
+                        None => log.event(format!("LocoNet client {peer} disconnected")),
+                    }
                 }
                 Some(LbEvent::Received { peer, message }) => {
                     log.line(format!("[ln  ] <- {}  {}  from {peer}", message.to_hex(), message.describe()));
@@ -346,8 +352,8 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                         handle_power_request(request, RequestSource::LocoNet, &origin, &mut power, &outputs, &mut log).await?;
                     }
                 }
-                Some(LbEvent::Rejected { peer, line, reason }) => {
-                    log.line(format!("[ln  ] <- rejected from {peer}: {line} ({reason})"));
+                Some(LbEvent::Rejected { peer, input, reason }) => {
+                    log.line(format!("[ln  ] <- rejected from {peer}: {input} ({reason})"));
                 }
                 None => loconet_events = None,
             },

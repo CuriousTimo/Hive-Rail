@@ -104,6 +104,10 @@ impl LocoNetMessage {
         self.bytes[0]
     }
 
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
     pub fn to_hex(&self) -> String {
         self.bytes
             .iter()
@@ -164,13 +168,98 @@ impl LocoNetMessage {
     }
 }
 
+/// Splits a raw LocoNet byte stream (binary LocoNet over TCP or serial) into messages.
+#[derive(Debug, Default)]
+pub struct StreamDecoder {
+    buffer: Vec<u8>,
+}
+
+impl StreamDecoder {
+    /// Adds received bytes and returns every complete message, valid or not.
+    pub fn push(&mut self, data: &[u8]) -> Vec<Result<LocoNetMessage, LocoNetError>> {
+        self.buffer.extend_from_slice(data);
+        let mut messages = Vec::new();
+        loop {
+            // Bytes before an opcode belong to a lost message; LocoNet receivers skip them.
+            match self.buffer.iter().position(|byte| byte & 0x80 != 0) {
+                Some(start) => {
+                    self.buffer.drain(..start);
+                }
+                None => {
+                    self.buffer.clear();
+                    break;
+                }
+            }
+            let length = match (self.buffer[0] >> 5) & 0x03 {
+                0 => 2,
+                1 => 4,
+                2 => 6,
+                _ => match self.buffer.get(1) {
+                    Some(&count) => usize::from(count).max(2),
+                    None => break,
+                },
+            };
+            // A new opcode before the end means this message was cut off.
+            if let Some(next) = self
+                .buffer
+                .iter()
+                .take(length)
+                .skip(1)
+                .position(|byte| byte & 0x80 != 0)
+            {
+                let broken: Vec<u8> = self.buffer.drain(..=next).collect();
+                messages.push(Err(LocoNetError::LengthMismatch {
+                    expected: length,
+                    actual: broken.len(),
+                }));
+                continue;
+            }
+            if self.buffer.len() < length {
+                break;
+            }
+            let bytes: Vec<u8> = self.buffer.drain(..length).collect();
+            messages.push(LocoNetMessage::from_bytes(&bytes));
+        }
+        messages
+    }
+}
+
 fn eleven_bit_address(low: u8, high: u8) -> u16 {
     u16::from(low & 0x7F) | u16::from(high & 0x0F) << 7
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{LocoNetError, LocoNetMessage};
+    use super::{LocoNetError, LocoNetMessage, StreamDecoder};
+
+    #[test]
+    fn stream_decoder_splits_joins_and_resynchronises() {
+        let mut decoder = StreamDecoder::default();
+        // Two messages arriving together, the second split over two reads.
+        let first = decoder.push(&[0x83, 0x7C, 0xA0, 0x05]);
+        assert_eq!(first.len(), 1);
+        assert_eq!(first[0].as_ref().unwrap().to_hex(), "83 7C");
+        let second = decoder.push(&[0x28, 0x72]);
+        assert_eq!(second[0].as_ref().unwrap().to_hex(), "A0 05 28 72");
+
+        // Leading garbage is skipped; a message cut off by a new opcode is reported.
+        let resync = decoder.push(&[0x12, 0xA0, 0x05, 0x82, 0x7D]);
+        assert!(matches!(
+            resync[0],
+            Err(LocoNetError::LengthMismatch { .. })
+        ));
+        assert_eq!(resync[1].as_ref().unwrap().to_hex(), "82 7D");
+
+        // Variable-length message waits for all of its bytes.
+        let slot = [
+            0xE7, 0x0E, 0x05, 0x23, 0x0C, 0x00, 0x20, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1B,
+        ];
+        assert!(decoder.push(&slot[..6]).is_empty());
+        assert_eq!(
+            decoder.push(&slot[6..])[0].as_ref().unwrap().describe(),
+            "SL_RD_DATA  slot 5"
+        );
+    }
     use crate::power::PowerRequest;
 
     #[test]
