@@ -10,7 +10,7 @@ The nodes speak [RocNet over Zenoh](https://github.com/CuriousTimo/Hive-Rail/wik
 
 > **EARLY BETA: USE AT YOUR OWN RISK.** This software has not been tested on real hardware. It is not production-ready or a safety system. Do not connect it to or use it to control a live layout.
 
-This is a very early simulation and networking prototype. Each node runs a simulated command station, or drives a DCC-EX command station over USB serial or WiFi with `--dccex`; it has been tested with DCC-EX on an ESP32 and on the 2021 node board prototype on USB power only, so no track has been powered. There is no connection to a booster, track sensor, signal, or relay. It cannot drive a train or protect a layout. Rocrail or JMRI can connect to a node over LocoNet TCP for power and the fast clock. Its RocNet support carries power, short and clock frames over Zenoh; it is not connected to a local RocNet transport yet.
+This is a very early simulation and networking prototype. Each node runs a simulated command station, or drives a DCC-EX command station over USB serial or WiFi with `--dccex`; it has been tested with DCC-EX on an ESP32 and on the 2021 node board prototype on USB power only, so no track has been powered. There is no connection to a booster, track sensor, signal, or relay. It cannot drive a train or protect a layout. Rocrail or JMRI can connect to a node over LocoNet TCP for power and the fast clock. A node can also join a LocoNet central's bus through a serial interface, such as the RS232 port of an Intellibox I; this is not yet tested with a real Intellibox. A node or the dispatcher can read its options from a TOML config file. Its RocNet support carries power, short and clock frames over Zenoh; it is not connected to a local RocNet transport yet.
 
 Zenoh peer scouting discovers nodes on a single local network using `224.0.0.224:7446`, distinct from RocNet/RocRail's `224.0.0.1:4321`, which a node joins only when it runs the RocNet UDP adapter. Peer discovery and heartbeat recovery have been smoke-tested between macOS, Windows, and Linux computers on one LAN. Cross-subnet discovery has not been tested.
 
@@ -25,7 +25,7 @@ Think of each future Hive-Rail node as a small signal box for one part of a modu
 - Give every district its own power on/off and report its power state and short circuits to every node, so the rest of the layout keeps running. Share one fast clock across all nodes.
 - Later: serve FRED/Fredi throttles on every module as one distributed command station.
 
-These are goals, not finished features. Today this beta can check a module profile, check a simple booster-exclusivity example, exchange network heartbeats between computers, switch simulated district power (with a global emergency stop), report simulated shorts to every node, run one fast clock across the mesh, keep one loco register for the whole layout (translating Rocrail's or a central's own slots by loco address), and drive a DCC-EX command station over USB or WiFi. It cannot yet carry out the railway-control jobs above.
+These are goals, not finished features. Today this beta can check a module profile, check a simple booster-exclusivity example, exchange network heartbeats between computers, switch simulated district power (with a global emergency stop), report simulated shorts to every node, run one fast clock across the mesh, keep one loco register for the whole layout (translating Rocrail's or a central's own slots by loco address), drive a DCC-EX command station over USB or WiFi, and join a LocoNet bus through a node board or a serial interface. It cannot yet carry out the railway-control jobs above.
 
 ## Intended computers
 
@@ -52,6 +52,7 @@ The roadmap follows the [wiki design specification](https://github.com/CuriousTi
 	- [ ] **1.4** Implement two-sided binding confirmation and link status.
 	- [ ] **1.5** Build the topology graph and handle node restarts and loss.
 	- [ ] **1.6** Add atomic configuration writes, backup recovery, and tests.
+	- [x] **1.7** Read a node's or the dispatcher's options from a TOML config file (`--config`); every command line flag works in it and the command line wins. The first part of the [node file](https://github.com/CuriousTimo/Hive-Rail/wiki/Module-and-Layout-Files#4-the-node-file); examples in `examples/config/`.
 - [ ] **Phase 2: Simulator**
 	- [ ] **2.1** Model virtual nodes, sensors, turnouts, boosters, and transfer blocks.
 	- [x] **2.2** Implement and unit-test a local booster-exclusivity check for fixed sample rail segments.
@@ -83,7 +84,7 @@ The roadmap follows the [wiki design specification](https://github.com/CuriousTi
 	- [ ] **5.4** Pass the simulation exit criteria before connecting hardware.
 - [ ] **Phase 6: Hardware drivers**
 	- [ ] **6.1** Implement and replay-test the DCC-EX serial driver using recorded transcripts. Power, emergency stop, short (overload) reports and the fast clock are done over USB serial or WiFi TCP and tested on an ESP32 without motor shield; on the 2021 board power follows the MAIN tracks, including its stop and go buttons; loco commands and a recorded real short are not.
-	- [ ] **6.2** Add the LocoNet adapter (codec, USB serial and LocoNet over TCP); pass stage 2 with an Intellibox Basic and IntelliSwitch. Codec and LocoNet over TCP (text and binary clients) are done; USB serial is not.
+	- [ ] **6.2** Add the LocoNet adapter (codec, serial interface and LocoNet over TCP); pass stage 2 with an Intellibox I (65000) and IntelliSwitch. Codec, LocoNet over TCP (text and binary clients) and the serial interface (`--loconet-serial`: the Intellibox I's RS232 port in LocoNet mode, or a LocoBuffer) are done; the serial interface is not yet tested with a real Intellibox.
 	- [ ] **6.3** Bench-test on an isolated layout section before any wider trial.
 	- [ ] **6.4** Add local RocNet adapters for compatible module equipment.
 	- [ ] **6.5** Build the [Hive-Rail node board](https://github.com/CuriousTimo/Hive-Rail/wiki/Hive-Rail-Node-Board): an ESP32 with DCC-EX, LocoNet-B and LocoNet-T, transfer relays and sensor, stop and go buttons and status LEDs, linked to Hive-Rail on a Pi or PC; prototype on the 2021 ESP32 LocoNet Command Station board. Step 1 is done: stock DCC-EX with the board definition, a Hive-Rail add-on with its own OLED screen (fast clock, district power, mesh, slots, last loco, link status), the status LEDs and the stop and go buttons (`firmware/node-board/`, built with `firmware/node-board/build.sh`).
@@ -125,6 +126,7 @@ cargo run -- --validate-profile examples/module_profile.json
 | [`intellibox.toml`](examples/config/intellibox.toml) | An Intellibox I (65000) as the slot master on LocoNet, through its RS232 port |
 | [`dccex-serial.toml`](examples/config/dccex-serial.toml) | DCC-EX over USB serial, with LocoNet over TCP for Rocrail or JMRI |
 | [`dccex-wifi.toml`](examples/config/dccex-wifi.toml) | DCC-EX over WiFi (TCP), with LocoNet over TCP for Rocrail or JMRI |
+| [`dispatcher.toml`](examples/config/dispatcher.toml) | The dispatcher screen for the Zugleiter, read-only |
 
 ```sh
 cargo run -- --config examples/config/intellibox.toml
@@ -243,6 +245,7 @@ At a FREMO meeting the **Zugleiter** (train controller, or dispatcher) oversees 
 
 ```sh
 cargo run -- --mode dispatcher --session bench            # full screen; --plain for a log
+cargo run -- --config examples/config/dispatcher.toml     # the same from a config file
 cargo run -- --show-locos --session bench                 # print the loco register once
 cargo run -- --transfer-loco 4444 --to MacBook --session bench --speed 40 --lights  # test: put a loco into a district
 ```

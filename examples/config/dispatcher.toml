@@ -1,0 +1,26 @@
+# The dispatcher screen for the Zugleiter: every district, the fast clock and the loco
+# register of the whole layout, read-only:
+#   cargo run -- --config examples/config/dispatcher.toml
+# Each key is a command line flag without its dashes. Options on the command line win.
+#
+# The dispatcher only watches: it sends no heartbeat, hands out no throttle numbers and
+# is never the clock master, so it can run on any computer in the same LAN, next to the
+# nodes or on one of them.
+
+mode = "dispatcher"
+
+# Required. The session of the layout to watch, as the nodes use it.
+session = "bench"
+
+# The dispatcher's name in the session (default "dispatcher"). Give a second dispatcher
+# screen its own name.
+id = "dispatcher"
+
+# Log lines instead of the full screen, for a log file or a terminal without a full
+# screen.
+#plain = false
+
+# Where multicast does not get through: listen on a fixed endpoint, or connect to a node
+# that listens. Use one of the two, not both.
+#listen = "tcp/0.0.0.0:7447"
+#connect = "tcp/192.168.1.10:7447"
