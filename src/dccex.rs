@@ -218,10 +218,11 @@ pub struct BoardStatus {
     pub rocnet_id: u16,
     pub nodes: usize,
     pub locos: usize,
-    pub slots: usize,
+    /// Locos in use on the whole layout (the loco register).
+    pub layout_locos: usize,
     pub allocator: bool,
-    pub slots_in_sync: bool,
-    pub slots_compared: bool,
+    pub register_in_sync: bool,
+    pub register_compared: bool,
     pub emergency_stop: bool,
     /// The last loco driven on this module: address, LocoNet speed step, forward, F0-F4.
     pub loco: Option<(u16, u8, bool, u8)>,
@@ -230,15 +231,15 @@ pub struct BoardStatus {
 impl BoardStatus {
     pub fn command(&self) -> String {
         let flags = u8::from(self.allocator)
-            | u8::from(self.slots_in_sync) << 1
+            | u8::from(self.register_in_sync) << 1
             | u8::from(self.emergency_stop) << 2
-            | u8::from(self.slots_compared) << 3;
+            | u8::from(self.register_compared) << 3;
         let (address, speed, forward, functions) = self.loco.unwrap_or((0, 0, true, 0));
         // DCC-EX takes at most 9 parameters, so F0-F4 and the direction share one.
         let dirf = functions & 0x1F | u8::from(forward) << 7;
         format!(
             "<U 1 {} {} {} {} {flags} {address} {speed} {dirf}>",
-            self.rocnet_id, self.nodes, self.locos, self.slots
+            self.rocnet_id, self.nodes, self.locos, self.layout_locos
         )
     }
 }
@@ -504,10 +505,10 @@ mod tests {
             rocnet_id: 101,
             nodes: 4,
             locos: 1,
-            slots: 5,
+            layout_locos: 5,
             allocator: true,
-            slots_in_sync: true,
-            slots_compared: true,
+            register_in_sync: true,
+            register_compared: true,
             emergency_stop: false,
             loco: Some((1234, 41, false, 0b0_0001)),
         };

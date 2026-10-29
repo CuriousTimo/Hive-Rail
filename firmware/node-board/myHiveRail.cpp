@@ -48,19 +48,32 @@ struct Status {
   int rocnetId = 0;
   int nodes = 0;           // online nodes including this one
   int locos = 0;           // locos driven through this node's LocoNet
-  int slots = 0;           // slots taken on the whole layout
+  int layoutLocos = 0;     // locos in use on the whole layout (the loco register)
   int flags = 0;           // FLAG_* below
   int locoAddress = 0;     // last loco driven on this module, 0 = none
   int locoSpeed = 0;       // LocoNet speed step: 0 stop, 1 emergency stop, 2..127
   bool locoForward = true;
   int locoFunctions = 0;   // F0..F4, bit n = Fn
 };
-static const int FLAG_ALLOCATOR = 1;  // slot allocator and fast clock master
-static const int FLAG_SLOTS_SYNC = 2; // every node holds the same slot table
+static const int FLAG_ALLOCATOR = 1;  // allocator (throttle numbers) and fast clock master
+static const int FLAG_REGISTER_SYNC = 2; // every node holds the same loco register
 static const int FLAG_STOP = 4;       // district in emergency stop
-static const int FLAG_COMPARED = 8;   // there was a peer to compare the slot table with
+static const int FLAG_COMPARED = 8;   // there was a peer to compare the loco register with
 
 static Status status;
+
+// The LocoNet buffer in myHiveRailLocoNet.cpp.
+void hiveRailLocoNetBegin();
+extern volatile int hiveRailLocoNetClients;
+extern volatile bool hiveRailLocoNetPowered;
+
+// Bottom right of the screen: LocoNet bus power and the number of LbServer clients.
+static void loconetStatus(char *out, size_t size) {
+  if (!hiveRailLocoNetPowered)
+    snprintf(out, size, "LN off");
+  else
+    snprintf(out, size, "LN %d", hiveRailLocoNetClients);
+}
 static int clockMinutes = -1; // fast clock from <JC minutes rate>, -1 = not set
 static int clockRate = 0;
 
@@ -84,14 +97,14 @@ void myFilter(Print *stream, byte &opcode, byte &paramCount, int16_t p[]) {
     // <U 0>: Hive-Rail asks whether this board has the add-on.
     StringFormatter::send(stream, F("<u %d>\n"), BOARD_PROTOCOL);
   } else if (paramCount >= 9 && p[0] == 1) {
-    // <U 1 rocnet nodes locos slots flags address speed dirf>; DCC-EX allows 9 parameters,
+    // <U 1 rocnet nodes locos layout-locos flags address speed dirf>; DCC-EX allows 9 parameters,
     // so dirf holds F0-F4 in bits 0-4 and forward in bit 7.
     status.seen = true;
     status.lastMs = millis();
     status.rocnetId = p[1];
     status.nodes = p[2];
     status.locos = p[3];
-    status.slots = p[4];
+    status.layoutLocos = p[4];
     status.flags = p[5];
     status.locoAddress = p[6];
     status.locoSpeed = p[7];
@@ -381,8 +394,8 @@ static void render(District power, bool blink) {
     snprintf(line, sizeof(line), "Mesh %d node%s", status.nodes, status.nodes == 1 ? "" : "s");
     text(0, 5, line);
     if (status.flags & FLAG_COMPARED) {
-      bool sync = status.flags & FLAG_SLOTS_SYNC;
-      text(128 - 6 * 8, 5, sync ? "slots ok" : "SLOTS !!", !sync && blink);
+      bool sync = status.flags & FLAG_REGISTER_SYNC;
+      text(128 - 6 * 8, 5, sync ? "locos ok" : "LOCOS !!", !sync && blink);
     }
     if (status.locoAddress > 0) {
       int speed = status.locoSpeed;
@@ -400,11 +413,13 @@ static void render(District power, bool blink) {
           break;
         }
     } else {
-      snprintf(line, sizeof(line), "Locos %d  slots %d", status.locos, status.slots);
+      snprintf(line, sizeof(line), "Locos %d of %d", status.locos, status.layoutLocos);
       text(0, 6, line);
     }
     snprintf(line, sizeof(line), "IP %s", ipAddress);
     text(0, 7, line);
+    loconetStatus(line, sizeof(line));
+    text(128 - 6 * strlen(line), 7, line);
   } else {
     if (status.seen) {
       fillPage(5, 0, 128, blink ? 0xFF : 0x00);
@@ -416,10 +431,12 @@ static void render(District power, bool blink) {
     text(0, 6, line);
     // Password and address take turns every 3 s.
     if (wifiPassword[0] && millis() / 3000 % 2)
-      snprintf(line, sizeof(line), "Pass %s", wifiPassword);
+      snprintf(line, sizeof(line), "PW %s", wifiPassword);
     else
       snprintf(line, sizeof(line), "IP %s", ipAddress);
     text(0, 7, line);
+    loconetStatus(line, sizeof(line));
+    text(128 - 6 * strlen(line), 7, line);
   }
 }
 
@@ -484,5 +501,6 @@ void halSetup() { new HiveRailBoard(); }
 // Called from mySetup.h at the end of DCC-EX's setup(), once WiFi and DCC are running.
 void hiveRailBoardBegin() {
   DIAG(F("Hive-Rail board add-on started (protocol %d)"), BOARD_PROTOCOL);
+  hiveRailLocoNetBegin();
   setupDone = true;
 }

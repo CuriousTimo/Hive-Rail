@@ -1,6 +1,7 @@
 mod clock;
 mod dccex;
 mod dispatcher;
+mod lbclient;
 mod lbserver;
 mod loconet;
 mod locos;
@@ -40,7 +41,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             Some("dispatcher") => dispatcher::run(args.collect()).await,
             _ => Err("mode must be 'simulation', 'node' or 'dispatcher'".into()),
         },
-        Some("--show-slots") => dispatcher::show_slots(args.collect()).await,
+        Some("--show-locos") => dispatcher::show_locos(args.collect()).await,
         Some("--validate-profile") => {
             let path = args.next().ok_or("expected a profile path")?;
             let profile = profile::load(Path::new(&path))?;
@@ -72,7 +73,7 @@ fn print_help() {
          cargo run -- --mode node --session <name> --id <id> --dccex <serial port | host:2560>\n\
          cargo run -- --mode node --session <name> --id <id> --plain\n\
          cargo run -- --mode dispatcher --session <name> [--plain]\n\
-         cargo run -- --show-slots --session <name>\n\
+         cargo run -- --show-locos --session <name>\n\
          cargo run -- --validate-profile <path>\n\
          cargo run -- --help\n\n\
          Interactive node mode shows a neighbor/heartbeat dashboard; --plain keeps log output.\n\
@@ -83,8 +84,12 @@ fn print_help() {
          --loconet-tcp serves LocoNet over TCP for Rocrail or JMRI, on port 1234 unless given;\n\
          --rocnet-address sets this node's RocNet ID (default 100).\n\
          --dccex drives a DCC-EX command station over USB serial (115200 baud) or WiFi TCP.\n\
+         --loconet-connect <host[:port]> joins the LocoNet bus of a node board (LbServer, port 1234).\n\
+         --loconet-tcp-slots external|node: who owns the slots of the LbServer clients (default external:\n\
+           their own slot master, such as Rocrail's slot server or a central; node: the node, for throttles).\n\
+         --loconet-connect-slots node|external: the same for the node board's bus (default node, for FREDs).\n\
          Dispatcher mode (FREMO: Zugleiter) shows every district, the fast clock and the layout's\n\
-         throttle slot table, read-only; --show-slots prints the slot table once.\n\
+         loco register, read-only; --show-locos prints the register once.\n\
          Node mode uses Zenoh LAN peer scouting and can exchange simulation RocNet frames.\n\
          No local RocNet transport is connected yet."
     );

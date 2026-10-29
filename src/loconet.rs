@@ -154,6 +154,7 @@ impl LocoNetMessage {
         speed: u8,
         dirf: u8,
         track_status: u8,
+        sound: u8,
     ) -> Self {
         Self::with_checksum(&[
             OPC_SL_RD_DATA,
@@ -166,10 +167,44 @@ impl LocoNetMessage {
             track_status & 0x7F,
             0x00,
             (address >> 7 & 0x7F) as u8,
-            0x00,
+            sound & 0x7F,
             0x00,
             0x00,
         ])
+    }
+
+    pub fn loco_speed(slot: u8, speed: u8) -> Self {
+        Self::with_checksum(&[0xA0, slot & 0x7F, speed & 0x7F])
+    }
+
+    /// Direction (bit 5) and F0 to F4.
+    pub fn loco_dirf(slot: u8, dirf: u8) -> Self {
+        Self::with_checksum(&[0xA1, slot & 0x7F, dirf & 0x7F])
+    }
+
+    /// F5 to F8.
+    pub fn loco_sound(slot: u8, snd: u8) -> Self {
+        Self::with_checksum(&[0xA2, slot & 0x7F, snd & 0x0F])
+    }
+
+    /// Messages about slots, whose numbers belong to one LocoNet connection; they are
+    /// translated between connections, never passed on as they are.
+    pub fn is_slot_message(&self) -> bool {
+        matches!(
+            self.opcode(),
+            0xA0..=0xA3
+                | 0xB4
+                | 0xB5
+                | 0xBA
+                | 0xBB
+                | 0xBF
+                | 0xD4
+                | 0xD5
+                | 0xE6
+                | 0xE7
+                | 0xEE
+                | 0xEF
+        )
     }
 
     /// Asks the slot master for a slot's contents.

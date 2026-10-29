@@ -5,8 +5,8 @@
 #   firmware/node-board/build.sh --upload [port]      # build and flash over USB
 #
 # DCC-EX is an unmodified checkout of https://github.com/DCC-EX/CommandStation-EX next to
-# this repository (override with DCCEX_DIR). This script copies config.h, mySetup.h,
-# myAutomation.h and myHiveRail.cpp into it and builds the PlatformIO environment ESP32.
+# this repository (override with DCCEX_DIR). This script copies the add-on (config.h,
+# my*.h, my*.cpp) into it and builds the PlatformIO environment ESP32.
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -18,10 +18,16 @@ if [[ ! -f "$dccex/CommandStation-EX.ino" ]]; then
 	exit 1
 fi
 
-cp "$here/config.h" "$here/mySetup.h" "$here/myAutomation.h" "$here/myHiveRail.cpp" "$dccex/"
+# Every add-on file next to this script: config.h, my*.h and my*.cpp.
+addon=("$here"/config.h "$here"/my*.h "$here"/my*.cpp)
+cp "${addon[@]}" "$dccex/"
 # Keep the copied add-on out of DCC-EX's git status (config.h and my*.h are ignored already).
-grep -qx 'myHiveRail.cpp' "$dccex/.git/info/exclude" 2>/dev/null ||
-	echo 'myHiveRail.cpp' >> "$dccex/.git/info/exclude"
+for file in "${addon[@]}"; do
+	name="$(basename "$file")"
+	[[ "$name" == *.cpp ]] || continue
+	grep -qx "$name" "$dccex/.git/info/exclude" 2>/dev/null ||
+		echo "$name" >> "$dccex/.git/info/exclude"
+done
 
 echo "== DCC-EX $(git -C "$dccex" describe --tags --always) with the Hive-Rail add-on"
 args=(run -d "$dccex" -e ESP32)

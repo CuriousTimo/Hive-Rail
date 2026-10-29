@@ -1,9 +1,10 @@
 use crate::{
     clock::FastClock,
     dccex::{self, BoardStatus, DccExEvent, DccExHandle, DccExMessage},
+    lbclient::{self, LbClientHandle},
     lbserver::{self, LbEvent, LbServerHandle},
     loconet::{LocoNetMessage, HIVE_RAIL_CLOCK_ID},
-    locos::{LocoInfo, LocoTable, SlotEntry},
+    locos::{Change, LocoInfo, LocoNetEdge, LocoRegister, RegisteredLoco, SlotOwner},
     power::{PowerRequest, PowerState, SimulatedCommandStation},
     rocnet::{ClockAction, ClockUpdate, RocNetFrame},
     ui::{command_for_key, ClockChange, Dashboard, PeerRow, TerminalUi, UiCommand},
@@ -35,7 +36,7 @@ pub(crate) const ZENOH_SCOUTING_ADDRESS: &str = "224.0.0.224:7446";
 const MAX_CLI_LINES: usize = 200;
 const DEFAULT_ROCNET_ID: u16 = 100;
 const DEFAULT_LOCONET_TCP_PORT: u16 = 1234;
-const SLOT_REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
+const THROTTLE_REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[derive(Debug)]
 struct NodeArgs {
@@ -47,6 +48,11 @@ struct NodeArgs {
     identify: bool,
     send_rocnet_hex: Option<String>,
     loconet_tcp: Option<u16>,
+    loconet_connect: Option<String>,
+    /// Who owns the slots on the LbServer clients' side (default: their own slot master).
+    loconet_tcp_slots: SlotOwner,
+    /// Who owns the slots on the node board's bus (default: the node, for FREDs).
+    loconet_connect_slots: SlotOwner,
     dccex: Option<String>,
     plain: bool,
 }
@@ -62,14 +68,14 @@ pub(crate) struct Heartbeat {
     // Missing in heartbeats from nodes built before locos were shared.
     #[serde(default)]
     pub(crate) locos: Vec<LocoInfo>,
-    /// Checksum of the node's copy of the slot table (missing from older nodes).
+    /// Checksum of the node's copy of the loco register (missing from older nodes).
     #[serde(default)]
-    pub(crate) slots: Option<u64>,
+    pub(crate) register: Option<u64>,
 }
 
-/// A node asking the slot allocator for a slot, on `hive/{session}/slots/request`.
+/// A node asking the allocator for a throttle number, on `hive/{session}/locos/request`.
 #[derive(Debug, Serialize, Deserialize)]
-struct SlotRequest {
+struct ThrottleRequest {
     address: u16,
     node: String,
 }
@@ -88,7 +94,7 @@ struct PeerState {
     power: String,
     rocnet_id: Option<u16>,
     locos: Vec<LocoInfo>,
-    slots: Option<u64>,
+    register: Option<u64>,
 }
 
 /// Where a power request came from, which decides where it still has to be echoed.
@@ -121,12 +127,63 @@ impl CliLog {
     }
 }
 
+/// Where this node's LocoNet messages go: the LbServer for Rocrail and JMRI, and the
+/// LocoNet bus of a node board (its LocoNet buffer, reached as an LbServer client).
+struct LocoNetPorts {
+    server: Option<LbServerHandle>,
+    bus: Option<LbClientHandle>,
+}
+
+impl LocoNetPorts {
+    fn send(&self, message: &LocoNetMessage) {
+        self.to_clients(message);
+        self.to_bus(message);
+    }
+
+    fn to_clients(&self, message: &LocoNetMessage) {
+        if let Some(server) = &self.server {
+            server.send(message);
+        }
+    }
+
+    fn to_bus(&self, message: &LocoNetMessage) {
+        if let Some(bus) = &self.bus {
+            bus.send(message);
+        }
+    }
+
+    fn to_side(&self, side: LocoNetSide, message: &LocoNetMessage) {
+        match side {
+            LocoNetSide::Clients => self.to_clients(message),
+            LocoNetSide::Bus => self.to_bus(message),
+        }
+    }
+}
+
+/// Which side a LocoNet message came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LocoNetSide {
+    /// Rocrail, JMRI and other clients of this node's LbServer.
+    Clients,
+    /// The LocoNet bus of a node board.
+    Bus,
+}
+
+impl LocoNetSide {
+    fn other(self) -> Self {
+        match self {
+            Self::Clients => Self::Bus,
+            Self::Bus => Self::Clients,
+        }
+    }
+}
+
 /// Everything a power change has to be reported to.
 struct PowerOutputs<'a> {
     node_id: &'a str,
     rocnet_id: u16,
     status: &'a Publisher<'static>,
-    loconet: Option<&'a LbServerHandle>,
+    loconet: Option<&'a LocoNetPorts>,
     dccex: Option<&'a DccExHandle>,
 }
 
@@ -180,20 +237,20 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
     let clock_subscriber = session
         .declare_subscriber(format!("hive/{}/rn/ck", options.session))
         .await?;
-    // The layout's LocoNet throttle slots (Hive-Rail namespace, see locos.rs).
-    let slot_update_publisher = session
-        .declare_publisher(format!("hive/{}/slots/update", options.session))
+    // The layout's loco register and throttle numbers (Hive-Rail namespace, see locos.rs).
+    let loco_update_publisher = session
+        .declare_publisher(format!("hive/{}/locos/update", options.session))
         .allowed_destination(Locality::Remote)
         .await?;
-    let slot_update_subscriber = session
-        .declare_subscriber(format!("hive/{}/slots/update", options.session))
+    let loco_update_subscriber = session
+        .declare_subscriber(format!("hive/{}/locos/update", options.session))
         .await?;
-    let slot_request_publisher = session
-        .declare_publisher(format!("hive/{}/slots/request", options.session))
+    let throttle_request_publisher = session
+        .declare_publisher(format!("hive/{}/locos/request", options.session))
         .allowed_destination(Locality::Remote)
         .await?;
-    let slot_request_subscriber = session
-        .declare_subscriber(format!("hive/{}/slots/request", options.session))
+    let throttle_request_subscriber = session
+        .declare_subscriber(format!("hive/{}/locos/request", options.session))
         .await?;
     // A dispatcher screen sends no heartbeat, so it never counts as allocator or clock
     // master; it says hello instead and the allocator answers with the table and clock.
@@ -212,11 +269,29 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
         None => (None, None),
     };
     let mut loconet_clients = 0_usize;
-    let mut locos = LocoTable::new(&options.id);
-    // Loco addresses this node asked the slot allocator for, and since when.
-    let mut slot_requests: HashMap<u16, Instant> = HashMap::new();
-    // Peers whose slot table checksum differs from ours, and since when.
-    let mut slot_mismatch: HashMap<String, Instant> = HashMap::new();
+    let (loconet_bus, mut loconet_bus_events) = match options.loconet_connect.clone() {
+        Some(target) => {
+            let (client, events) = lbclient::start(target);
+            (Some(client), Some(events))
+        }
+        None => (None, None),
+    };
+    let mut loconet_bus_state = match &options.loconet_connect {
+        Some(target) => format!("bus {target}, connecting"),
+        None => String::new(),
+    };
+    let loconet_ports = LocoNetPorts {
+        server: loconet_server.clone(),
+        bus: loconet_bus,
+    };
+    let mut register = LocoRegister::new(&options.id);
+    // The slots of each LocoNet connection and who owns them.
+    let mut client_edge = LocoNetEdge::new(options.loconet_tcp_slots);
+    let mut bus_edge = LocoNetEdge::new(options.loconet_connect_slots);
+    // Loco addresses this node asked the allocator a throttle number for, and since when.
+    let mut throttle_requests: HashMap<u16, Instant> = HashMap::new();
+    // Peers whose loco register checksum differs from ours, and since when.
+    let mut register_mismatch: HashMap<String, Instant> = HashMap::new();
     let (dccex_driver, mut dccex_events) = match options.dccex.clone() {
         Some(target) => {
             let (driver, events) = dccex::start(target);
@@ -235,7 +310,8 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
         node_id: &options.id,
         rocnet_id,
         status: &power_status_publisher,
-        loconet: loconet_server.as_ref(),
+        loconet: (loconet_ports.server.is_some() || loconet_ports.bus.is_some())
+            .then_some(&loconet_ports),
         dccex: dccex_driver.as_ref(),
     };
     let mut power = PowerControl {
@@ -295,6 +371,11 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
         )),
         None => log.line("LocoNet over TCP disabled; start with --loconet-tcp <port>".to_owned()),
     }
+    log.line(format!(
+        "LocoNet slots: clients {} (external = their own slot master, node = this node), node board bus {}",
+        options.loconet_tcp_slots.label(),
+        options.loconet_connect_slots.label()
+    ));
     match &options.dccex {
         Some(target) => log.line(format!("DCC-EX command station on {target}")),
         None => log.line("simulated command station; no railway hardware is connected".to_owned()),
@@ -316,23 +397,23 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                     seq: sequence,
                     power: power.station.state().label().to_owned(),
                     rocnet_id: Some(rocnet_id),
-                    locos: locos.locos(),
-                    slots: Some(locos.checksum()),
+                    locos: register.locos(),
+                    register: Some(register.checksum()),
                 };
                 publisher.put(serde_json::to_vec(&message)?).await?;
-                track_slot_mismatch(&peers, locos.checksum(), &mut slot_mismatch);
+                track_register_mismatch(&peers, register.checksum(), &mut register_mismatch);
                 // Once a second: the node board's screen, also its link heartbeat.
                 if let (Some(driver), Some(_)) = (outputs.dccex, board_protocol) {
                     if sequence.is_multiple_of(4) {
-                        let loco = locos.last_driven();
+                        let loco = register.last_driven();
                         let status = BoardStatus {
                             rocnet_id,
                             nodes: 1 + peers.values().filter(|peer| peer.online).count(),
-                            locos: locos.locos().len(),
-                            slots: locos.taken(),
+                            locos: register.locos().len(),
+                            layout_locos: register.taken(),
                             allocator: lowest_online(&peers, &options.id),
-                            slots_in_sync: !slot_sync_label(&peers, &slot_mismatch).starts_with("SLOTS DIFFER"),
-                            slots_compared: peers.values().any(|peer| peer.online && peer.slots.is_some()),
+                            register_in_sync: !register_sync_label(&peers, &register_mismatch).starts_with("LOCOS DIFFER"),
+                            register_compared: peers.values().any(|peer| peer.online && peer.register.is_some()),
                             emergency_stop: power.station.state() == PowerState::EmergencyStop,
                             loco: loco.and_then(|loco| {
                                 loco.address.map(|address| (address, loco.speed, loco.forward, loco.functions))
@@ -377,7 +458,7 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                         power: message.power.clone(),
                         rocnet_id: message.rocnet_id,
                         locos: message.locos,
-                        slots: message.slots,
+                        register: message.register,
                     });
                     match previous {
                         Some((true, previous_power)) if previous_power != message.power => {
@@ -395,10 +476,10 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                             if clock.known() {
                                 publish_clock(&clock_publisher, rocnet_id, ClockAction::Sync, &clock, &mut log).await?;
                             }
-                            let snapshot = locos.snapshot();
+                            let snapshot = register.snapshot();
                             if lowest_online(&peers, &options.id) && !snapshot.is_empty() {
-                                log.line(format!("[mesh] -> slot table, {} slots, for {}", snapshot.len(), message.node));
-                                publish_slots(&slot_update_publisher, &options.id, snapshot).await?;
+                                log.line(format!("[mesh] -> loco register, {} locos, for {}", snapshot.len(), message.node));
+                                publish_locos(&loco_update_publisher, &options.id, snapshot).await?;
                             }
                             if message.rocnet_id == Some(rocnet_id) {
                                 log.event(format!(
@@ -529,7 +610,18 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                 }
                 None => dccex_events = None,
             },
-            event = next_loconet_event(&mut loconet_events) => match event {
+            (side, event) = next_loconet_event(&mut loconet_events, &mut loconet_bus_events) => match event {
+                Some(LbEvent::Connected(peer)) if side == LocoNetSide::Bus => {
+                    loconet_bus_state = format!("bus {peer} connected");
+                    // Give the bus the current clock on the next tick.
+                    clock_written = None;
+                    log.event(format!("LocoNet bus connected (node board at {peer})"));
+                }
+                Some(LbEvent::Disconnected { reason, .. }) if side == LocoNetSide::Bus => {
+                    let reason = reason.unwrap_or_default();
+                    loconet_bus_state = format!("bus {}, disconnected", options.loconet_connect.as_deref().unwrap_or_default());
+                    log.event(format!("LocoNet bus disconnected: {reason}"));
+                }
                 Some(LbEvent::Connected(peer)) => {
                     loconet_clients += 1;
                     // Give the new client the current clock on the next tick.
@@ -550,28 +642,51 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                     }
                 }
                 Some(LbEvent::Received { peer, message }) => {
-                    log.line(format!("[ln  ] <- {}  {}  from {peer}", message.to_hex(), message.describe()));
-                    let outcome = locos.apply(
+                    // The bus and the clients see each other's traffic, as on one LocoNet,
+                    // except slot messages: slot numbers belong to one connection and are
+                    // translated through the loco register below.
+                    let other_side = side.other();
+                    let from = match side {
+                        LocoNetSide::Clients => peer.to_string(),
+                        LocoNetSide::Bus => format!("bus {peer}"),
+                    };
+                    if !message.is_slot_message() {
+                        loconet_ports.to_side(other_side, &message);
+                    }
+                    log.line(format!("[ln  ] <- {}  {}  from {from}", message.to_hex(), message.describe()));
+                    let (edge, other_edge) = match side {
+                        LocoNetSide::Clients => (&mut client_edge, &bus_edge),
+                        LocoNetSide::Bus => (&mut bus_edge, &client_edge),
+                    };
+                    let outcome = edge.receive(
+                        &mut register,
                         &message,
                         loconet_track_status(power.station.state()),
                         lowest_online(&peers, &options.id),
                     );
-                    send_loconet_replies(&outputs, outcome.replies, &mut log);
-                    for entry in &outcome.publish {
-                        log.line(format!("[mesh] -> {}", entry.describe()));
+                    send_to_side(&loconet_ports, side, outcome.replies, &mut log);
+                    tell_side(&loconet_ports, other_side, other_edge, &outcome.changes, &mut log);
+                    for loco in &outcome.publish {
+                        log.line(format!("[mesh] -> {}", loco.describe()));
                     }
-                    publish_slots(&slot_update_publisher, &options.id, outcome.publish).await?;
+                    publish_locos(&loco_update_publisher, &options.id, outcome.publish).await?;
                     if let Some(address) = outcome.request {
-                        slot_requests.insert(address, Instant::now());
-                        log.line(format!("[mesh] -> slot request for loco {address}"));
-                        let request = SlotRequest { address, node: options.id.clone() };
-                        slot_request_publisher.put(serde_json::to_vec(&request)?).attachment(options.id.clone()).await?;
+                        throttle_requests.insert(address, Instant::now());
+                        log.line(format!("[mesh] -> throttle number request for loco {address}"));
+                        let request = ThrottleRequest { address, node: options.id.clone() };
+                        throttle_request_publisher.put(serde_json::to_vec(&request)?).attachment(options.id.clone()).await?;
                     }
                     if let Some(request) = message.power_request_kind() {
                         let origin = format!("{} LocoNet", options.id);
                         handle_power_request(request, RequestSource::LocoNet, &origin, &mut power, &outputs, &mut log).await?;
                     }
-                    if message.is_fast_clock_request() && clock.known() {
+                    // Where the node is slot master it answers the clock slot too; an external
+                    // slot master answers it itself (with the time Hive-Rail writes to it).
+                    let owner = match side {
+                        LocoNetSide::Clients => client_edge.owner(),
+                        LocoNetSide::Bus => bus_edge.owner(),
+                    };
+                    if message.is_fast_clock_request() && clock.known() && owner == SlotOwner::Node {
                         let minute = clock.minute_of_day(Instant::now());
                         let reply = LocoNetMessage::fast_clock_read(
                             (minute / 60) as u8,
@@ -579,10 +694,7 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                             if clock.running() { clock.rate() } else { 0 },
                             loconet_track_status(power.station.state()),
                         );
-                        if let Some(server) = outputs.loconet {
-                            server.send(&reply);
-                            log.line(format!("[ln  ] -> {}  {}", reply.to_hex(), reply.describe()));
-                        }
+                        send_to_side(&loconet_ports, side, vec![reply], &mut log);
                     }
                     if let Some(slot) = message.fast_clock() {
                         if slot.valid && slot.setter != HIVE_RAIL_CLOCK_ID && message.opcode() == 0xEF && clock_writers_warned.insert(peer) {
@@ -596,50 +708,63 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                 Some(LbEvent::Rejected { peer, input, reason }) => {
                     log.line(format!("[ln  ] <- rejected from {peer}: {input} ({reason})"));
                 }
-                None => loconet_events = None,
+                None => match side {
+                    LocoNetSide::Clients => loconet_events = None,
+                    LocoNetSide::Bus => loconet_bus_events = None,
+                },
             },
-            sample = slot_update_subscriber.recv_async() => {
+            sample = loco_update_subscriber.recv_async() => {
                 let sample = sample?;
                 let origin = sample_origin(&sample);
-                match serde_json::from_slice::<Vec<SlotEntry>>(sample.payload().to_bytes().as_ref()) {
-                    Ok(entries) => {
-                        for entry in &entries {
-                            log.line(format!("[mesh] <- {}  from {origin}", entry.describe()));
+                match serde_json::from_slice::<Vec<RegisteredLoco>>(sample.payload().to_bytes().as_ref()) {
+                    Ok(locos) => {
+                        for loco in &locos {
+                            log.line(format!("[mesh] <- {}  from {origin}", loco.describe()));
                         }
-                        let replies = locos.merge(entries, loconet_track_status(power.station.state()));
-                        send_loconet_replies(&outputs, replies, &mut log);
+                        let merged = register.merge(locos);
+                        // A loco driven elsewhere that a connection here also knows.
+                        tell_side(&loconet_ports, LocoNetSide::Clients, &client_edge, &merged.changes, &mut log);
+                        tell_side(&loconet_ports, LocoNetSide::Bus, &bus_edge, &merged.changes, &mut log);
+                        // Throttles that waited for a throttle number get their slot data.
+                        let track_status = loconet_track_status(power.station.state());
+                        for address in merged.answered {
+                            for (side, edge) in [(LocoNetSide::Clients, &client_edge), (LocoNetSide::Bus, &bus_edge)] {
+                                let answer = edge.answer(&register, address, track_status);
+                                send_to_side(&loconet_ports, side, answer.into_iter().collect(), &mut log);
+                            }
+                        }
                     }
-                    Err(error) => log.line(format!("[mesh] <- ignored invalid slot update from {origin}: {error}")),
+                    Err(error) => log.line(format!("[mesh] <- ignored invalid loco update from {origin}: {error}")),
                 }
             }
             sample = observer_subscriber.recv_async() => {
                 let sample = sample?;
                 let observer = sample_origin(&sample);
-                if lowest_online(&peers, &options.id) {
-                    log.line(format!("[mesh] <- hello from observer {observer}; sending slot table and clock"));
-                    publish_slots(&slot_update_publisher, &options.id, locos.snapshot()).await?;
-                    if clock.known() {
-                        publish_clock(&clock_publisher, rocnet_id, ClockAction::Sync, &clock, &mut log).await?;
-                    }
+                // Every node answers with its copy of the register, so a dispatcher gets
+                // it even when the allocator cannot answer; the versions sort out repeats.
+                log.line(format!("[mesh] <- hello from observer {observer}; sending loco register"));
+                publish_locos(&loco_update_publisher, &options.id, register.snapshot()).await?;
+                if lowest_online(&peers, &options.id) && clock.known() {
+                    publish_clock(&clock_publisher, rocnet_id, ClockAction::Sync, &clock, &mut log).await?;
                 }
             }
-            sample = slot_request_subscriber.recv_async() => {
+            sample = throttle_request_subscriber.recv_async() => {
                 let sample = sample?;
-                match serde_json::from_slice::<SlotRequest>(sample.payload().to_bytes().as_ref()) {
+                match serde_json::from_slice::<ThrottleRequest>(sample.payload().to_bytes().as_ref()) {
                     Ok(request) => {
-                        log.line(format!("[mesh] <- slot request for loco {} from {}", request.address, request.node));
+                        log.line(format!("[mesh] <- throttle number request for loco {} from {}", request.address, request.node));
                         if lowest_online(&peers, &options.id) {
-                            match locos.allocate_for(request.address, &request.node) {
-                                Some(entry) => {
-                                    log.event(format!("Slot {} for loco {} on {}", entry.slot, request.address, request.node));
-                                    log.line(format!("[mesh] -> {}", entry.describe()));
-                                    publish_slots(&slot_update_publisher, &options.id, vec![entry]).await?;
+                            match register.allocate_for(request.address, &request.node) {
+                                Some(loco) => {
+                                    log.event(format!("Throttle {} for loco {} on {}", loco.throttle.unwrap_or(0), request.address, request.node));
+                                    log.line(format!("[mesh] -> {}", loco.describe()));
+                                    publish_locos(&loco_update_publisher, &options.id, vec![loco]).await?;
                                 }
-                                None => log.event(format!("No free slot for loco {} on {}", request.address, request.node)),
+                                None => log.event(format!("No free throttle number for loco {} on {}", request.address, request.node)),
                             }
                         }
                     }
-                    Err(error) => log.line(format!("[mesh] <- ignored invalid slot request: {error}")),
+                    Err(error) => log.line(format!("[mesh] <- ignored invalid throttle number request: {error}")),
                 }
             }
             sample = clock_subscriber.recv_async() => {
@@ -663,16 +788,16 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
             }
             _ = clock_tick.tick() => {
                 let now = Instant::now();
-                // Slot requests nobody answered: the throttle asks again by itself.
-                slot_requests.retain(|&address, since| {
-                    if !locos.is_pending(address) {
+                // Throttle number requests nobody answered: the throttle asks again by itself.
+                throttle_requests.retain(|&address, since| {
+                    if !register.is_pending(address) {
                         return false;
                     }
-                    if now.duration_since(*since) < SLOT_REQUEST_TIMEOUT {
+                    if now.duration_since(*since) < THROTTLE_REQUEST_TIMEOUT {
                         return true;
                     }
-                    locos.cancel(address);
-                    log.event(format!("No slot allocator answered for loco {address}; the throttle can ask again"));
+                    register.cancel(address);
+                    log.event(format!("No allocator answered for loco {address}; the throttle can ask again"));
                     false
                 });
                 if clock.known() {
@@ -755,7 +880,7 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                 if let Some(ui) = tui.as_mut() {
                     let now = Instant::now();
                     let allocator = lowest_online_id(&peers, &options.id).to_owned();
-                    let slot_sync = slot_sync_label(&peers, &slot_mismatch);
+                    let slot_sync = register_sync_label(&peers, &register_mismatch);
                     let mut peers: Vec<PeerRow> = peers.iter().map(|(id, peer)| PeerRow {
                         id: id.clone(),
                         online: peer.online,
@@ -774,15 +899,17 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                         rocnet_id,
                         local_power: power.station.state(),
                         local_sequence: sequence,
-                        local_locos: locos.locos(),
+                        local_locos: register.locos(),
                         last_request: power.last_request.clone(),
                         clock: clock.label(Instant::now()),
                         local_allocator: allocator == options.id,
                         slot_sync,
                         command_station: command_station.clone(),
-                        loconet: match options.loconet_tcp {
-                            Some(port) => format!("TCP :{port}, {loconet_clients} client(s)"),
-                            None => "off".to_owned(),
+                        loconet: match (options.loconet_tcp, loconet_bus_state.is_empty()) {
+                            (Some(port), true) => format!("TCP :{port}, {loconet_clients} client(s)"),
+                            (Some(port), false) => format!("TCP :{port}, {loconet_clients} client(s); {loconet_bus_state}"),
+                            (None, false) => loconet_bus_state.clone(),
+                            (None, true) => "off".to_owned(),
                         },
                         scouting: ZENOH_SCOUTING_ADDRESS.to_owned(),
                         heartbeat_interval: HEARTBEAT_INTERVAL,
@@ -990,17 +1117,17 @@ fn lowest_online_id<'a>(peers: &'a HashMap<String, PeerState>, node_id: &'a str)
         .fold(node_id, |lowest, id| lowest.min(id))
 }
 
-/// Copies of the slot table may differ for a moment while a change travels; only a
+/// Copies of the loco register may differ for a moment while a change travels; only a
 /// difference that lasts this long is reported.
-pub(crate) const SLOT_SYNC_GRACE: Duration = Duration::from_secs(2);
+pub(crate) const REGISTER_SYNC_GRACE: Duration = Duration::from_secs(2);
 
-fn track_slot_mismatch(
+fn track_register_mismatch(
     peers: &HashMap<String, PeerState>,
     own: u64,
     mismatch: &mut HashMap<String, Instant>,
 ) {
     for (id, peer) in peers {
-        match peer.slots {
+        match peer.register {
             Some(checksum) if peer.online && checksum != own => {
                 mismatch.entry(id.clone()).or_insert_with(Instant::now);
             }
@@ -1012,56 +1139,72 @@ fn track_slot_mismatch(
     mismatch.retain(|id, _| peers.contains_key(id));
 }
 
-fn slot_sync_label(
+fn register_sync_label(
     peers: &HashMap<String, PeerState>,
     mismatch: &HashMap<String, Instant>,
 ) -> String {
     let mut differs: Vec<&str> = mismatch
         .iter()
-        .filter(|(_, since)| since.elapsed() >= SLOT_SYNC_GRACE)
+        .filter(|(_, since)| since.elapsed() >= REGISTER_SYNC_GRACE)
         .map(|(id, _)| id.as_str())
         .collect();
     differs.sort_unstable();
     let compared = peers
         .values()
-        .filter(|peer| peer.online && peer.slots.is_some())
+        .filter(|peer| peer.online && peer.register.is_some())
         .count();
     match (differs.is_empty(), compared) {
-        (true, 0) => "slots: no peer to compare".to_owned(),
-        (true, _) => format!("slots in sync with {compared} peer(s)"),
-        (false, _) => format!("SLOTS DIFFER on {}", differs.join(", ")),
+        (true, 0) => "locos: no peer to compare".to_owned(),
+        (true, _) => format!("locos in sync with {compared} peer(s)"),
+        (false, _) => format!("LOCOS DIFFER on {}", differs.join(", ")),
     }
 }
 
-async fn publish_slots(
+async fn publish_locos(
     publisher: &Publisher<'static>,
     node_id: &str,
-    entries: Vec<SlotEntry>,
+    locos: Vec<RegisteredLoco>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    if !entries.is_empty() {
+    if !locos.is_empty() {
         publisher
-            .put(serde_json::to_vec(&entries)?)
+            .put(serde_json::to_vec(&locos)?)
             .attachment(node_id.to_owned())
             .await?;
     }
     Ok(())
 }
 
-fn send_loconet_replies(
-    outputs: &PowerOutputs<'_>,
-    replies: Vec<LocoNetMessage>,
+fn send_to_side(
+    ports: &LocoNetPorts,
+    side: LocoNetSide,
+    messages: Vec<LocoNetMessage>,
     log: &mut CliLog,
 ) {
-    let Some(server) = outputs.loconet else {
-        return;
-    };
-    for reply in replies {
-        server.send(&reply);
+    for message in messages {
+        ports.to_side(side, &message);
+        let to = match side {
+            LocoNetSide::Clients => "",
+            LocoNetSide::Bus => "  to bus",
+        };
         log.line(format!(
-            "[ln  ] -> {}  {}",
-            reply.to_hex(),
-            reply.describe()
+            "[ln  ] -> {}  {}{to}",
+            message.to_hex(),
+            message.describe()
         ));
+    }
+}
+
+/// Tells one LocoNet connection about locos that changed elsewhere, in its own slot
+/// numbers; nothing for locos it does not know.
+fn tell_side(
+    ports: &LocoNetPorts,
+    side: LocoNetSide,
+    edge: &LocoNetEdge,
+    changes: &[Change],
+    log: &mut CliLog,
+) {
+    for (before, after) in changes {
+        send_to_side(ports, side, edge.notify(before.as_ref(), after), log);
     }
 }
 
@@ -1085,7 +1228,17 @@ async fn next_dccex_event(events: &mut Option<mpsc::Receiver<DccExEvent>>) -> Op
     }
 }
 
-async fn next_loconet_event(events: &mut Option<mpsc::Receiver<LbEvent>>) -> Option<LbEvent> {
+async fn next_loconet_event(
+    clients: &mut Option<mpsc::Receiver<LbEvent>>,
+    bus: &mut Option<mpsc::Receiver<LbEvent>>,
+) -> (LocoNetSide, Option<LbEvent>) {
+    tokio::select! {
+        event = recv_or_wait(clients) => (LocoNetSide::Clients, event),
+        event = recv_or_wait(bus) => (LocoNetSide::Bus, event),
+    }
+}
+
+async fn recv_or_wait(events: &mut Option<mpsc::Receiver<LbEvent>>) -> Option<LbEvent> {
     match events {
         Some(events) => events.recv().await,
         None => std::future::pending().await,
@@ -1135,6 +1288,9 @@ fn parse_args(args: Vec<String>) -> Result<NodeArgs, Box<dyn Error + Send + Sync
     let mut identify = false;
     let mut send_rocnet_hex = None;
     let mut loconet_tcp = None;
+    let mut loconet_connect = None;
+    let mut loconet_tcp_slots = SlotOwner::External;
+    let mut loconet_connect_slots = SlotOwner::Node;
     let mut dccex = None;
     let mut plain = false;
     let mut args = args.into_iter().peekable();
@@ -1149,6 +1305,26 @@ fn parse_args(args: Vec<String>) -> Result<NodeArgs, Box<dyn Error + Send + Sync
             "--connect" => connect = Some(next_value(&mut args, &flag)?),
             "--send-rocnet-hex" => send_rocnet_hex = Some(next_value(&mut args, &flag)?),
             "--dccex" => dccex = Some(next_value(&mut args, &flag)?),
+            "--loconet-tcp-slots" | "--loconet-connect-slots" => {
+                let value = next_value(&mut args, &flag)?;
+                let owner = SlotOwner::parse(&value).ok_or_else(|| {
+                    format!("invalid {flag} '{value}'; expected 'external' or 'node'")
+                })?;
+                if flag == "--loconet-tcp-slots" {
+                    loconet_tcp_slots = owner;
+                } else {
+                    loconet_connect_slots = owner;
+                }
+            }
+            "--loconet-connect" => {
+                // A node board's LocoNet buffer listens on 1234 like any LbServer.
+                let target = next_value(&mut args, &flag)?;
+                loconet_connect = Some(if target.contains(':') {
+                    target
+                } else {
+                    format!("{target}:{DEFAULT_LOCONET_TCP_PORT}")
+                });
+            }
             "--rocnet-address" => {
                 let value = next_value(&mut args, &flag)?;
                 rocnet_address = Some(value.parse::<u16>().map_err(|_| {
@@ -1190,6 +1366,9 @@ fn parse_args(args: Vec<String>) -> Result<NodeArgs, Box<dyn Error + Send + Sync
         identify,
         send_rocnet_hex,
         loconet_tcp,
+        loconet_connect,
+        loconet_tcp_slots,
+        loconet_connect_slots,
         dccex,
         plain,
     })
@@ -1331,7 +1510,7 @@ mod tests {
                 power: "Normal".to_owned(),
                 rocnet_id: Some(102),
                 locos: Vec::new(),
-                slots: None,
+                register: None,
             },
         )]);
 

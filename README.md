@@ -25,7 +25,7 @@ Think of each future Hive-Rail node as a small signal box for one part of a modu
 - Give every district its own power on/off and report its power state and short circuits to every node, so the rest of the layout keeps running. Share one fast clock across all nodes.
 - Later: serve FRED/Fredi throttles on every module as one distributed command station.
 
-These are goals, not finished features. Today this beta can check a module profile, check a simple booster-exclusivity example, exchange network heartbeats between computers, switch simulated district power (with a global emergency stop), report simulated shorts to every node, run one fast clock across the mesh, act as LocoNet slot master for Rocrail over TCP, and drive a DCC-EX command station over USB or WiFi. It cannot yet carry out the railway-control jobs above.
+These are goals, not finished features. Today this beta can check a module profile, check a simple booster-exclusivity example, exchange network heartbeats between computers, switch simulated district power (with a global emergency stop), report simulated shorts to every node, run one fast clock across the mesh, keep one loco register for the whole layout (translating Rocrail's or a central's own slots by loco address), and drive a DCC-EX command station over USB or WiFi. It cannot yet carry out the railway-control jobs above.
 
 ## Intended computers
 
@@ -92,11 +92,11 @@ The roadmap follows the [wiki design specification](https://github.com/CuriousTi
 	- [ ] **7.2** Add operator controls after the safety model is implemented.
 	- [ ] **7.3** Add ESP32 accessory controls and displays after validating the gateway approach.
 	- [ ] **7.4** Add other non-safety-critical displays and timetable features.
-	- [x] **7.5** Add a dispatcher screen for the Zugleiter: every district, the fast clock and the layout's throttle slot table with a sync check per node; `--show-slots` prints the table once.
+	- [x] **7.5** Add a dispatcher screen for the Zugleiter: every district, the fast clock and the layout's loco register with a sync check per node; `--show-locos` prints the register once.
 - [ ] **Phase 8: FRED throttles** (started; the [node board](https://github.com/CuriousTimo/Hive-Rail/wiki/Hive-Rail-Node-Board) makes Hive-Rail the only slot master on each module LocoNet)
-	- [x] **8.1** Share one throttle slot table across the mesh: slot numbers are layout-wide, handed out by one allocator (the lowest online node), and a FRED plugged in again on another module gets its slot back; tested with three nodes.
-	- [ ] **8.2** Complete the throttle flow: dispatch, taking a dispatched loco, purging idle slots, slot updates for throttles with a display.
-	- [ ] **8.3** Make slot allocation safe during a network split (slot blocks per node, as in the FRED design §7).
+	- [x] **8.1** Share one **loco register** across the mesh, by loco address. Locos on a throttle bus get a layout-wide **throttle number** from one allocator (the lowest online node), so a FRED plugged in again on another module gets its loco back. LocoNet connections with their own slot master (Rocrail's slot server, a central) keep their own slots and are translated by address; tested with three nodes and Rocrail.
+	- [ ] **8.2** Complete the throttle flow: **dispatch** across connections (a FRED cannot select a loco, so it takes a loco dispatched by Rocrail, a DT100 or another throttle), purging idle throttle numbers (centrals use about 200 s), slot updates for throttles with a display.
+	- [ ] **8.3** Make throttle number allocation safe during a network split (blocks per node, as in the FRED design §7).
 	- [ ] **8.4** Route a throttle's speed and functions to the district that holds the loco (needs 4.6 and 5.1).
 	- [ ] **8.5** Measure the slot response time with a real FRED through the node board and the network.
 	- [ ] **8.6** Walk-around test with real FREDs and Fredis.
@@ -131,7 +131,7 @@ scripts/package.sh   # macOS arm64, Windows x86_64 and amd64/arm64 .deb in dist/
 
 ### Node board firmware
 
-The [node board](https://github.com/CuriousTimo/Hive-Rail/wiki/Hive-Rail-Node-Board) runs stock DCC-EX with a Hive-Rail add-on from `firmware/node-board/`: the board definition and module name (`config.h`), the stop and go buttons (`myAutomation.h`), and the add-on with its own OLED screen and the status LEDs (`mySetup.h`, `myHiveRail.cpp`). A node with `--dccex` finds the add-on by itself and sends it a status line once a second, which is also the board's link heartbeat. DCC-EX itself is an unmodified checkout next to this repository; the script copies the add-on in and builds with PlatformIO.
+The [node board](https://github.com/CuriousTimo/Hive-Rail/wiki/Hive-Rail-Node-Board) runs stock DCC-EX with a Hive-Rail add-on from `firmware/node-board/`: the board definition and module name (`config.h`), the stop and go buttons (`myAutomation.h`), and the add-on with its own OLED screen and the status LEDs (`mySetup.h`, `myHiveRail.cpp`). A node with `--dccex` finds the add-on by itself and sends it a status line once a second, which is also the board's link heartbeat. The add-on also runs a **LocoNet buffer**: the board's LocoNet port (UART2, IO16/IO17) as an LbServer on TCP port 1234, next to DCC-EX. A node joins that bus with `--loconet-connect <board>[:1234]`; there the node is the slot master by default (`--loconet-connect-slots node`), for FREDs. Built, not yet tested on a powered LocoNet. DCC-EX itself is an unmodified checkout next to this repository; the script copies the add-on in and builds with PlatformIO.
 
 ```sh
 git clone https://github.com/DCC-EX/CommandStation-EX.git ../CommandStation-EX
@@ -192,7 +192,7 @@ On the MacBook:
 cargo run -- --mode node --session bench --id mac --rocnet-address 101
 ```
 
-In Rocrail, add a LocoNet command station using LocoNet over TCP with host `localhost` and port `1234` (the default; `--loconet-tcp <port>` picks another). The node accepts both the LbServer text format and raw binary LocoNet, detected per client. The node is the slot master for its district: it answers `LOCO_ADR` and assigns the slots, so turn off Rocrail's own LocoNet slot server; otherwise Rocrail never asks for a loco address and the dashboard cannot show it. Rocrail's power on, power off and emergency stop then switch the district of the node it is connected to; the other node shows the change. In either dashboard:
+In Rocrail, add a LocoNet command station using LocoNet over TCP with host `localhost` and port `1234` (the default; `--loconet-tcp <port>` picks another). The node accepts both the LbServer text format and raw binary LocoNet, detected per client. **Rocrail settings:** assign the loco to this LocoNet interface (Rocrail only sends a loco over the interface it belongs to), keep Rocrail's own **slot server on**, and turn its LocoNet **clock sync off** (Hive-Rail commands the fast clock). With `--loconet-tcp-slots external`, the default, the slots on this connection belong to its own slot master: Rocrail's slot server, or a LocoNet central such as an Intellibox, a DR5000 or a Digitrax command station. The node answers no slot requests there; it learns which local slot holds which loco from the slot master's replies and enters the loco in the layout's **loco register** by address. Use `--loconet-tcp-slots node` for clients without their own slot master, such as simple throttles and the simulation: the node then answers the slot requests itself with the layout's throttle numbers. Rocrail's power on, power off and emergency stop then switch the district of the node it is connected to; the other node shows the change. In either dashboard:
 
 | Key | Action |
 | --- | --- |
@@ -223,12 +223,12 @@ At a FREMO meeting the **Zugleiter** (train controller, or dispatcher) oversees 
 
 ```sh
 cargo run -- --mode dispatcher --session bench            # full screen; --plain for a log
-cargo run -- --show-slots --session bench                 # print the slot table once
+cargo run -- --show-locos --session bench                 # print the loco register once
 ```
 
-The dispatcher shows every district (heartbeat, power, locos), the fast clock, the slot allocator and clock master (★), and the **throttle slot table of the whole layout**: slot, loco, status, speed, direction, F0 to F4, the node whose LocoNet drives it, and its version. Every node puts a checksum of its copy of the table in its heartbeat; the dispatcher shows per node whether it is in sync, and `SLOT TABLE DIFFERS` if a copy stays different for more than 2 s. The dispatcher only watches: it sends no heartbeat, hands out no slots and is never the clock master. The node dashboard also marks the allocator with ★ and shows the slot sync in its status line.
+The dispatcher shows every district (heartbeat, power, locos), the fast clock, the allocator and clock master (★), and the **loco register of the whole layout**: loco, throttle number (for locos on a throttle bus), status, speed, direction, F0 to F4, the node whose LocoNet drives it, and its version. Every node puts a checksum of its copy of the register in its heartbeat; the dispatcher shows per node whether it is in sync, and `LOCO REGISTER DIFFERS` if a copy stays different for more than 2 s. The dispatcher only watches: it sends no heartbeat, hands out no throttle numbers and is never the clock master. The node dashboard also marks the allocator with ★ and shows the register sync in its status line.
 
-JMRI's LocoNet slot monitor works too: connect JMRI to any node over LocoNet TCP; every node answers slot reads from the shared table, free slots included.
+JMRI's LocoNet slot monitor works on connections where the node is the slot master (`--loconet-tcp-slots node`): the node answers slot reads from the throttle numbers, free slots included.
 
 ## Simulate four dual-track modules
 

@@ -185,7 +185,7 @@ echo "== start $MODULES module nodes in session $SESSION (logs in $LOG_DIR)"
 for ((module = 1; module <= MODULES; module++)); do
 	mkfifo "$LOG_DIR/$(module_id "$module").keys"
 	"$BIN" --mode node --session "$SESSION" --id "$(module_id "$module")" \
-		--rocnet-address $((200 + module)) --loconet-tcp "$(module_port "$module")" --plain \
+		--rocnet-address $((200 + module)) --loconet-tcp "$(module_port "$module")" --loconet-tcp-slots node --plain \
 		<"$LOG_DIR/$(module_id "$module").keys" >"$(module_log "$module")" 2>&1 &
 	PIDS+=($!)
 	eval "exec $((module + 6))>\"$LOG_DIR/$(module_id "$module").keys\""
