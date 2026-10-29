@@ -409,7 +409,7 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                 Some(DccExEvent::Received(message)) => {
                     // Text for the command station's own display is not worth logging.
                     if !matches!(message, DccExMessage::Display(_)) {
-                        log.line(format!("[dcc ] <- {}", message.describe()));
+                        log.line(format!("[DCC-EX] <- {}", message.describe()));
                     }
                     let changed = match &message {
                         DccExMessage::Power { on, track: None } => power.station.report_power(*on),
@@ -545,7 +545,7 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                         if let Some(driver) = outputs.dccex {
                             let command = dccex::clock_command(state.0, if state.1 { state.2 } else { 0 });
                             driver.send(&command);
-                            log.line(format!("[dcc ] -> {command}"));
+                            log.line(format!("[DCC-EX] -> {command}"));
                         }
                     }
                 }
@@ -653,7 +653,7 @@ async fn handle_power_request(
     if let Some(driver) = outputs.dccex {
         let command = dccex::power_command(request);
         driver.send(command);
-        log.line(format!("[dcc ] -> {command}  {request}"));
+        log.line(format!("[DCC-EX] -> {command}  {request}"));
     }
     if source != RequestSource::LocoNet {
         if let Some(server) = outputs.loconet {
