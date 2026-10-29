@@ -10,7 +10,7 @@ The nodes speak [RocNet over Zenoh](https://github.com/CuriousTimo/Hive-Rail/wik
 
 > **EARLY BETA: USE AT YOUR OWN RISK.** This software has not been tested on real hardware. It is not production-ready or a safety system. Do not connect it to or use it to control a live layout.
 
-This is a very early simulation and networking prototype. Each node runs a simulated command station, or drives a DCC-EX command station over USB serial or WiFi with `--dccex`; only an ESP32 without a motor shield has been tested, so no track has been powered. There is no connection to a booster, track sensor, signal, or relay. It cannot drive a train or protect a layout. Rocrail or JMRI can connect to a node over LocoNet TCP for power and the fast clock. Its RocNet support carries power, short and clock frames over Zenoh; it is not connected to a local RocNet transport yet.
+This is a very early simulation and networking prototype. Each node runs a simulated command station, or drives a DCC-EX command station over USB serial or WiFi with `--dccex`; it has been tested with DCC-EX on an ESP32 and on the 2021 node board prototype on USB power only, so no track has been powered. There is no connection to a booster, track sensor, signal, or relay. It cannot drive a train or protect a layout. Rocrail or JMRI can connect to a node over LocoNet TCP for power and the fast clock. Its RocNet support carries power, short and clock frames over Zenoh; it is not connected to a local RocNet transport yet.
 
 Zenoh peer scouting discovers nodes on a single local network using `224.0.0.224:7446`, distinct from RocNet/RocRail's `224.0.0.1:4321`, which a node joins only when it runs the RocNet UDP adapter. Peer discovery and heartbeat recovery have been smoke-tested between macOS, Windows, and Linux computers on one LAN. Cross-subnet discovery has not been tested.
 
@@ -25,7 +25,7 @@ Think of each future Hive-Rail node as a small signal box for one part of a modu
 - Give every district its own power on/off and report its power state and short circuits to every node, so the rest of the layout keeps running. Share one fast clock across all nodes.
 - Later: serve FRED/Fredi throttles on every module as one distributed command station.
 
-These are goals, not finished features. Today this beta can check a module profile, check a simple booster-exclusivity example, exchange network heartbeats between computers, switch simulated district power (with a global emergency stop), report simulated shorts to every node, run one fast clock across the mesh, and talk LocoNet over TCP with Rocrail. It cannot yet carry out the railway-control jobs above.
+These are goals, not finished features. Today this beta can check a module profile, check a simple booster-exclusivity example, exchange network heartbeats between computers, switch simulated district power (with a global emergency stop), report simulated shorts to every node, run one fast clock across the mesh, act as LocoNet slot master for Rocrail over TCP, and drive a DCC-EX command station over USB or WiFi. It cannot yet carry out the railway-control jobs above.
 
 ## Intended computers
 
@@ -82,7 +82,7 @@ The roadmap follows the [wiki design specification](https://github.com/CuriousTi
 	- [ ] **5.3** Test both travel directions, reversals, timeouts, and faults F1-F8.
 	- [ ] **5.4** Pass the simulation exit criteria before connecting hardware.
 - [ ] **Phase 6: Hardware drivers**
-	- [ ] **6.1** Implement and replay-test the DCC-EX serial driver using recorded transcripts. Power, emergency stop, short (overload) reports and the fast clock are done over USB serial or WiFi TCP and tested on an ESP32 without motor shield; loco commands and a recorded real short are not.
+	- [ ] **6.1** Implement and replay-test the DCC-EX serial driver using recorded transcripts. Power, emergency stop, short (overload) reports and the fast clock are done over USB serial or WiFi TCP and tested on an ESP32 without motor shield; on the 2021 board power follows the MAIN tracks, including its stop and go buttons; loco commands and a recorded real short are not.
 	- [ ] **6.2** Add the LocoNet adapter (codec, USB serial and LocoNet over TCP); pass stage 2 with an Intellibox Basic and IntelliSwitch. Codec and LocoNet over TCP (text and binary clients) are done; USB serial is not.
 	- [ ] **6.3** Bench-test on an isolated layout section before any wider trial.
 	- [ ] **6.4** Add local RocNet adapters for compatible module equipment.
@@ -123,6 +123,17 @@ scripts/package.sh   # macOS arm64, Windows x86_64 and amd64/arm64 .deb in dist/
 ```
 
 `dist/` and `target/` are ignored by git. The Linux binaries need glibc 2.30 or later.
+
+### Node board firmware
+
+The [node board](https://github.com/CuriousTimo/Hive-Rail/wiki/Hive-Rail-Node-Board) runs stock DCC-EX with a Hive-Rail add-on from `firmware/node-board/`: the board definition (`config.h`), the stop and go buttons (`myAutomation.h`), and the add-on with the status LEDs (`mySetup.h`, `myHiveRail.cpp`). DCC-EX itself is an unmodified checkout next to this repository; the script copies the add-on in and builds with PlatformIO.
+
+```sh
+git clone https://github.com/DCC-EX/CommandStation-EX.git ../CommandStation-EX
+pip3 install --user platformio
+firmware/node-board/build.sh                                    # build
+firmware/node-board/build.sh --upload /dev/cu.usbserial-0001    # build and flash
+```
 
 Pushing a tag such as `v0.1.0-beta.1` runs the same checks, builds a native desktop executable on each platform, and publishes a GitHub prerelease with the executables and SHA-256 checksums. The macOS executable is ad-hoc signed to match the project's local Tauri test setup; it is not Developer ID signed or notarized. Gatekeeper may still require manual approval before opening a downloaded copy. These are simulation-only early-beta builds, not hardware-ready software.
 
@@ -197,7 +208,7 @@ In Rocrail, add a LocoNet command station using LocoNet over TCP with host `loca
 cargo run -- --mode node --session bench --id mac --rocnet-address 101 --dccex /dev/cu.usbserial-0001
 ```
 
-Other targets: `--dccex /dev/cu.usbserial-0001` (macOS), `--dccex /dev/ttyUSB0` (Linux), `--dccex COM3` (Windows) or `--dccex 192.168.4.1:2560` (WiFi). The district then follows DCC-EX: power and emergency stop go to it, its power reports and overload messages come back as `ON`, `OFF` or `SHORT`, and it shows the fast clock on its display. Opening the serial port resets an ESP32, which boots with power off. Without a motor shield DCC-EX has no tracks, so it does not confirm power changes and its display keeps showing `PWR Off`. See the [DCC-EX adapter](https://github.com/CuriousTimo/Hive-Rail/wiki/DCC-EX-Adapter).
+Other targets: `--dccex /dev/cu.usbserial-0001` (macOS), `--dccex /dev/ttyUSB0` (Linux), `--dccex COM3` (Windows) or `--dccex 192.168.4.1:2560` (WiFi). The district then follows DCC-EX: power on goes to it as `<1 MAIN>` (a local programming track stays off), power off as `<0>` and emergency stop as `<!>`. The district's power is that of the MAIN tracks; their reports and overload messages come back as `ON`, `OFF` or `SHORT`, and DCC-EX shows the fast clock on its display. A power change Hive-Rail did not request, from a button or a WiThrottle, is reported to every node and sent to the LocoNet clients as GPON/GPOFF. Opening the serial port resets an ESP32, which boots with power off. Without a motor shield DCC-EX has no tracks, so it does not confirm power changes and its display keeps showing `PWR Off`. See the [DCC-EX adapter](https://github.com/CuriousTimo/Hive-Rail/wiki/DCC-EX-Adapter).
 
 A short is reported, not spread: only the affected district loses power, and Rocrail sees power off if it is connected to that node. The neighbouring districts will later hold their boundary signals at Stop. Allow TCP port 1234 through the Windows firewall if Rocrail runs on another computer.
 
