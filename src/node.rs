@@ -199,6 +199,7 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
         }
         None => (None, None),
     };
+    let mut dccex_tracks = dccex::DistrictTracks::default();
     let mut command_station = match &options.dccex {
         Some(target) => format!("DCC-EX {target}, connecting"),
         None => "simulated".to_owned(),
@@ -393,6 +394,8 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
             }
             event = next_dccex_event(&mut dccex_events) => match event {
                 Some(DccExEvent::Connected(target)) => {
+                    // A reconnect may find a different board or configuration.
+                    dccex_tracks = dccex::DistrictTracks::default();
                     command_station = format!("DCC-EX {target}");
                     log.event(format!("DCC-EX connected on {target}"));
                     // Give DCC-EX the current clock on the next tick.
@@ -411,8 +414,30 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                     if !matches!(message, DccExMessage::Display(_)) {
                         log.line(format!("[DCC-EX] <- {}", message.describe()));
                     }
+                    if matches!(message, DccExMessage::TrackMode { .. }) {
+                        dccex_tracks.update(&message);
+                    }
                     let changed = match &message {
-                        DccExMessage::Power { on, track: None } => power.station.report_power(*on),
+                        DccExMessage::Power { .. } => {
+                            let Some(on) = dccex_tracks.update(&message) else { continue };
+                            let changed = power.station.report_power(on);
+                            // Requested changes are applied before DCC-EX confirms them, so
+                            // this one came from a button, a WiThrottle or another client.
+                            if changed {
+                                let request = if on { PowerRequest::On } else { PowerRequest::Off };
+                                power.last_request = format!(
+                                    "{}  ({request} on DCC-EX, {})",
+                                    power.station.state().label(),
+                                    Local::now().format("%H:%M:%S")
+                                );
+                                if let Some(server) = outputs.loconet {
+                                    let message = LocoNetMessage::power_request(request);
+                                    server.send(&message);
+                                    log.line(format!("[ln  ] -> {}  {}", message.to_hex(), message.describe()));
+                                }
+                            }
+                            changed
+                        }
                         DccExMessage::Overload { detail, .. } => {
                             let changed = power.station.report(PowerState::Short);
                             if changed {

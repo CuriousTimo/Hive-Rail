@@ -9,6 +9,7 @@
 
 use crate::power::PowerRequest;
 use std::{
+    collections::BTreeMap,
     io::{self, Read, Write},
     net::TcpStream,
     thread,
@@ -46,6 +47,11 @@ pub enum DccExMessage {
     },
     /// Any other `<* ... *>` diagnostic.
     Diagnostic(String),
+    /// `<= A MAIN>`: the mode of one track (MAIN, MAIN_INV, PROG, DC, NONE, ...).
+    TrackMode {
+        track: char,
+        mode: String,
+    },
     /// `<@ ...>` text for the command station's own display.
     Display(String),
     Other(String),
@@ -91,6 +97,17 @@ impl DccExMessage {
                 _ => return Self::Other(frame.to_owned()),
             }
         }
+        if let Some(rest) = frame.strip_prefix('=') {
+            let mut parts = rest.split_whitespace();
+            if let (Some(track), Some(mode)) = (parts.next(), parts.next()) {
+                if let Some(track) = track.chars().next().filter(|_| track.len() == 1) {
+                    return Self::TrackMode {
+                        track,
+                        mode: mode.to_owned(),
+                    };
+                }
+            }
+        }
         if let Some(rest) = frame.strip_prefix("jC") {
             let mut numbers = rest.split_whitespace().map(str::parse::<u16>);
             if let Some(Ok(minutes)) = numbers.next() {
@@ -125,14 +142,60 @@ impl DccExMessage {
             Self::TrackNormal { track } => format!("track {track} normal again"),
             Self::Diagnostic(text) => format!("diag {text}"),
             Self::Display(text) => format!("display {text}"),
+            Self::TrackMode { track, mode } => format!("track {track} is {mode}"),
             Self::Other(text) => format!("unknown <{text}>"),
         }
     }
 }
 
+/// The district's power is the power of its MAIN tracks. DCC-EX reports power per track
+/// (`<p1 A>`), and only sends an overall `<p1>`/`<p0>` when all tracks agree, so a MAIN-only
+/// power on (EX-RAIL `POWERON`, `<1 MAIN>`) has no overall `<p1>`.
+#[derive(Debug, Default)]
+pub struct DistrictTracks {
+    /// Track letter to (is a MAIN track, has power).
+    tracks: BTreeMap<char, (bool, bool)>,
+}
+
+impl DistrictTracks {
+    /// Updates the track state and returns the district's power if this message tells it.
+    pub fn update(&mut self, message: &DccExMessage) -> Option<bool> {
+        match message {
+            DccExMessage::TrackMode { track, mode } => {
+                self.tracks.entry(*track).or_default().0 = mode.starts_with("MAIN");
+                None
+            }
+            DccExMessage::Power {
+                on,
+                track: Some(track),
+            } => {
+                let mut letters = track.chars();
+                let (Some(letter), None) = (letters.next(), letters.next()) else {
+                    return None; // MAIN, PROG and JOIN summarise the per-track lines
+                };
+                self.tracks.entry(letter).or_default().1 = *on;
+                self.main_power()
+            }
+            // Without known MAIN tracks (no motor shield) the overall state is all there is.
+            DccExMessage::Power { on, track: None } => match self.main_power() {
+                Some(_) => None,
+                None => Some(*on),
+            },
+            _ => None,
+        }
+    }
+
+    fn main_power(&self) -> Option<bool> {
+        let mut main = self.tracks.values().filter(|(main, _)| *main).peekable();
+        main.peek()?;
+        Some(main.any(|(_, on)| *on))
+    }
+}
+
 pub fn power_command(request: PowerRequest) -> &'static str {
     match request {
-        PowerRequest::On => "<1>",
+        // MAIN only, so a local programming track stays independent; off is all tracks.
+        PowerRequest::On => "<1 MAIN>",
         PowerRequest::Off => "<0>",
         PowerRequest::Halt => "<!>",
     }
@@ -272,9 +335,9 @@ fn serve(
 ) -> String {
     let mut decoder = FrameDecoder::default();
     let mut buffer = [0_u8; 1024];
-    // Ask for the version and power state; opening the serial port usually resets
+    // Ask for the version, power state and track modes; opening the serial port usually resets
     // the board, which then reports the same after booting.
-    if let Err(error) = link.write_all(b"<s>") {
+    if let Err(error) = link.write_all(b"<s><=>") {
         return error.to_string();
     }
     loop {
@@ -310,7 +373,30 @@ fn serve(
 
 #[cfg(test)]
 mod tests {
-    use super::{clock_command, DccExMessage, FrameDecoder};
+    use super::{clock_command, DccExMessage, DistrictTracks, FrameDecoder};
+
+    #[test]
+    fn district_power_follows_main_tracks() {
+        let mut district = DistrictTracks::default();
+        let mut feed = |frame: &str| district.update(&DccExMessage::parse(frame));
+
+        // Without shield there are no tracks: only the overall state is known.
+        assert_eq!(feed("p0"), Some(false));
+
+        // Recorded on the 2021 board: modes at boot, then the green button (EX-RAIL
+        // POWERON, MAIN only) and the red button (POWEROFF).
+        assert_eq!(feed("= A MAIN"), None);
+        assert_eq!(feed("= B PROG"), None);
+        assert_eq!(feed("p1 A"), Some(true));
+        assert_eq!(feed("p0 B"), Some(true));
+        assert_eq!(feed("p1 MAIN"), None);
+        assert_eq!(feed("p0 A"), Some(false));
+        assert_eq!(feed("p0 B"), Some(false));
+        assert_eq!(feed("p0"), None);
+
+        // Only the programming track on: the district stays off.
+        assert_eq!(feed("p1 B"), Some(false));
+    }
 
     #[test]
     fn decodes_recorded_esp32_boot() {

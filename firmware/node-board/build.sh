@@ -5,8 +5,8 @@
 #   firmware/node-board/build.sh --upload [port]      # build and flash over USB
 #
 # DCC-EX is an unmodified checkout of https://github.com/DCC-EX/CommandStation-EX next to
-# this repository (override with DCCEX_DIR). This script copies config.h, mySetup.h and
-# myHiveRail.cpp into it and builds the PlatformIO environment ESP32.
+# this repository (override with DCCEX_DIR). This script copies config.h, mySetup.h,
+# myAutomation.h and myHiveRail.cpp into it and builds the PlatformIO environment ESP32.
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -18,7 +18,7 @@ if [[ ! -f "$dccex/CommandStation-EX.ino" ]]; then
 	exit 1
 fi
 
-cp "$here/config.h" "$here/mySetup.h" "$here/myHiveRail.cpp" "$dccex/"
+cp "$here/config.h" "$here/mySetup.h" "$here/myAutomation.h" "$here/myHiveRail.cpp" "$dccex/"
 # Keep the copied add-on out of DCC-EX's git status (config.h and my*.h are ignored already).
 grep -qx 'myHiveRail.cpp' "$dccex/.git/info/exclude" 2>/dev/null ||
 	echo 'myHiveRail.cpp' >> "$dccex/.git/info/exclude"

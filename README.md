@@ -86,7 +86,7 @@ The roadmap follows the [wiki design specification](https://github.com/CuriousTi
 	- [ ] **6.2** Add the LocoNet adapter (codec, USB serial and LocoNet over TCP); pass stage 2 with an Intellibox Basic and IntelliSwitch. Codec and LocoNet over TCP (text and binary clients) are done; USB serial is not.
 	- [ ] **6.3** Bench-test on an isolated layout section before any wider trial.
 	- [ ] **6.4** Add local RocNet adapters for compatible module equipment.
-	- [ ] **6.5** Build the [Hive-Rail node board](https://github.com/CuriousTimo/Hive-Rail/wiki/Hive-Rail-Node-Board): an ESP32 with DCC-EX, LocoNet-B and LocoNet-T, transfer relays and sensor, stop and go buttons and status LEDs, linked to Hive-Rail on a Pi or PC; prototype on the 2021 ESP32 LocoNet Command Station board. Step 1 is done: stock DCC-EX with the board definition and a Hive-Rail add-on (`firmware/node-board/`, built with `firmware/node-board/build.sh`).
+	- [ ] **6.5** Build the [Hive-Rail node board](https://github.com/CuriousTimo/Hive-Rail/wiki/Hive-Rail-Node-Board): an ESP32 with DCC-EX, LocoNet-B and LocoNet-T, transfer relays and sensor, stop and go buttons and status LEDs, linked to Hive-Rail on a Pi or PC; prototype on the 2021 ESP32 LocoNet Command Station board. Step 1 is done: stock DCC-EX with the board definition, a Hive-Rail add-on and the stop and go buttons (`firmware/node-board/`, built with `firmware/node-board/build.sh`).
 - [ ] **Phase 7: Peripherals**
 	- [x] **7.1** Add a terminal dashboard for node, neighbor heartbeat state, district power and fast clock.
 	- [ ] **7.2** Add operator controls after the safety model is implemented.
