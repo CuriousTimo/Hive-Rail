@@ -1,0 +1,666 @@
+//! The dispatcher screen (FREMO: Zugleiter): a read-only view of the whole layout for
+//! the person in charge of the session. It shows every district, the fast clock and the
+//! layout's LocoNet throttle slot table, and whether every node holds the same table.
+//!
+//! The dispatcher sends no heartbeat, so it is never the slot allocator or the clock
+//! master and hands out nothing. It says hello on `hive/{session}/observer/hello`; the
+//! allocator answers with the slot table and the clock.
+
+use crate::{
+    clock::FastClock,
+    locos::{LocoTable, SlotEntry},
+    node::{zenoh_config, Heartbeat, HEARTBEAT_TIMEOUT, SLOT_SYNC_GRACE},
+    rocnet::RocNetFrame,
+    ui::{format_age, power_style, TerminalUi, UiCommand},
+};
+use chrono::Local;
+use ratatui::{
+    layout::{Constraint, Direction, Layout},
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
+    widgets::{Block, Borders, Cell, Paragraph, Row, Table},
+    Frame,
+};
+use std::{
+    collections::{BTreeMap, VecDeque},
+    error::Error,
+    io::{self, IsTerminal},
+    time::Duration,
+};
+use tokio::time::{self, Instant, MissedTickBehavior};
+use zenoh::{handlers::FifoChannelHandler, pubsub::Subscriber, sample::Sample, Session};
+
+const MAX_EVENTS: usize = 200;
+/// How long `--show-slots` waits for the slot table after the first node answers.
+const SHOW_SLOTS_SETTLE: Duration = Duration::from_millis(1500);
+const SHOW_SLOTS_TIMEOUT: Duration = Duration::from_secs(6);
+
+struct Args {
+    session: String,
+    id: String,
+    listen: Option<String>,
+    connect: Option<String>,
+    plain: bool,
+}
+
+fn parse_args(args: Vec<String>) -> Result<Args, Box<dyn Error + Send + Sync>> {
+    let mut session = None;
+    let mut id = None;
+    let mut listen = None;
+    let mut connect = None;
+    let mut plain = false;
+    let mut args = args.into_iter();
+    while let Some(flag) = args.next() {
+        let mut value = || {
+            args.next()
+                .ok_or_else(|| format!("missing value after {flag}"))
+        };
+        match flag.as_str() {
+            "--session" => session = Some(value()?),
+            "--id" => id = Some(value()?),
+            "--listen" => listen = Some(value()?),
+            "--connect" => connect = Some(value()?),
+            "--plain" => plain = true,
+            _ => return Err(format!("unknown dispatcher option: {flag}").into()),
+        }
+    }
+    Ok(Args {
+        session: session.ok_or("missing --session")?,
+        id: id.unwrap_or_else(|| "dispatcher".to_owned()),
+        listen,
+        connect,
+        plain,
+    })
+}
+
+/// One district as seen from its heartbeat.
+struct District {
+    last_seen: Instant,
+    online: bool,
+    rocnet_id: Option<u16>,
+    power: String,
+    locos: usize,
+    slots: Option<u64>,
+    /// Since when this node's slot table checksum differs from the dispatcher's copy.
+    differs_since: Option<Instant>,
+}
+
+impl District {
+    fn slot_sync(&self, own: u64) -> &'static str {
+        match (self.slots, self.differs_since) {
+            (None, _) => "-",
+            (Some(checksum), _) if checksum == own => "in sync",
+            (_, Some(since)) if since.elapsed() >= SLOT_SYNC_GRACE => "DIFFERS",
+            _ => "updating",
+        }
+    }
+}
+
+struct State {
+    session: String,
+    districts: BTreeMap<String, District>,
+    slots: LocoTable,
+    clock: FastClock,
+    events: VecDeque<String>,
+    echo: bool,
+}
+
+impl State {
+    fn event(&mut self, text: String) {
+        let line = format!("{} {text}", Local::now().format("%H:%M:%S"));
+        if self.echo {
+            println!("{line}");
+        }
+        if self.events.len() == MAX_EVENTS {
+            self.events.pop_front();
+        }
+        self.events.push_back(line);
+    }
+
+    fn allocator(&self) -> Option<&str> {
+        self.districts
+            .iter()
+            .find(|(_, district)| district.online)
+            .map(|(id, _)| id.as_str())
+    }
+
+    /// Returns whether the node is new or came back online.
+    fn heartbeat(&mut self, heartbeat: Heartbeat) -> bool {
+        let own = self.slots.checksum();
+        let differs = heartbeat.slots.is_some_and(|checksum| checksum != own);
+        let previous = self.districts.get(&heartbeat.node).map(|district| {
+            (
+                district.online,
+                district.power.clone(),
+                district.differs_since,
+            )
+        });
+        let differs_since = match (differs, previous.as_ref()) {
+            (false, _) => None,
+            (true, Some((_, _, Some(since)))) => Some(*since),
+            (true, _) => Some(Instant::now()),
+        };
+        self.districts.insert(
+            heartbeat.node.clone(),
+            District {
+                last_seen: Instant::now(),
+                online: true,
+                rocnet_id: heartbeat.rocnet_id,
+                power: heartbeat.power.clone(),
+                locos: heartbeat.locos.len(),
+                slots: heartbeat.slots,
+                differs_since,
+            },
+        );
+        match previous {
+            Some((true, power, _)) => {
+                if power != heartbeat.power {
+                    self.event(format!(
+                        "{} district power {power} -> {}",
+                        heartbeat.node, heartbeat.power
+                    ));
+                }
+                false
+            }
+            _ => {
+                self.event(format!(
+                    "{} online (RocNet {}, power {})",
+                    heartbeat.node,
+                    heartbeat
+                        .rocnet_id
+                        .map_or_else(|| "?".to_owned(), |id| id.to_string()),
+                    heartbeat.power
+                ));
+                true
+            }
+        }
+    }
+
+    fn refresh(&mut self) {
+        let now = Instant::now();
+        let stale: Vec<String> = self
+            .districts
+            .iter_mut()
+            .filter(|(_, district)| {
+                district.online && now.duration_since(district.last_seen) >= HEARTBEAT_TIMEOUT
+            })
+            .map(|(id, district)| {
+                district.online = false;
+                id.clone()
+            })
+            .collect();
+        for id in stale {
+            self.event(format!("{id} stale: no heartbeat"));
+        }
+    }
+
+    fn slot_updates(&mut self, entries: Vec<SlotEntry>, origin: &str) {
+        for entry in &entries {
+            if self.echo {
+                println!(
+                    "{} {}  from {origin}",
+                    Local::now().format("%H:%M:%S"),
+                    entry.describe()
+                );
+            }
+        }
+        // The dispatcher has no LocoNet, so there is nobody to reply to.
+        self.slots.merge(entries, 0);
+    }
+
+    fn clock_frame(&mut self, frame: &RocNetFrame) {
+        if let Some(update) = frame.clock_update() {
+            let rate = if update.divider == 0 {
+                self.clock.rate()
+            } else {
+                update.divider
+            };
+            self.clock.set(
+                u16::from(update.hour) * 60 + u16::from(update.minute),
+                rate,
+                update.divider != 0,
+                Instant::now(),
+            );
+        }
+    }
+}
+
+struct Mesh {
+    _session: Session,
+    heartbeats: Subscriber<FifoChannelHandler<Sample>>,
+    slots: Subscriber<FifoChannelHandler<Sample>>,
+    clock: Subscriber<FifoChannelHandler<Sample>>,
+    hello: zenoh::pubsub::Publisher<'static>,
+    id: String,
+}
+
+impl Mesh {
+    async fn open(args: &Args) -> Result<Self, Box<dyn Error + Send + Sync>> {
+        let session = zenoh::open(zenoh_config(
+            args.listen.as_deref(),
+            args.connect.as_deref(),
+        )?)
+        .await?;
+        let s = &args.session;
+        Ok(Self {
+            heartbeats: session
+                .declare_subscriber(format!("hive/{s}/node/*/hb"))
+                .await?,
+            slots: session
+                .declare_subscriber(format!("hive/{s}/slots/update"))
+                .await?,
+            clock: session
+                .declare_subscriber(format!("hive/{s}/rn/ck"))
+                .await?,
+            hello: session
+                .declare_publisher(format!("hive/{s}/observer/hello"))
+                .await?,
+            _session: session,
+            id: args.id.clone(),
+        })
+    }
+
+    /// Asks the allocator for the slot table and the clock.
+    async fn say_hello(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
+        self.hello
+            .put(Vec::new())
+            .attachment(self.id.clone())
+            .await?;
+        Ok(())
+    }
+}
+
+fn origin(sample: &Sample) -> String {
+    sample
+        .attachment()
+        .and_then(|attachment| attachment.try_to_string().ok())
+        .map_or_else(|| "unknown".to_owned(), |origin| origin.into_owned())
+}
+
+/// `--mode dispatcher`: the monitor screen, or a log with `--plain`.
+pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let args = parse_args(args)?;
+    let interactive = !args.plain && io::stdin().is_terminal() && io::stdout().is_terminal();
+    let mesh = Mesh::open(&args).await?;
+    let mut tui = if interactive {
+        Some(TerminalUi::new()?)
+    } else {
+        None
+    };
+    let mut state = State {
+        session: args.session.clone(),
+        districts: BTreeMap::new(),
+        slots: LocoTable::new(&args.id),
+        clock: FastClock::new(Instant::now()),
+        events: VecDeque::new(),
+        echo: tui.is_none(),
+    };
+    state.event(format!(
+        "dispatcher {} watching session {}",
+        args.id, args.session
+    ));
+    mesh.say_hello().await?;
+
+    let mut tick = time::interval(Duration::from_millis(200));
+    tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
+    loop {
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => break,
+            sample = mesh.heartbeats.recv_async() => {
+                let sample = sample?;
+                if let Ok(heartbeat) = serde_json::from_slice::<Heartbeat>(sample.payload().to_bytes().as_ref()) {
+                    // A node that just came online may be the new allocator.
+                    if state.heartbeat(heartbeat) {
+                        mesh.say_hello().await?;
+                    }
+                }
+            }
+            sample = mesh.slots.recv_async() => {
+                let sample = sample?;
+                let origin = origin(&sample);
+                match serde_json::from_slice::<Vec<SlotEntry>>(sample.payload().to_bytes().as_ref()) {
+                    Ok(entries) => state.slot_updates(entries, &origin),
+                    Err(error) => state.event(format!("ignored invalid slot update from {origin}: {error}")),
+                }
+            }
+            sample = mesh.clock.recv_async() => {
+                let sample = sample?;
+                if let Ok(frame) = RocNetFrame::from_bytes(sample.payload().to_bytes().as_ref()) {
+                    state.clock_frame(&frame);
+                }
+            }
+            _ = tick.tick() => {
+                state.refresh();
+                if let Some(ui) = tui.as_mut() {
+                    if matches!(ui.handle_input()?, UiCommand::Quit) {
+                        break;
+                    }
+                    ui.draw_with(|frame| render(frame, &state))?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// `--show-slots`: prints the layout's slot table once and exits.
+pub async fn show_slots(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let mut args = parse_args(args)?;
+    args.plain = true;
+    let mesh = Mesh::open(&args).await?;
+    let mut state = State {
+        session: args.session.clone(),
+        districts: BTreeMap::new(),
+        slots: LocoTable::new(&args.id),
+        clock: FastClock::new(Instant::now()),
+        events: VecDeque::new(),
+        echo: false,
+    };
+    let deadline = Instant::now() + SHOW_SLOTS_TIMEOUT;
+    let mut settle_until: Option<Instant> = None;
+    // Hello once the first node is seen, so the allocator is reachable.
+    loop {
+        let wait_until = settle_until.unwrap_or(deadline).min(deadline);
+        tokio::select! {
+            _ = time::sleep_until(wait_until) => break,
+            sample = mesh.heartbeats.recv_async() => {
+                let sample = sample?;
+                if let Ok(heartbeat) = serde_json::from_slice::<Heartbeat>(sample.payload().to_bytes().as_ref()) {
+                    if state.heartbeat(heartbeat) && settle_until.is_none() {
+                        // Give scouting a moment to find every node before asking.
+                        time::sleep(Duration::from_millis(500)).await;
+                        mesh.say_hello().await?;
+                        settle_until = Some(Instant::now() + SHOW_SLOTS_SETTLE);
+                    }
+                }
+            }
+            sample = mesh.slots.recv_async() => {
+                let sample = sample?;
+                if let Ok(entries) = serde_json::from_slice::<Vec<SlotEntry>>(sample.payload().to_bytes().as_ref()) {
+                    state.slots.merge(entries, 0);
+                }
+            }
+        }
+    }
+
+    if state.districts.is_empty() {
+        println!(
+            "No node answered in session {} within {} s.",
+            args.session,
+            SHOW_SLOTS_TIMEOUT.as_secs()
+        );
+        return Ok(());
+    }
+    println!(
+        "Session {}: {} node(s), slot allocator {}",
+        args.session,
+        state.districts.len(),
+        state.allocator().unwrap_or("-")
+    );
+    let entries = in_use_slots(&state.slots);
+    if entries.is_empty() {
+        println!("No slots taken.");
+    } else {
+        println!(
+            "{:>4}  {:<7} {:<8} {:<15} {:<8} {:<6} {:<12} {:>4}",
+            "Slot", "Loco", "Status", "Speed", "Dir", "F0-F4", "Driven at", "Ver"
+        );
+        for entry in entries {
+            let loco = entry.loco();
+            println!(
+                "{:>4}  {:<7} {:<8} {:<15} {:<8} {:<6} {:<12} {:>4}",
+                entry.slot,
+                entry
+                    .address
+                    .map_or_else(|| "?".to_owned(), |address| address.to_string()),
+                entry.status_label(),
+                loco.speed_label(),
+                loco.direction(),
+                functions(&loco),
+                entry.node,
+                entry.version
+            );
+        }
+    }
+    let own = state.slots.checksum();
+    for (id, district) in &state.districts {
+        if district.slots.is_some_and(|checksum| checksum != own) {
+            println!("Note: {id}'s slot table differs from the copy shown here.");
+        }
+    }
+    Ok(())
+}
+
+/// Every slot except the free ones, by slot number.
+fn in_use_slots(table: &LocoTable) -> Vec<SlotEntry> {
+    table
+        .snapshot()
+        .into_iter()
+        .filter(|entry| entry.status_label() != "free")
+        .collect()
+}
+
+fn functions(loco: &crate::locos::LocoInfo) -> String {
+    (0..=4)
+        .map(|number| {
+            if loco.function_on(number) {
+                char::from(b'0' + number)
+            } else {
+                '-'
+            }
+        })
+        .collect()
+}
+
+fn render(frame: &mut Frame<'_>, state: &State) {
+    let own = state.slots.checksum();
+    let entries = in_use_slots(&state.slots);
+    let differing: Vec<&str> = state
+        .districts
+        .iter()
+        .filter(|(_, district)| district.online && district.slot_sync(own) == "DIFFERS")
+        .map(|(id, _)| id.as_str())
+        .collect();
+    let online = state.districts.values().filter(|d| d.online).count();
+
+    let areas = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(4),
+            Constraint::Length(state.districts.len().clamp(1, 12) as u16 + 3),
+            Constraint::Min(6),
+            Constraint::Length(8),
+        ])
+        .split(frame.area());
+
+    let sync = if differing.is_empty() {
+        Span::styled(
+            format!("slot table in sync on {online} node(s)"),
+            Style::default().fg(Color::Green),
+        )
+    } else {
+        Span::styled(
+            format!("SLOT TABLE DIFFERS on {}", differing.join(", ")),
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        )
+    };
+    let header = Paragraph::new(vec![
+        Line::from(vec![
+            Span::styled(
+                " HIVE-RAIL DISPATCHER ",
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(format!("  Session: {}", state.session)),
+            Span::styled(
+                format!("   FAST CLOCK {}", state.clock.label(Instant::now())),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!("   wall {}", Local::now().format("%H:%M:%S")),
+                Style::default().fg(Color::Gray),
+            ),
+        ]),
+        Line::from(vec![
+            Span::raw(format!(
+                "Slot allocator and clock master: {} ★   ",
+                state.allocator().unwrap_or("none online")
+            )),
+            sync,
+            Span::raw(format!("   {} slot(s) taken", entries.len())),
+        ]),
+    ])
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title("Zugleiter / dispatcher"),
+    );
+    frame.render_widget(header, areas[0]);
+
+    let allocator = state.allocator();
+    let districts = Table::new(
+        state.districts.iter().map(|(id, district)| {
+            let (heartbeat, color) = if district.online {
+                ("ONLINE", Color::Green)
+            } else {
+                ("STALE / STOP", Color::Red)
+            };
+            let sync = district.slot_sync(own);
+            let sync_style = match sync {
+                "in sync" => Style::default().fg(Color::Green),
+                "DIFFERS" => Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                _ => Style::default().fg(Color::Gray),
+            };
+            Row::new(vec![
+                Cell::from(format!(
+                    "{id}{}",
+                    if Some(id.as_str()) == allocator {
+                        " ★"
+                    } else {
+                        ""
+                    }
+                )),
+                Cell::from(
+                    district
+                        .rocnet_id
+                        .map_or_else(|| "-".to_owned(), |id| id.to_string()),
+                ),
+                Cell::from(Span::styled(
+                    heartbeat,
+                    Style::default().fg(color).add_modifier(Modifier::BOLD),
+                )),
+                Cell::from(format_age(district.last_seen.elapsed())),
+                Cell::from(Span::styled(
+                    district.power.clone(),
+                    power_style(&district.power),
+                )),
+                Cell::from(district.locos.to_string()),
+                Cell::from(Span::styled(sync, sync_style)),
+            ])
+        }),
+        [
+            Constraint::Percentage(22),
+            Constraint::Percentage(10),
+            Constraint::Percentage(16),
+            Constraint::Percentage(14),
+            Constraint::Percentage(12),
+            Constraint::Percentage(10),
+            Constraint::Percentage(16),
+        ],
+    )
+    .header(
+        Row::new([
+            "District",
+            "RocNet",
+            "Heartbeat",
+            "Last seen",
+            "Power",
+            "Locos",
+            "Slot table",
+        ])
+        .style(Style::default().add_modifier(Modifier::BOLD)),
+    )
+    .block(Block::default().borders(Borders::ALL).title("Districts"));
+    frame.render_widget(districts, areas[1]);
+
+    let slots = Table::new(
+        entries.iter().map(|entry| {
+            let loco = entry.loco();
+            let speed_color = match loco.speed {
+                0 => Color::Gray,
+                1 => Color::Red,
+                _ => Color::Green,
+            };
+            Row::new(vec![
+                Cell::from(entry.slot.to_string()),
+                Cell::from(
+                    entry
+                        .address
+                        .map_or_else(|| "?".to_owned(), |address| address.to_string()),
+                ),
+                Cell::from(entry.status_label()),
+                Cell::from(Span::styled(
+                    loco.speed_label(),
+                    Style::default().fg(speed_color),
+                )),
+                Cell::from(format!(
+                    "{} {}",
+                    if loco.forward { "▶" } else { "◀" },
+                    loco.direction()
+                )),
+                Cell::from(functions(&loco)),
+                Cell::from(entry.node.clone()),
+                Cell::from(entry.version.to_string()),
+            ])
+        }),
+        [
+            Constraint::Length(5),
+            Constraint::Length(7),
+            Constraint::Length(9),
+            Constraint::Length(16),
+            Constraint::Length(10),
+            Constraint::Length(7),
+            Constraint::Min(12),
+            Constraint::Length(6),
+        ],
+    )
+    .header(
+        Row::new([
+            "Slot",
+            "Loco",
+            "Status",
+            "Speed",
+            "Direction",
+            "F0-F4",
+            "Driven at",
+            "Ver",
+        ])
+        .style(Style::default().add_modifier(Modifier::BOLD)),
+    )
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title("Throttle slot table (whole layout)"),
+    );
+    frame.render_widget(slots, areas[2]);
+
+    let visible = usize::from(areas[3].height.saturating_sub(2));
+    let events: Vec<Line> = state
+        .events
+        .iter()
+        .skip(state.events.len().saturating_sub(visible))
+        .map(|line| Line::from(line.as_str()))
+        .collect();
+    frame.render_widget(
+        Paragraph::new(events).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Events (q quit)"),
+        ),
+        areas[3],
+    );
+}

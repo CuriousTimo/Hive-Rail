@@ -92,6 +92,7 @@ The roadmap follows the [wiki design specification](https://github.com/CuriousTi
 	- [ ] **7.2** Add operator controls after the safety model is implemented.
 	- [ ] **7.3** Add ESP32 accessory controls and displays after validating the gateway approach.
 	- [ ] **7.4** Add other non-safety-critical displays and timetable features.
+	- [x] **7.5** Add a dispatcher screen for the Zugleiter: every district, the fast clock and the layout's throttle slot table with a sync check per node; `--show-slots` prints the table once.
 - [ ] **Phase 8: FRED throttles** (started; the [node board](https://github.com/CuriousTimo/Hive-Rail/wiki/Hive-Rail-Node-Board) makes Hive-Rail the only slot master on each module LocoNet)
 	- [x] **8.1** Share one throttle slot table across the mesh: slot numbers are layout-wide, handed out by one allocator (the lowest online node), and a FRED plugged in again on another module gets its slot back; tested with three nodes.
 	- [ ] **8.2** Complete the throttle flow: dispatch, taking a dispatched loco, purging idle slots, slot updates for throttles with a display.
@@ -215,6 +216,19 @@ cargo run -- --mode node --session bench --id mac --rocnet-address 101 --dccex /
 Other targets: `--dccex /dev/cu.usbserial-0001` (macOS), `--dccex /dev/ttyUSB0` (Linux), `--dccex COM3` (Windows) or `--dccex 192.168.4.1:2560` (WiFi). The district then follows DCC-EX: power on goes to it as `<1 MAIN>` (a local programming track stays off), power off as `<0>` and emergency stop as `<!>`. The district's power is that of the MAIN tracks; their reports and overload messages come back as `ON`, `OFF` or `SHORT`, and DCC-EX shows the fast clock on its display. A power change Hive-Rail did not request, from a button or a WiThrottle, is reported to every node and sent to the LocoNet clients as GPON/GPOFF. Opening the serial port resets an ESP32, which boots with power off. Without a motor shield DCC-EX has no tracks, so it does not confirm power changes and its display keeps showing `PWR Off`. See the [DCC-EX adapter](https://github.com/CuriousTimo/Hive-Rail/wiki/DCC-EX-Adapter).
 
 A short is reported, not spread: only the affected district loses power, and Rocrail sees power off if it is connected to that node. The neighbouring districts will later hold their boundary signals at Stop. Allow TCP port 1234 through the Windows firewall if Rocrail runs on another computer.
+
+## Dispatcher screen (Zugleiter)
+
+At a FREMO meeting the **Zugleiter** (train controller, or dispatcher) oversees the whole layout, while each **Fahrdienstleiter** runs a station. Hive-Rail has a screen for each: the node dashboard at a module, and the dispatcher screen for the whole session, on any computer in the same LAN:
+
+```sh
+cargo run -- --mode dispatcher --session bench            # full screen; --plain for a log
+cargo run -- --show-slots --session bench                 # print the slot table once
+```
+
+The dispatcher shows every district (heartbeat, power, locos), the fast clock, the slot allocator and clock master (★), and the **throttle slot table of the whole layout**: slot, loco, status, speed, direction, F0 to F4, the node whose LocoNet drives it, and its version. Every node puts a checksum of its copy of the table in its heartbeat; the dispatcher shows per node whether it is in sync, and `SLOT TABLE DIFFERS` if a copy stays different for more than 2 s. The dispatcher only watches: it sends no heartbeat, hands out no slots and is never the clock master. The node dashboard also marks the allocator with ★ and shows the slot sync in its status line.
+
+JMRI's LocoNet slot monitor works too: connect JMRI to any node over LocoNet TCP; every node answers slot reads from the shared table, free slots included.
 
 ## Simulate four dual-track modules
 

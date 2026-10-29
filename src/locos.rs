@@ -94,6 +94,22 @@ pub struct SlotEntry {
 }
 
 impl SlotEntry {
+    /// LocoNet slot status in words; a free slot with an address is assigned but not yet
+    /// taken by a throttle.
+    pub fn status_label(&self) -> &'static str {
+        match (self.status & SLOT_BUSY_MASK, self.address) {
+            (0x00, None) => "free",
+            (0x00, Some(_)) => "assigned",
+            (0x10, _) => "common",
+            (0x20, _) => "idle",
+            _ => "in use",
+        }
+    }
+
+    pub fn loco(&self) -> LocoInfo {
+        LocoInfo::from(self)
+    }
+
     fn newer_than(&self, other: &SlotEntry) -> bool {
         (self.version, &self.node) > (other.version, &other.node)
     }
@@ -193,9 +209,21 @@ impl LocoTable {
                     outcome.request = Some(address);
                 }
             }
-            // Only slots the layout knows are answered; another slot master may know more.
+            // Known slots are answered from the table, and so are free ones, so a slot
+            // monitor such as JMRI's can read the whole table. A slot driven without a
+            // known address is left to whoever knows more.
             OPC_RQ_SL_DATA if self.address_known(b[1]) => {
                 outcome.replies.push(self.slot_read(b[1], track_status));
+            }
+            OPC_RQ_SL_DATA if is_loco_slot(b[1]) && self.is_free(b[1]) => {
+                outcome.replies.push(LocoNetMessage::loco_slot_read(
+                    b[1],
+                    SLOT_128_STEPS,
+                    0,
+                    0,
+                    0,
+                    track_status,
+                ));
             }
             // A null move (source and destination equal) marks the slot in use.
             OPC_MOVE_SLOTS if b[1] == b[2] && self.address_known(b[1]) => {
@@ -298,6 +326,27 @@ impl LocoTable {
         self.slots.values().cloned().collect()
     }
 
+    /// A short fingerprint of the whole table, shared in the heartbeat so nodes and the
+    /// dispatcher can see whether every copy is the same. FNV-1a, so it is the same on
+    /// every platform and build.
+    pub fn checksum(&self) -> u64 {
+        let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+        let mut add = |bytes: &[u8]| {
+            for &byte in bytes {
+                hash ^= u64::from(byte);
+                hash = hash.wrapping_mul(0x0100_0000_01b3);
+            }
+        };
+        for entry in self.slots.values() {
+            add(&[entry.slot, entry.status, entry.speed, entry.dirf]);
+            add(&entry.address.unwrap_or(u16::MAX).to_le_bytes());
+            add(&entry.version.to_le_bytes());
+            add(entry.node.as_bytes());
+            add(&[0]);
+        }
+        hash
+    }
+
     pub fn is_pending(&self, address: u16) -> bool {
         self.pending.contains(&address)
     }
@@ -342,6 +391,12 @@ impl LocoTable {
         };
         self.slots.insert(number, entry.clone());
         Some(entry)
+    }
+
+    fn is_free(&self, number: u8) -> bool {
+        self.slots
+            .get(&number)
+            .is_none_or(|entry| entry.status & SLOT_BUSY_MASK == 0 && entry.address.is_none())
     }
 
     fn address_known(&self, number: u8) -> bool {
@@ -559,6 +614,24 @@ mod tests {
         let again = send(&mut a, "BF 09 52 1B", true);
         assert!(again.request.is_none());
         assert!(again.replies[0].to_hex().starts_with("E7 0E 01"));
+    }
+
+    #[test]
+    fn free_slots_are_answered_and_checksums_follow_the_table() {
+        let mut a = LocoTable::new("a");
+        // An empty slot reads as free, so JMRI's slot monitor can read every slot.
+        assert_eq!(
+            apply(&mut a, "BB 05 00 41"),
+            ["E7 0E 05 03 00 00 00 07 00 00 00 00 00 17"]
+        );
+
+        let mut b = LocoTable::new("b");
+        assert_eq!(a.checksum(), b.checksum());
+        let assigned = send(&mut a, "BF 00 03 43", true).publish;
+        assert_ne!(a.checksum(), b.checksum());
+        b.merge(assigned, TRACK_ON);
+        assert_eq!(a.checksum(), b.checksum());
+        assert_eq!(a.snapshot()[0].status_label(), "assigned");
     }
 
     #[test]

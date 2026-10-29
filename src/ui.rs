@@ -29,6 +29,8 @@ pub struct PeerRow {
     pub power: String,
     pub rocnet_id: Option<u16>,
     pub locos: Vec<LocoInfo>,
+    /// The slot allocator and fast clock master.
+    pub allocator: bool,
 }
 
 pub struct Dashboard {
@@ -40,6 +42,8 @@ pub struct Dashboard {
     pub local_locos: Vec<LocoInfo>,
     pub last_request: String,
     pub clock: String,
+    pub local_allocator: bool,
+    pub slot_sync: String,
     pub loconet: String,
     pub command_station: String,
     pub scouting: String,
@@ -137,6 +141,12 @@ impl TerminalUi {
             }
         }
         Ok(UiCommand::None)
+    }
+
+    /// Draws any screen, such as the dispatcher's, in this terminal.
+    pub fn draw_with(&mut self, render: impl FnOnce(&mut Frame<'_>)) -> io::Result<()> {
+        self.terminal.draw(render)?;
+        Ok(())
     }
 
     pub fn draw(&mut self, dashboard: &Dashboard) -> io::Result<()> {
@@ -242,7 +252,11 @@ fn render(frame: &mut Frame<'_>, dashboard: &Dashboard, scroll_back: usize, sele
     frame.render_widget(title, areas[0]);
 
     let mut rows = vec![node_row(
-        format!("{} (this node)", dashboard.node_id),
+        format!(
+            "{} (this node){}",
+            dashboard.node_id,
+            allocator_mark(dashboard.local_allocator)
+        ),
         Some(dashboard.rocnet_id),
         Span::styled(
             "LOCAL",
@@ -263,7 +277,7 @@ fn render(frame: &mut Frame<'_>, dashboard: &Dashboard, scroll_back: usize, sele
             ("STALE / STOP", Color::Red)
         };
         rows.push(node_row(
-            peer.id.clone(),
+            format!("{}{}", peer.id, allocator_mark(peer.allocator)),
             peer.rocnet_id,
             Span::styled(
                 label,
@@ -330,10 +344,11 @@ fn render(frame: &mut Frame<'_>, dashboard: &Dashboard, scroll_back: usize, sele
             ),
             Span::raw(&dashboard.scouting),
             Span::raw(format!(
-                "  |  Heartbeat: {} ms  |  LocoNet: {}  |  Command station: {}",
+                "  |  Heartbeat: {} ms  |  LocoNet: {}  |  Command station: {}  |  {}",
                 dashboard.heartbeat_interval.as_millis(),
                 dashboard.loconet,
-                dashboard.command_station
+                dashboard.command_station,
+                dashboard.slot_sync
             )),
         ]),
         Line::from(vec![
@@ -361,6 +376,15 @@ fn render(frame: &mut Frame<'_>, dashboard: &Dashboard, scroll_back: usize, sele
     .wrap(Wrap { trim: true })
     .block(Block::default().borders(Borders::ALL).title("Status"));
     frame.render_widget(footer, areas[3]);
+}
+
+/// The slot allocator, which is also the fast clock master.
+fn allocator_mark(allocator: bool) -> &'static str {
+    if allocator {
+        " ★"
+    } else {
+        ""
+    }
 }
 
 fn node_row(
@@ -432,7 +456,7 @@ fn loco_rows(locos: &[LocoInfo]) -> impl Iterator<Item = Row<'static>> + '_ {
     })
 }
 
-fn power_style(label: &str) -> Style {
+pub(crate) fn power_style(label: &str) -> Style {
     let color = match label {
         "ON" => Color::Green,
         "OFF" => Color::Gray,
@@ -443,7 +467,7 @@ fn power_style(label: &str) -> Style {
 }
 
 /// Human-readable age: milliseconds while a peer is fresh, then seconds, minutes and hours.
-fn format_age(age: Duration) -> String {
+pub(crate) fn format_age(age: Duration) -> String {
     let seconds = age.as_secs();
     if age < Duration::from_secs(1) {
         format!("{} ms ago", age.as_millis())

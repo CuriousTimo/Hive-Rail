@@ -30,8 +30,8 @@ use zenoh::{
 };
 
 const HEARTBEAT_INTERVAL: Duration = Duration::from_millis(250);
-const HEARTBEAT_TIMEOUT: Duration = Duration::from_millis(750);
-const ZENOH_SCOUTING_ADDRESS: &str = "224.0.0.224:7446";
+pub(crate) const HEARTBEAT_TIMEOUT: Duration = Duration::from_millis(750);
+pub(crate) const ZENOH_SCOUTING_ADDRESS: &str = "224.0.0.224:7446";
 const MAX_CLI_LINES: usize = 200;
 const DEFAULT_ROCNET_ID: u16 = 100;
 const DEFAULT_LOCONET_TCP_PORT: u16 = 1234;
@@ -52,16 +52,19 @@ struct NodeArgs {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct Heartbeat {
-    node: String,
-    seq: u64,
-    power: String,
+pub(crate) struct Heartbeat {
+    pub(crate) node: String,
+    pub(crate) seq: u64,
+    pub(crate) power: String,
     // Missing in heartbeats from nodes built before RocNet IDs were shared.
     #[serde(default)]
-    rocnet_id: Option<u16>,
+    pub(crate) rocnet_id: Option<u16>,
     // Missing in heartbeats from nodes built before locos were shared.
     #[serde(default)]
-    locos: Vec<LocoInfo>,
+    pub(crate) locos: Vec<LocoInfo>,
+    /// Checksum of the node's copy of the slot table (missing from older nodes).
+    #[serde(default)]
+    pub(crate) slots: Option<u64>,
 }
 
 /// A node asking the slot allocator for a slot, on `hive/{session}/slots/request`.
@@ -85,6 +88,7 @@ struct PeerState {
     power: String,
     rocnet_id: Option<u16>,
     locos: Vec<LocoInfo>,
+    slots: Option<u64>,
 }
 
 /// Where a power request came from, which decides where it still has to be echoed.
@@ -140,22 +144,11 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
     } else {
         None
     };
-    let mut config = Config::default();
-    config.insert_json5("mode", "\"peer\"")?;
-    config.insert_json5("scouting/multicast/enabled", "true")?;
-    config.insert_json5(
-        "scouting/multicast/address",
-        &format!("\"{ZENOH_SCOUTING_ADDRESS}\""),
-    )?;
-
-    if let Some(endpoint) = &options.listen {
-        config.insert_json5("listen/endpoints", &format!("[\"{endpoint}\"]"))?;
-    }
-    if let Some(endpoint) = &options.connect {
-        config.insert_json5("connect/endpoints", &format!("[\"{endpoint}\"]"))?;
-    }
-
-    let session = zenoh::open(config).await?;
+    let session = zenoh::open(zenoh_config(
+        options.listen.as_deref(),
+        options.connect.as_deref(),
+    )?)
+    .await?;
     let key = format!("hive/{}/node/{}/hb", options.session, options.id);
     let subscriber_key = format!("hive/{}/node/*/hb", options.session);
     let publisher = session.declare_publisher(key).await?;
@@ -202,6 +195,11 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
     let slot_request_subscriber = session
         .declare_subscriber(format!("hive/{}/slots/request", options.session))
         .await?;
+    // A dispatcher screen sends no heartbeat, so it never counts as allocator or clock
+    // master; it says hello instead and the allocator answers with the table and clock.
+    let observer_subscriber = session
+        .declare_subscriber(format!("hive/{}/observer/hello", options.session))
+        .await?;
     let command_station_subscriber = session
         .declare_subscriber(format!("hive/{}/rn/cs/**", options.session))
         .await?;
@@ -217,6 +215,8 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
     let mut locos = LocoTable::new(&options.id);
     // Loco addresses this node asked the slot allocator for, and since when.
     let mut slot_requests: HashMap<u16, Instant> = HashMap::new();
+    // Peers whose slot table checksum differs from ours, and since when.
+    let mut slot_mismatch: HashMap<String, Instant> = HashMap::new();
     let (dccex_driver, mut dccex_events) = match options.dccex.clone() {
         Some(target) => {
             let (driver, events) = dccex::start(target);
@@ -315,8 +315,10 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                     power: power.station.state().label().to_owned(),
                     rocnet_id: Some(rocnet_id),
                     locos: locos.locos(),
+                    slots: Some(locos.checksum()),
                 };
                 publisher.put(serde_json::to_vec(&message)?).await?;
+                track_slot_mismatch(&peers, locos.checksum(), &mut slot_mismatch);
                 for peer_id in refresh_peer_states(&mut peers) {
                     log.event(format!("Peer {peer_id} stale after 3 missed heartbeats; boundary state remains Stop"));
                 }
@@ -353,6 +355,7 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                         power: message.power.clone(),
                         rocnet_id: message.rocnet_id,
                         locos: message.locos,
+                        slots: message.slots,
                     });
                     match previous {
                         Some((true, previous_power)) if previous_power != message.power => {
@@ -580,6 +583,17 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                     Err(error) => log.line(format!("[mesh] <- ignored invalid slot update from {origin}: {error}")),
                 }
             }
+            sample = observer_subscriber.recv_async() => {
+                let sample = sample?;
+                let observer = sample_origin(&sample);
+                if lowest_online(&peers, &options.id) {
+                    log.line(format!("[mesh] <- hello from observer {observer}; sending slot table and clock"));
+                    publish_slots(&slot_update_publisher, &options.id, locos.snapshot()).await?;
+                    if clock.known() {
+                        publish_clock(&clock_publisher, rocnet_id, ClockAction::Sync, &clock, &mut log).await?;
+                    }
+                }
+            }
             sample = slot_request_subscriber.recv_async() => {
                 let sample = sample?;
                 match serde_json::from_slice::<SlotRequest>(sample.payload().to_bytes().as_ref()) {
@@ -711,6 +725,8 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                 }
                 if let Some(ui) = tui.as_mut() {
                     let now = Instant::now();
+                    let allocator = lowest_online_id(&peers, &options.id).to_owned();
+                    let slot_sync = slot_sync_label(&peers, &slot_mismatch);
                     let mut peers: Vec<PeerRow> = peers.iter().map(|(id, peer)| PeerRow {
                         id: id.clone(),
                         online: peer.online,
@@ -719,6 +735,7 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                         power: peer.power.clone(),
                         rocnet_id: peer.rocnet_id,
                         locos: peer.locos.clone(),
+                        allocator: *id == allocator,
                     }).collect();
                     // A fixed order keeps the cursor on the same peer between frames.
                     peers.sort_by(|a, b| a.id.cmp(&b.id));
@@ -731,6 +748,8 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                         local_locos: locos.locos(),
                         last_request: power.last_request.clone(),
                         clock: clock.label(Instant::now()),
+                        local_allocator: allocator == options.id,
+                        slot_sync,
                         command_station: command_station.clone(),
                         loconet: match options.loconet_tcp {
                             Some(port) => format!("TCP :{port}, {loconet_clients} client(s)"),
@@ -908,11 +927,81 @@ fn next_stdin_command(
     }
 }
 
+/// Peer mode with multicast scouting on the LAN; endpoints are optional overrides.
+pub(crate) fn zenoh_config(
+    listen: Option<&str>,
+    connect: Option<&str>,
+) -> Result<Config, Box<dyn Error + Send + Sync>> {
+    let mut config = Config::default();
+    config.insert_json5("mode", "\"peer\"")?;
+    config.insert_json5("scouting/multicast/enabled", "true")?;
+    config.insert_json5(
+        "scouting/multicast/address",
+        &format!("\"{ZENOH_SCOUTING_ADDRESS}\""),
+    )?;
+    if let Some(endpoint) = listen {
+        config.insert_json5("listen/endpoints", &format!("[\"{endpoint}\"]"))?;
+    }
+    if let Some(endpoint) = connect {
+        config.insert_json5("connect/endpoints", &format!("[\"{endpoint}\"]"))?;
+    }
+    Ok(config)
+}
+
 /// The online node with the lowest id is the clock master and the slot allocator.
 fn lowest_online(peers: &HashMap<String, PeerState>, node_id: &str) -> bool {
+    lowest_online_id(peers, node_id) == node_id
+}
+
+fn lowest_online_id<'a>(peers: &'a HashMap<String, PeerState>, node_id: &'a str) -> &'a str {
     peers
         .iter()
-        .all(|(id, peer)| !peer.online || node_id < id.as_str())
+        .filter(|(_, peer)| peer.online)
+        .map(|(id, _)| id.as_str())
+        .fold(node_id, |lowest, id| lowest.min(id))
+}
+
+/// Copies of the slot table may differ for a moment while a change travels; only a
+/// difference that lasts this long is reported.
+pub(crate) const SLOT_SYNC_GRACE: Duration = Duration::from_secs(2);
+
+fn track_slot_mismatch(
+    peers: &HashMap<String, PeerState>,
+    own: u64,
+    mismatch: &mut HashMap<String, Instant>,
+) {
+    for (id, peer) in peers {
+        match peer.slots {
+            Some(checksum) if peer.online && checksum != own => {
+                mismatch.entry(id.clone()).or_insert_with(Instant::now);
+            }
+            _ => {
+                mismatch.remove(id);
+            }
+        }
+    }
+    mismatch.retain(|id, _| peers.contains_key(id));
+}
+
+fn slot_sync_label(
+    peers: &HashMap<String, PeerState>,
+    mismatch: &HashMap<String, Instant>,
+) -> String {
+    let mut differs: Vec<&str> = mismatch
+        .iter()
+        .filter(|(_, since)| since.elapsed() >= SLOT_SYNC_GRACE)
+        .map(|(id, _)| id.as_str())
+        .collect();
+    differs.sort_unstable();
+    let compared = peers
+        .values()
+        .filter(|peer| peer.online && peer.slots.is_some())
+        .count();
+    match (differs.is_empty(), compared) {
+        (true, 0) => "slots: no peer to compare".to_owned(),
+        (true, _) => format!("slots in sync with {compared} peer(s)"),
+        (false, _) => format!("SLOTS DIFFER on {}", differs.join(", ")),
+    }
 }
 
 async fn publish_slots(
@@ -1213,6 +1302,7 @@ mod tests {
                 power: "Normal".to_owned(),
                 rocnet_id: Some(102),
                 locos: Vec::new(),
+                slots: None,
             },
         )]);
 
