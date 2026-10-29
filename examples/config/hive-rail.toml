@@ -1,0 +1,103 @@
+# Hive-Rail node configuration: every option, with its default.
+#
+#   cargo run -- --config examples/config/hive-rail.toml
+#
+# Each key is a command line flag without its dashes, and a [table] is a flag prefix:
+# `session = "bench"` is --session bench, and `serial = "..."` under [loconet] is
+# --loconet-serial ... . Options given on the command line win over this file, so one
+# file can serve several nodes: add --id module-2 to run a second one.
+#
+# Values: text in quotes, numbers without, and true or false for on/off options.
+# Remove the # in front of an option to use it; the value shown is its default or an
+# example.
+
+# What to run: "node" (one module's computer) or "dispatcher" (the read-only screen for
+# the Zugleiter, which reads only session, id, listen, connect and plain).
+mode = "node"
+
+# ---------------------------------------------------------------------------------------
+# Mesh: how the nodes of one layout find each other (Zenoh on the LAN)
+# ---------------------------------------------------------------------------------------
+
+# Required. Every node of one layout uses the same session name; nodes in another
+# session are not seen.
+session = "bench"
+
+# Required. This node's name in the session; it must differ from every other node's.
+id = "MacBook"
+
+# Nodes find each other by multicast on the LAN (224.0.0.224:7446). Where multicast
+# does not get through, one node listens on a fixed endpoint and the others connect
+# to it. Use one of the two, not both.
+#listen = "tcp/0.0.0.0:7447"
+#connect = "tcp/192.168.1.10:7447"
+
+# This node's RocNet ID, from 0 to 65535 (default 100). Each node needs its own; the
+# dashboard warns when two nodes share one.
+rocnet-address = 101
+
+# Log lines instead of the dashboard, for scripts, log files and terminals without a
+# full screen. Keys are then read one per line from stdin (q quits).
+#plain = false
+
+# Test tools that send one RocNet frame after a peer is online. identify needs
+# rocnet-address; use one of the two, not both.
+#identify = false
+#send-rocnet-hex = "@0001230001020203304140"
+
+# ---------------------------------------------------------------------------------------
+# Command station
+# ---------------------------------------------------------------------------------------
+
+# A DCC-EX command station that drives this module's district: a serial port
+# (/dev/cu.usbserial-0001 on macOS, /dev/ttyUSB0 on Linux, COM3 on Windows, 115200 baud)
+# or a WiFi address with its port (192.168.4.1:2560). Without it the node runs a
+# simulated command station.
+#dccex = "/dev/cu.usbserial-0001"
+
+# ---------------------------------------------------------------------------------------
+# LocoNet
+# ---------------------------------------------------------------------------------------
+# The node has two LocoNet sides: a LocoNet over TCP server for Rocrail, JMRI and
+# throttle apps (the clients), and one LocoNet bus, either a node board's LocoNet buffer
+# or a serial LocoNet interface. Each side has a slot owner:
+#   "external"  the side has its own slot master (Rocrail's slot server, an Intellibox,
+#               a DR5000, a Digitrax station); the node answers no slot requests there
+#               and follows the slot master's slots by loco address.
+#   "node"      the node is the slot master and answers with the layout's throttle
+#               numbers, for simple throttles and FREDs.
+
+[loconet]
+
+# Serve LocoNet over TCP (the LbServer format, or raw binary LocoNet) for Rocrail and
+# JMRI: true for port 1234, or a port number. Off when not set.
+#tcp = 1234
+
+# Who owns the slots of the TCP clients (default "external").
+#tcp-slots = "external"
+
+# The LocoNet bus: use connect or serial, not both.
+
+# A node board's LocoNet buffer, by address; the port is 1234 unless given.
+#connect = "192.168.4.1:1234"
+
+# A serial LocoNet interface that passes raw LocoNet bytes: the RS232 port of an
+# Intellibox I (65000, with SO 2 = 4, SO 5 = 1 and SO 6 = 255) or a LocoBuffer-USB.
+#serial = "/dev/cu.usbserial-0001"
+
+# The serial interface's baud rate (default 19200, the Intellibox I's; a LocoBuffer-USB
+# uses 57600).
+#serial-baud = 19200
+
+# The serial interface's flow control: "hardware" (RTS/CTS, the default; the cable must
+# carry both) or "none".
+#serial-flow = "hardware"
+
+# Who owns the slots on the bus (default "node" for a node board, whose bus has FREDs,
+# and "external" for a serial interface, which sits on a command station).
+#connect-slots = "external"
+
+# Write the fast clock (slot 123) to the bus every fast minute (default true). Turn it
+# off for a command station without a fast clock, such as the Intellibox I. The TCP
+# clients get the clock either way.
+#fast-clock = true

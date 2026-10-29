@@ -30,6 +30,11 @@ pub struct LbClientHandle {
 }
 
 impl LbClientHandle {
+    /// A handle for another transport to the bus, such as a serial LocoNet interface.
+    pub fn new(outgoing: mpsc::UnboundedSender<LocoNetMessage>) -> Self {
+        Self { outgoing }
+    }
+
     /// Puts a message on the bus; dropped while the client is not connected.
     pub fn send(&self, message: &LocoNetMessage) {
         let _ = self.outgoing.send(message.clone());

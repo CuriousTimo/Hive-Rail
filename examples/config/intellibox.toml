@@ -1,0 +1,20 @@
+# A node on an Intellibox I (65000) through its RS232 port, for a bench test:
+#   cargo run -- --config examples/config/intellibox.toml
+# Each key is a command line flag without its dashes; a [table] is a flag prefix.
+# Options on the command line win: add --id MacBook-2 to run a second node.
+
+mode = "node"
+session = "bench"
+id = "MacBook"
+rocnet-address = 101
+plain = true
+
+[loconet]
+# Intellibox: SO 2 = 4 (LocoNet on the interface, not P50X), SO 5 = 1, SO 6 = 255.
+serial = "/dev/cu.usbserial-0001"
+serial-baud = 19200
+serial-flow = "hardware"
+# The Intellibox is the slot master.
+connect-slots = "external"
+# The Intellibox I has no fast clock.
+fast-clock = false

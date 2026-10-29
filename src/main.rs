@@ -1,8 +1,10 @@
 mod clock;
+mod config;
 mod dccex;
 mod dispatcher;
 mod lbclient;
 mod lbserver;
+mod lnserial;
 mod loconet;
 mod locos;
 mod node;
@@ -26,7 +28,7 @@ async fn main() -> ExitCode {
 }
 
 async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let mut args = env::args().skip(1);
+    let mut args = config::expand(env::args().skip(1).collect())?.into_iter();
     match args.next().as_deref() {
         None | Some("--mode=simulation") => {
             simulation::run()?;
@@ -77,7 +79,10 @@ fn print_help() {
          cargo run -- --show-locos --session <name>\n\
          cargo run -- --transfer-loco <address> --to <node> --session <name> [--speed 0-126] [--forward|--reverse] [--lights|--no-lights]\n\
          cargo run -- --validate-profile <path>\n\
+         cargo run -- --config <file.toml> [more options]\n\
          cargo run -- --help\n\n\
+         --config reads the options from a TOML file: each key is a flag without its dashes, a [table] a flag\n\
+           prefix ([loconet] serial = ... is --loconet-serial ...); options on the command line win.\n\
          Interactive node mode shows a neighbor/heartbeat dashboard; --plain keeps log output.\n\
          Dashboard keys: 1 district power on, 0 district power off, h district emergency stop,\n\
          E global emergency stop (every district), s simulate short,\n\
@@ -89,7 +94,12 @@ fn print_help() {
          --loconet-connect <host[:port]> joins the LocoNet bus of a node board (LbServer, port 1234).\n\
          --loconet-tcp-slots external|node: who owns the slots of the LbServer clients (default external:\n\
            their own slot master, such as Rocrail's slot server or a central; node: the node, for throttles).\n\
-         --loconet-connect-slots node|external: the same for the node board's bus (default node, for FREDs).\n\
+         --loconet-connect-slots node|external: the same for the bus (default node on a node board, for FREDs;\n\
+           external on a serial interface).\n\
+         --loconet-serial <port> joins a LocoNet bus through a serial interface instead, such as an Intellibox I\n\
+           (SO 2 = 4); --loconet-serial-baud (default 19200) and --loconet-serial-flow hardware|none (default hardware).\n\
+         --loconet-fast-clock on|off: write the fast clock (slot 123) to the bus (default on;\n\
+           off for a central without one, such as an Intellibox I).\n\
          Dispatcher mode (FREMO: Zugleiter) shows every district, the fast clock and the layout's\n\
          loco register, read-only; --show-locos prints the register once.\n\
          Node mode uses Zenoh LAN peer scouting and can exchange simulation RocNet frames.\n\

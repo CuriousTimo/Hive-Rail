@@ -117,6 +117,19 @@ cargo run -- --mode simulation
 cargo run -- --validate-profile examples/module_profile.json
 ```
 
+**Config file:** `--config <file.toml>` reads the options from a TOML file instead of the command line. Each key is a flag without its dashes and a table is a flag prefix, so `[loconet]` with `serial = "/dev/cu.usbserial-0001"` is `--loconet-serial /dev/cu.usbserial-0001`; `true` and `false` switch an option on or off. Options on the command line win over the file, so one file serves several nodes (`--config bench.toml --id module-2`). [`examples/config/`](examples/config/) has one file per setup and a reference:
+
+| File | Setup |
+|---|---|
+| [`hive-rail.toml`](examples/config/hive-rail.toml) | Every option with its default and what it does |
+| [`intellibox.toml`](examples/config/intellibox.toml) | An Intellibox I (65000) as the slot master on LocoNet, through its RS232 port |
+| [`dccex-serial.toml`](examples/config/dccex-serial.toml) | DCC-EX over USB serial, with LocoNet over TCP for Rocrail or JMRI |
+| [`dccex-wifi.toml`](examples/config/dccex-wifi.toml) | DCC-EX over WiFi (TCP), with LocoNet over TCP for Rocrail or JMRI |
+
+```sh
+cargo run -- --config examples/config/intellibox.toml
+```
+
 GitHub Actions runs formatting, Clippy, tests, and a build on Linux, macOS, and Windows for pull requests, beta tags, and manual runs (**Run workflow** on GitHub). Pushes to `main` do not run CI; run the checks locally instead. These checks cover desktop software only; they do not test Raspberry Pi or Orange Pi boards or any real railway hardware.
 
 ### Local checks and builds
@@ -152,13 +165,13 @@ When run in an interactive terminal, node mode opens a dashboard with the fast c
 On macOS:
 
 ```sh
-cargo run -- --mode node --session bench --id mac
+cargo run -- --mode node --session bench --id MacBook
 ```
 
 On Windows PowerShell:
 
 ```powershell
-cargo run -- --mode node --session bench --id windows
+cargo run -- --mode node --session bench --id Windows
 ```
 
 Allow Zenoh peer traffic through each computer's firewall, including multicast scouting at `224.0.0.224:7446` and the peer transport. This is intentionally separate from RocNet/RocRail's UDP multicast `224.0.0.1:4321`; Hive-Rail does not use RocRail's group for node discovery. The nodes publish a heartbeat every 250 ms on `hive/{session}/node/{id}/hb`. If a known peer's heartbeat is missing for 750 ms, the node logs it as stale. These are draft starting values from the wiki, not validated safety timings.
@@ -166,13 +179,13 @@ Allow Zenoh peer traffic through each computer's firewall, including multicast s
 To send the RocNet identify request after a peer is online:
 
 ```sh
-cargo run -- --mode node --session bench --id mac --rocnet-address 1 --identify
+cargo run -- --mode node --session bench --id MacBook --rocnet-address 1 --identify
 ```
 
 To relay the RocNet reference's unicast speed frame to locomotive address `291`:
 
 ```sh
-cargo run -- --mode node --session bench --id mac --send-rocnet-hex '@0001230001020203304140'
+cargo run -- --mode node --session bench --id MacBook --send-rocnet-hex '@0001230001020203304140'
 ```
 
 The receiver prints the decoded frame. No physical RocNet UDP, TCP, MQTT, or serial interface is connected yet. Each node needs its own `--rocnet-address` (default 100); the dashboard warns when two nodes share one.
@@ -184,13 +197,13 @@ Every node runs a simulated command station for its own district. There is no la
 On the Windows PC, start the node with a LocoNet over TCP port for Rocrail:
 
 ```powershell
-hive-rail.exe --mode node --session bench --id windows --rocnet-address 102 --loconet-tcp
+hive-rail.exe --mode node --session bench --id Windows --rocnet-address 102 --loconet-tcp
 ```
 
 On the MacBook:
 
 ```sh
-cargo run -- --mode node --session bench --id mac --rocnet-address 101
+cargo run -- --mode node --session bench --id MacBook --rocnet-address 101
 ```
 
 In Rocrail, add a LocoNet command station using LocoNet over TCP with host `localhost` and port `1234` (the default; `--loconet-tcp <port>` picks another). The node accepts both the LbServer text format and raw binary LocoNet, detected per client. **Rocrail settings:** assign the loco to this LocoNet interface (Rocrail only sends a loco over the interface it belongs to), keep Rocrail's own **slot server on**, and turn its LocoNet **clock sync off** (Hive-Rail commands the fast clock). With `--loconet-tcp-slots external`, the default, the slots on this connection belong to its own slot master: Rocrail's slot server, or a LocoNet central such as an Intellibox, a DR5000 or a Digitrax command station. The node answers no slot requests there; it learns which local slot holds which loco from the slot master's replies and enters the loco in the layout's **loco register** by address. Use `--loconet-tcp-slots node` for clients without their own slot master, such as simple throttles and the simulation: the node then answers the slot requests itself with the layout's throttle numbers. Rocrail's power on, power off and emergency stop then switch the district of the node it is connected to; the other node shows the change. In either dashboard:
@@ -211,10 +224,16 @@ In Rocrail, add a LocoNet command station using LocoNet over TCP with host `loca
 **DCC-EX:** add `--dccex <port>` to drive a real DCC-EX command station instead of the simulated one:
 
 ```sh
-cargo run -- --mode node --session bench --id mac --rocnet-address 101 --dccex /dev/cu.usbserial-0001
+cargo run -- --mode node --session bench --id MacBook --rocnet-address 101 --dccex /dev/cu.usbserial-0001
 ```
 
 Other targets: `--dccex /dev/cu.usbserial-0001` (macOS), `--dccex /dev/ttyUSB0` (Linux), `--dccex COM3` (Windows) or `--dccex 192.168.4.1:2560` (WiFi). The district then follows DCC-EX: power on goes to it as `<1 MAIN>` (a local programming track stays off), power off as `<0>` and emergency stop as `<!>`. The district's power is that of the MAIN tracks; their reports and overload messages come back as `ON`, `OFF` or `SHORT`, and DCC-EX shows the fast clock on its display. A power change Hive-Rail did not request, from a button or a WiThrottle, is reported to every node and sent to the LocoNet clients as GPON/GPOFF. Opening the serial port resets an ESP32, which boots with power off. Without a motor shield DCC-EX has no tracks, so it does not confirm power changes and its display keeps showing `PWR Off`. See the [DCC-EX adapter](https://github.com/CuriousTimo/Hive-Rail/wiki/DCC-EX-Adapter).
+
+**Intellibox over its serial port:** `--loconet-serial <port>` joins a LocoNet bus through a serial LocoNet interface instead of a node board. On an Intellibox I (65000) set SO 2 = 4 (LocoNet on the interface instead of P50X), SO 5 = 1 (one stop bit) and SO 6 = 255 (the stop button does not drop CTS); the port then runs at 19200 baud with RTS/CTS, the defaults of `--loconet-serial-baud` and `--loconet-serial-flow`. A Mac needs a USB-RS232 adapter and a cable that carries RTS and CTS. The Intellibox is the slot master there (`--loconet-connect-slots external`, the default on a serial interface). The Intellibox I has no fast clock: add `--loconet-fast-clock off` so the node does not write slot 123 to it; its LocoNet over TCP clients still get the clock. The Intellibox does not echo what the node sends; an interface that does, such as a LocoBuffer, has its echo dropped. Not yet tested with a real Intellibox.
+
+```sh
+cargo run -- --mode node --session bench --id MacBook --rocnet-address 101 --loconet-serial /dev/cu.usbserial-0001 --loconet-fast-clock off
+```
 
 A short is reported, not spread: only the affected district loses power, and Rocrail sees power off if it is connected to that node. The neighbouring districts will later hold their boundary signals at Stop. Allow TCP port 1234 through the Windows firewall if Rocrail runs on another computer.
 

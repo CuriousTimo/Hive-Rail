@@ -1,0 +1,20 @@
+# A node that drives a DCC-EX command station over USB serial, with LocoNet over TCP
+# for Rocrail or JMRI:
+#   cargo run -- --config examples/config/dccex-serial.toml
+# Each key is a command line flag without its dashes; a [table] is a flag prefix.
+# Options on the command line win. Every option: examples/config/hive-rail.toml.
+
+mode = "node"
+session = "bench"
+id = "module-1"
+rocnet-address = 101
+
+# The DCC-EX board's USB port at 115200 baud: /dev/cu.usbserial-0001 on macOS
+# (ls /dev/cu.*), /dev/ttyUSB0 on Linux, COM3 on Windows. Opening the port resets an
+# ESP32, which boots with track power off.
+dccex = "/dev/cu.usbserial-0001"
+
+[loconet]
+# Rocrail or JMRI connect to this node on port 1234; Rocrail keeps its own slot server.
+tcp = 1234
+tcp-slots = "external"

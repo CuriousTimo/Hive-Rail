@@ -3,6 +3,7 @@ use crate::{
     dccex::{self, BoardStatus, DccExEvent, DccExHandle, DccExMessage},
     lbclient::{self, LbClientHandle},
     lbserver::{self, LbEvent, LbServerHandle},
+    lnserial,
     loconet::{LocoNetMessage, HIVE_RAIL_CLOCK_ID},
     locos::{Change, LocoInfo, LocoNetEdge, LocoRegister, RegisteredLoco, SlotOwner},
     power::{PowerRequest, PowerState, SimulatedCommandStation},
@@ -11,6 +12,7 @@ use crate::{
 };
 use chrono::Local;
 use serde::{Deserialize, Serialize};
+use serialport::FlowControl;
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     error::Error,
@@ -49,9 +51,17 @@ struct NodeArgs {
     send_rocnet_hex: Option<String>,
     loconet_tcp: Option<u16>,
     loconet_connect: Option<String>,
+    /// A serial LocoNet interface as the bus instead of a node board, such as an Intellibox I.
+    loconet_serial: Option<String>,
+    loconet_serial_baud: u32,
+    loconet_serial_flow: FlowControl,
+    /// Whether the bus gets the fast clock (slot 123); an old command station such as the
+    /// Intellibox I has none.
+    loconet_fast_clock: bool,
     /// Who owns the slots on the LbServer clients' side (default: their own slot master).
     loconet_tcp_slots: SlotOwner,
-    /// Who owns the slots on the node board's bus (default: the node, for FREDs).
+    /// Who owns the slots on the bus (default: the node on a node board, for FREDs; the
+    /// command station on a serial interface).
     loconet_connect_slots: SlotOwner,
     dccex: Option<String>,
     plain: bool,
@@ -269,16 +279,31 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
         None => (None, None),
     };
     let mut loconet_clients = 0_usize;
-    let (loconet_bus, mut loconet_bus_events) = match options.loconet_connect.clone() {
-        Some(target) => {
-            let (client, events) = lbclient::start(target);
-            (Some(client), Some(events))
-        }
-        None => (None, None),
-    };
-    let mut loconet_bus_state = match &options.loconet_connect {
-        Some(target) => format!("bus {target}, connecting"),
-        None => String::new(),
+    let (loconet_bus, mut loconet_bus_events) =
+        match (&options.loconet_connect, &options.loconet_serial) {
+            (Some(target), _) => {
+                let (client, events) = lbclient::start(target.clone());
+                (Some(client), Some(events))
+            }
+            (None, Some(port)) => {
+                let (client, events) = lnserial::start(
+                    port.clone(),
+                    options.loconet_serial_baud,
+                    options.loconet_serial_flow,
+                );
+                (Some(client), Some(events))
+            }
+            (None, None) => (None, None),
+        };
+    // The node board's address or the serial port.
+    let bus_name = options
+        .loconet_connect
+        .clone()
+        .or_else(|| options.loconet_serial.clone())
+        .unwrap_or_default();
+    let mut loconet_bus_state = match bus_name.is_empty() {
+        false => format!("bus {bus_name}, connecting"),
+        true => String::new(),
     };
     let loconet_ports = LocoNetPorts {
         server: loconet_server.clone(),
@@ -373,9 +398,14 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
         None => log.line("LocoNet over TCP disabled; start with --loconet-tcp <port>".to_owned()),
     }
     log.line(format!(
-        "LocoNet slots: clients {} (external = their own slot master, node = this node), node board bus {}",
+        "LocoNet slots: clients {} (external = their own slot master, node = this node), bus {}{}",
         options.loconet_tcp_slots.label(),
-        options.loconet_connect_slots.label()
+        options.loconet_connect_slots.label(),
+        if options.loconet_fast_clock {
+            ""
+        } else {
+            "; no fast clock on the bus"
+        }
     ));
     match &options.dccex {
         Some(target) => log.line(format!("DCC-EX command station on {target}")),
@@ -616,14 +646,17 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
             },
             (side, event) = next_loconet_event(&mut loconet_events, &mut loconet_bus_events) => match event {
                 Some(LbEvent::Connected(peer)) if side == LocoNetSide::Bus => {
-                    loconet_bus_state = format!("bus {peer} connected");
+                    loconet_bus_state = format!("bus {bus_name} connected");
                     // Give the bus the current clock on the next tick.
                     clock_written = None;
-                    log.event(format!("LocoNet bus connected (node board at {peer})"));
+                    match &options.loconet_serial {
+                        Some(port) => log.event(format!("LocoNet bus connected (serial interface on {port})")),
+                        None => log.event(format!("LocoNet bus connected (node board at {peer})")),
+                    }
                 }
                 Some(LbEvent::Disconnected { reason, .. }) if side == LocoNetSide::Bus => {
                     let reason = reason.unwrap_or_default();
-                    loconet_bus_state = format!("bus {}, disconnected", options.loconet_connect.as_deref().unwrap_or_default());
+                    loconet_bus_state = format!("bus {bus_name}, disconnected");
                     log.event(format!("LocoNet bus disconnected: {reason}"));
                 }
                 Some(LbEvent::Connected(peer)) => {
@@ -652,7 +685,7 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                     let other_side = side.other();
                     let from = match side {
                         LocoNetSide::Clients => peer.to_string(),
-                        LocoNetSide::Bus => format!("bus {peer}"),
+                        LocoNetSide::Bus => format!("bus {bus_name}"),
                     };
                     if !message.is_slot_message() {
                         loconet_ports.to_side(other_side, &message);
@@ -717,7 +750,11 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                     }
                 }
                 Some(LbEvent::Rejected { peer, input, reason }) => {
-                    log.line(format!("[ln  ] <- rejected from {peer}: {input} ({reason})"));
+                    let from = match side {
+                        LocoNetSide::Clients => peer.to_string(),
+                        LocoNetSide::Bus => format!("bus {bus_name}"),
+                    };
+                    log.line(format!("[ln  ] <- rejected from {from}: {input} ({reason})"));
                 }
                 None => match side {
                     LocoNetSide::Clients => loconet_events = None,
@@ -858,7 +895,10 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                                 if state.1 { state.2 } else { 0 },
                                 loconet_track_status(power.station.state()),
                             );
-                            server.send(&message);
+                            server.to_clients(&message);
+                            if options.loconet_fast_clock {
+                                server.to_bus(&message);
+                            }
                             log.line(format!("[ln  ] -> {}  {}", message.to_hex(), message.describe()));
                         }
                         if let Some(driver) = outputs.dccex {
@@ -1358,7 +1398,11 @@ fn parse_args(args: Vec<String>) -> Result<NodeArgs, Box<dyn Error + Send + Sync
     let mut loconet_tcp = None;
     let mut loconet_connect = None;
     let mut loconet_tcp_slots = SlotOwner::External;
-    let mut loconet_connect_slots = SlotOwner::Node;
+    let mut loconet_connect_slots = None;
+    let mut loconet_serial = None;
+    let mut loconet_serial_baud = lnserial::DEFAULT_BAUD_RATE;
+    let mut loconet_serial_flow = FlowControl::Hardware;
+    let mut loconet_fast_clock = None;
     let mut dccex = None;
     let mut plain = false;
     let mut args = args.into_iter().peekable();
@@ -1381,7 +1425,7 @@ fn parse_args(args: Vec<String>) -> Result<NodeArgs, Box<dyn Error + Send + Sync
                 if flag == "--loconet-tcp-slots" {
                     loconet_tcp_slots = owner;
                 } else {
-                    loconet_connect_slots = owner;
+                    loconet_connect_slots = Some(owner);
                 }
             }
             "--loconet-connect" => {
@@ -1391,6 +1435,31 @@ fn parse_args(args: Vec<String>) -> Result<NodeArgs, Box<dyn Error + Send + Sync
                     target
                 } else {
                     format!("{target}:{DEFAULT_LOCONET_TCP_PORT}")
+                });
+            }
+            "--loconet-serial" => loconet_serial = Some(next_value(&mut args, &flag)?),
+            "--loconet-serial-baud" => {
+                let value = next_value(&mut args, &flag)?;
+                loconet_serial_baud = value.parse::<u32>().map_err(|_| {
+                    format!("invalid {flag} '{value}'; expected a baud rate such as 19200")
+                })?;
+            }
+            "--loconet-serial-flow" => {
+                let value = next_value(&mut args, &flag)?;
+                loconet_serial_flow = lnserial::parse_flow_control(&value).ok_or_else(|| {
+                    format!("invalid {flag} '{value}'; expected 'hardware' or 'none'")
+                })?;
+            }
+            "--loconet-fast-clock" => {
+                let value = next_value(&mut args, &flag)?;
+                loconet_fast_clock = Some(match value.as_str() {
+                    "on" => true,
+                    "off" => false,
+                    _ => {
+                        return Err(
+                            format!("invalid {flag} '{value}'; expected 'on' or 'off'").into()
+                        )
+                    }
                 });
             }
             "--rocnet-address" => {
@@ -1421,6 +1490,9 @@ fn parse_args(args: Vec<String>) -> Result<NodeArgs, Box<dyn Error + Send + Sync
     if identify && send_rocnet_hex.is_some() {
         return Err("choose either --identify or --send-rocnet-hex".into());
     }
+    if loconet_connect.is_some() && loconet_serial.is_some() {
+        return Err("choose either --loconet-connect or --loconet-serial".into());
+    }
     if identify && rocnet_address.is_none() {
         return Err("--identify requires --rocnet-address".into());
     }
@@ -1436,7 +1508,16 @@ fn parse_args(args: Vec<String>) -> Result<NodeArgs, Box<dyn Error + Send + Sync
         loconet_tcp,
         loconet_connect,
         loconet_tcp_slots,
-        loconet_connect_slots,
+        // A node board's bus has FREDs; a serial interface sits on a command station.
+        loconet_connect_slots: loconet_connect_slots.unwrap_or(if loconet_serial.is_some() {
+            SlotOwner::External
+        } else {
+            SlotOwner::Node
+        }),
+        loconet_fast_clock: loconet_fast_clock.unwrap_or(true),
+        loconet_serial,
+        loconet_serial_baud,
+        loconet_serial_flow,
         dccex,
         plain,
     })

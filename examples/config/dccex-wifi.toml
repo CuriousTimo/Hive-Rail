@@ -1,0 +1,19 @@
+# A node that drives a DCC-EX command station over WiFi (TCP), with LocoNet over TCP
+# for Rocrail or JMRI:
+#   cargo run -- --config examples/config/dccex-wifi.toml
+# Each key is a command line flag without its dashes; a [table] is a flag prefix.
+# Options on the command line win. Every option: examples/config/hive-rail.toml.
+
+mode = "node"
+session = "bench"
+id = "module-2"
+rocnet-address = 102
+
+# DCC-EX's WiFi address and port. 192.168.4.1:2560 is DCC-EX's own access point; on
+# your network, use the address DCC-EX shows on its display.
+dccex = "192.168.4.1:2560"
+
+[loconet]
+# Rocrail or JMRI connect to this node on port 1234; Rocrail keeps its own slot server.
+tcp = 1234
+tcp-slots = "external"
