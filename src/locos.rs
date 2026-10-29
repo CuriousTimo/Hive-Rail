@@ -39,6 +39,8 @@ const LAST_LOCO_SLOT: u8 = 119;
 /// Slot status bits 4 and 5: `00` free, `01` common, `10` idle, `11` in use.
 const SLOT_BUSY_MASK: u8 = 0x30;
 const SLOT_IN_USE: u8 = 0x30;
+/// Still refreshed by the slot master, but no throttle holds it.
+const SLOT_COMMON: u8 = 0x10;
 /// 128 speed steps, the decoder type Rocrail and JMRI expect by default.
 const SLOT_128_STEPS: u8 = 0x03;
 const DIRF_REVERSE: u8 = 0x20;
@@ -422,6 +424,8 @@ pub struct LocoNetEdge {
     owner: SlotOwner,
     /// External only: local slot number to loco address, learned from the slot master.
     local: BTreeMap<u8, u16>,
+    /// External only: the slot master's status byte per local slot, for its speed steps.
+    status: BTreeMap<u8, u8>,
     /// External only: slots driven before their address was known, already asked about.
     asked: BTreeSet<u8>,
     /// External only: locos this node asked the slot master for, to take them.
@@ -435,6 +439,7 @@ impl LocoNetEdge {
         Self {
             owner,
             local: BTreeMap::new(),
+            status: BTreeMap::new(),
             asked: BTreeSet::new(),
             acquiring: BTreeSet::new(),
             held: BTreeMap::new(),
@@ -453,15 +458,22 @@ impl LocoNetEdge {
         vec![LocoNetMessage::loco_address(address)]
     }
 
-    /// Releases a loco this node holds: its slot becomes free, so the slot master stops
-    /// refreshing it.
+    /// Releases a loco this node holds: its slot becomes COMMON, so the slot master keeps
+    /// refreshing it and a train across the district border keeps running. Only the busy
+    /// bits change; the slot master's speed steps for the loco stay as they are.
     pub fn release(&mut self, address: u16) -> Vec<LocoNetMessage> {
         self.acquiring.remove(&address);
         if self.held.remove(&address).is_none() {
             return Vec::new();
         }
         self.slot_of(address)
-            .map(|slot| LocoNetMessage::slot_status(slot, SLOT_128_STEPS))
+            .map(|slot| {
+                let status = self
+                    .status
+                    .get(&slot)
+                    .map_or(SLOT_128_STEPS, |status| status & !SLOT_BUSY_MASK);
+                LocoNetMessage::slot_status(slot, status | SLOT_COMMON)
+            })
             .into_iter()
             .collect()
     }
@@ -551,6 +563,7 @@ impl LocoNetEdge {
                 if address != 0 {
                     // Also the slot master's answer to LOCO_ADR, before the slot is taken.
                     let known = self.local.insert(b[2], address) == Some(address);
+                    self.status.insert(b[2], b[3]);
                     self.asked.remove(&b[2]);
                     if self.acquiring.remove(&address) {
                         // Only a slot a throttle here already drives is in use: Rocrail's
@@ -602,6 +615,7 @@ impl LocoNetEdge {
         status: u8,
         outcome: &mut EdgeOutcome,
     ) {
+        self.status.remove(&slot);
         if let Some(address) = self.local.remove(&slot) {
             self.held.remove(&address);
             outcome.changed(register.update(address, |loco| loco.status = status));
@@ -910,6 +924,32 @@ mod tests {
             .is_empty());
     }
 
+    /// A central that keeps the loco at 28 steps (status bits 0 to 2 `000`), as an
+    /// Intellibox may: releasing the slot makes it COMMON and keeps the 28 steps.
+    #[test]
+    fn releases_as_common_with_the_central_s_speed_steps() {
+        let mut register = LocoRegister::new("MacBook");
+        let mut edge = LocoNetEdge::new(SlotOwner::External);
+        register.update(3, |loco| loco.district = Some("MacBook".into()));
+        edge.acquire(3);
+        // Slot 2, free, 28 steps; then its answer to the null move, in use.
+        send(
+            &mut edge,
+            &mut register,
+            "E7 0E 02 00 03 00 00 07 00 00 00 00 00 10",
+            true,
+        );
+        send(
+            &mut edge,
+            &mut register,
+            "E7 0E 02 30 03 00 00 07 00 00 00 00 00 20",
+            true,
+        );
+        assert_eq!(hexes(&edge.release(3)), ["B5 02 10 58"]);
+        // A loco no longer held is not released twice.
+        assert!(edge.release(3).is_empty());
+    }
+
     /// A loco transferred into this district is taken on the slot master (here Rocrail's
     /// slot server) like a throttle would, following the LocoNet PE.
     #[test]
@@ -948,8 +988,8 @@ mod tests {
         // After 100 s without activity a speed update keeps the slot ours.
         let later = Instant::now() + Duration::from_secs(101);
         assert_eq!(hexes(&edge.keep_alive(&register, later)), ["A0 04 29 72"]);
-        // Leaving the district releases the slot.
-        assert_eq!(hexes(&edge.release(3333)), ["B5 04 03 4D"]);
+        // Leaving the district makes the slot COMMON, keeping its 128 steps.
+        assert_eq!(hexes(&edge.release(3333)), ["B5 04 13 5D"]);
 
         // Rocrail's slot server answers a new LOCO_ADR with IN_USE: still taken.
         let mut rocrail = LocoNetEdge::new(SlotOwner::External);

@@ -183,7 +183,8 @@ impl LocoNetMessage {
         Self::with_checksum(&[0xBA, slot & 0x7F, slot & 0x7F])
     }
 
-    /// Writes a slot's status byte; busy bits `00` release the slot (no more refresh).
+    /// Writes a slot's status byte: busy bits `01` (COMMON) release a slot the slot master
+    /// still refreshes, `00` (FREE) one it no longer refreshes.
     pub fn slot_status(slot: u8, status: u8) -> Self {
         Self::with_checksum(&[0xB5, slot & 0x7F, status & 0x7F])
     }
