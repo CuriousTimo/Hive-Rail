@@ -173,6 +173,21 @@ impl LocoNetMessage {
         ])
     }
 
+    /// Asks the slot master for a slot holding this loco address (`OPC_LOCO_ADR`).
+    pub fn loco_address(address: u16) -> Self {
+        Self::with_checksum(&[0xBF, (address >> 7 & 0x7F) as u8, (address & 0x7F) as u8])
+    }
+
+    /// A null move (source and destination equal) takes a slot: it becomes IN_USE.
+    pub fn null_move(slot: u8) -> Self {
+        Self::with_checksum(&[0xBA, slot & 0x7F, slot & 0x7F])
+    }
+
+    /// Writes a slot's status byte; busy bits `00` release the slot (no more refresh).
+    pub fn slot_status(slot: u8, status: u8) -> Self {
+        Self::with_checksum(&[0xB5, slot & 0x7F, status & 0x7F])
+    }
+
     pub fn loco_speed(slot: u8, speed: u8) -> Self {
         Self::with_checksum(&[0xA0, slot & 0x7F, speed & 0x7F])
     }

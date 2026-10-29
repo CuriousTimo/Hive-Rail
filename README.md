@@ -95,6 +95,7 @@ The roadmap follows the [wiki design specification](https://github.com/CuriousTi
 	- [x] **7.5** Add a dispatcher screen for the Zugleiter: every district, the fast clock and the layout's loco register with a sync check per node; `--show-locos` prints the register once.
 - [ ] **Phase 8: FRED throttles** (started; the [node board](https://github.com/CuriousTimo/Hive-Rail/wiki/Hive-Rail-Node-Board) makes Hive-Rail the only slot master on each module LocoNet)
 	- [x] **8.1** Share one **loco register** across the mesh, by loco address. Locos on a throttle bus get a layout-wide **throttle number** from one allocator (the lowest online node), so a FRED plugged in again on another module gets its loco back. LocoNet connections with their own slot master (Rocrail's slot server, a central) keep their own slots and are translated by address; tested with three nodes and Rocrail.
+	- [x] **8.7** Take a loco that enters a district on that district's slot master (null move, then the register's speed and functions, kept alive every 100 s) and release it when it leaves; tested with Rocrail's slot server and the `--transfer-loco` test tool. Rocrail only drives locos in its loco table; a central does not have that limit. See the [LocoNet adapter](https://github.com/CuriousTimo/Hive-Rail/wiki/LocoNet-Adapter).
 	- [ ] **8.2** Complete the throttle flow: **dispatch** across connections (a FRED cannot select a loco, so it takes a loco dispatched by Rocrail, a DT100 or another throttle), purging idle throttle numbers (centrals use about 200 s), slot updates for throttles with a display.
 	- [ ] **8.3** Make throttle number allocation safe during a network split (blocks per node, as in the FRED design §7).
 	- [ ] **8.4** Route a throttle's speed and functions to the district that holds the loco (needs 4.6 and 5.1).
@@ -224,6 +225,7 @@ At a FREMO meeting the **Zugleiter** (train controller, or dispatcher) oversees 
 ```sh
 cargo run -- --mode dispatcher --session bench            # full screen; --plain for a log
 cargo run -- --show-locos --session bench                 # print the loco register once
+cargo run -- --transfer-loco 4444 --to MacBook --session bench --speed 40 --lights  # test: put a loco into a district
 ```
 
 The dispatcher shows every district (heartbeat, power, locos), the fast clock, the allocator and clock master (★), and the **loco register of the whole layout**: loco, throttle number (for locos on a throttle bus), status, speed, direction, F0 to F4, the node whose LocoNet drives it, and its version. Every node puts a checksum of its copy of the register in its heartbeat; the dispatcher shows per node whether it is in sync, and `LOCO REGISTER DIFFERS` if a copy stays different for more than 2 s. The dispatcher only watches: it sends no heartbeat, hands out no throttle numbers and is never the clock master. The node dashboard also marks the allocator with ★ and shows the register sync in its status line.

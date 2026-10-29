@@ -666,6 +666,12 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                     );
                     send_to_side(&loconet_ports, side, outcome.replies, &mut log);
                     tell_side(&loconet_ports, other_side, other_edge, &outcome.changes, &mut log);
+                    for (address, slot) in &outcome.acquired {
+                        log.event(format!("Took loco {address} on {from}'s slot master: slot {slot}, in use; the slot master now drives it"));
+                    }
+                    for address in &outcome.conflicts {
+                        log.event(format!("WARNING loco {address} is already IN USE on {from}'s slot master; not taken (LocoNet PE)"));
+                    }
                     for loco in &outcome.publish {
                         log.line(format!("[mesh] -> {}", loco.describe()));
                     }
@@ -725,6 +731,29 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                         // A loco driven elsewhere that a connection here also knows.
                         tell_side(&loconet_ports, LocoNetSide::Clients, &client_edge, &merged.changes, &mut log);
                         tell_side(&loconet_ports, LocoNetSide::Bus, &bus_edge, &merged.changes, &mut log);
+                        // A loco entering or leaving this district is taken on, or released
+                        // from, the slot masters of this node's LocoNet connections.
+                        for (before, after) in &merged.changes {
+                            let was_here = before.as_ref().and_then(|loco| loco.district.as_deref()) == Some(options.id.as_str());
+                            let here = after.district.as_deref() == Some(options.id.as_str());
+                            for (side, edge) in [(LocoNetSide::Clients, &mut client_edge), (LocoNetSide::Bus, &mut bus_edge)] {
+                                let messages = match (was_here, here) {
+                                    (false, true) => edge.acquire(after.address),
+                                    (true, false) => edge.release(after.address),
+                                    _ => Vec::new(),
+                                };
+                                if messages.is_empty() {
+                                    continue;
+                                }
+                                log.event(format!(
+                                    "Loco {} {} this district: {} it on the slot master",
+                                    after.address,
+                                    if here { "entered" } else { "left" },
+                                    if here { "taking" } else { "releasing" }
+                                ));
+                                send_to_side(&loconet_ports, side, messages, &mut log);
+                            }
+                        }
                         // Throttles that waited for a throttle number get their slot data.
                         let track_status = loconet_track_status(power.station.state());
                         for address in merged.answered {
@@ -788,6 +817,12 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
             }
             _ = clock_tick.tick() => {
                 let now = Instant::now();
+                // Locos held on a slot master: a speed update every 100 s against the purge.
+                let std_now = std::time::Instant::now();
+                let keep_alive = client_edge.keep_alive(&register, std_now);
+                send_to_side(&loconet_ports, LocoNetSide::Clients, keep_alive, &mut log);
+                let keep_alive = bus_edge.keep_alive(&register, std_now);
+                send_to_side(&loconet_ports, LocoNetSide::Bus, keep_alive, &mut log);
                 // Throttle number requests nobody answered: the throttle asks again by itself.
                 throttle_requests.retain(|&address, since| {
                     if !register.is_pending(address) {

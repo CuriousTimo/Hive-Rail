@@ -42,6 +42,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             _ => Err("mode must be 'simulation', 'node' or 'dispatcher'".into()),
         },
         Some("--show-locos") => dispatcher::show_locos(args.collect()).await,
+        Some("--transfer-loco") => dispatcher::transfer_loco(args.collect()).await,
         Some("--validate-profile") => {
             let path = args.next().ok_or("expected a profile path")?;
             let profile = profile::load(Path::new(&path))?;
@@ -74,6 +75,7 @@ fn print_help() {
          cargo run -- --mode node --session <name> --id <id> --plain\n\
          cargo run -- --mode dispatcher --session <name> [--plain]\n\
          cargo run -- --show-locos --session <name>\n\
+         cargo run -- --transfer-loco <address> --to <node> --session <name> [--speed 0-126] [--forward|--reverse] [--lights|--no-lights]\n\
          cargo run -- --validate-profile <path>\n\
          cargo run -- --help\n\n\
          Interactive node mode shows a neighbor/heartbeat dashboard; --plain keeps log output.\n\

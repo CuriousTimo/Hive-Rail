@@ -34,6 +34,8 @@ const MAX_EVENTS: usize = 200;
 /// How long `--show-locos` waits for the loco register after the first node answers.
 const SHOW_LOCOS_SETTLE: Duration = Duration::from_millis(1500);
 const SHOW_LOCOS_TIMEOUT: Duration = Duration::from_secs(6);
+/// A node behind a firewall, such as Windows, only appears once it connects to a new peer.
+const WANTED_NODE_TIMEOUT: Duration = Duration::from_secs(15);
 
 struct Args {
     session: String,
@@ -230,6 +232,7 @@ struct Mesh {
     locos: Subscriber<FifoChannelHandler<Sample>>,
     clock: Subscriber<FifoChannelHandler<Sample>>,
     hello: zenoh::pubsub::Publisher<'static>,
+    updates: zenoh::pubsub::Publisher<'static>,
     id: String,
 }
 
@@ -253,6 +256,9 @@ impl Mesh {
                 .await?,
             hello: session
                 .declare_publisher(format!("hive/{s}/observer/hello"))
+                .await?,
+            updates: session
+                .declare_publisher(format!("hive/{s}/locos/update"))
                 .await?,
             _session: session,
             id: args.id.clone(),
@@ -347,6 +353,28 @@ pub async fn show_locos(args: Vec<String>) -> Result<(), Box<dyn Error + Send + 
     let mut args = parse_args(args)?;
     args.plain = true;
     let mesh = Mesh::open(&args).await?;
+    let state = gather(&mesh, &args, None).await?;
+    if state.districts.is_empty() {
+        println!(
+            "No node answered in session {} within {} s.",
+            args.session,
+            SHOW_LOCOS_TIMEOUT.as_secs()
+        );
+        return Ok(());
+    }
+    print_register(&args, &state);
+    Ok(())
+}
+
+/// Joins the mesh as an observer for a few seconds and collects the districts and the
+/// loco register.
+/// Collects the nodes and the loco register; with `want`, keeps listening until that node
+/// is seen too, since a new peer finds the nodes on other machines later than local ones.
+async fn gather(
+    mesh: &Mesh,
+    args: &Args,
+    want: Option<&str>,
+) -> Result<State, Box<dyn Error + Send + Sync>> {
     let mut state = State {
         session: args.session.clone(),
         districts: BTreeMap::new(),
@@ -355,13 +383,19 @@ pub async fn show_locos(args: Vec<String>) -> Result<(), Box<dyn Error + Send + 
         events: VecDeque::new(),
         echo: false,
     };
-    let deadline = Instant::now() + SHOW_LOCOS_TIMEOUT;
+    let deadline = Instant::now() + want.map_or(SHOW_LOCOS_TIMEOUT, |_| WANTED_NODE_TIMEOUT);
     let mut settle_until: Option<Instant> = None;
     // Hello once the first node is seen, so the allocator is reachable.
     loop {
         let wait_until = settle_until.unwrap_or(deadline).min(deadline);
         tokio::select! {
-            _ = time::sleep_until(wait_until) => break,
+            _ = time::sleep_until(wait_until) => {
+                let missing = want.is_some_and(|node| !state.districts.contains_key(node));
+                if !missing || Instant::now() >= deadline {
+                    break;
+                }
+                settle_until = Some(deadline);
+            }
             sample = mesh.heartbeats.recv_async() => {
                 let sample = sample?;
                 if let Ok(heartbeat) = serde_json::from_slice::<Heartbeat>(sample.payload().to_bytes().as_ref()) {
@@ -381,15 +415,10 @@ pub async fn show_locos(args: Vec<String>) -> Result<(), Box<dyn Error + Send + 
             }
         }
     }
+    Ok(state)
+}
 
-    if state.districts.is_empty() {
-        println!(
-            "No node answered in session {} within {} s.",
-            args.session,
-            SHOW_LOCOS_TIMEOUT.as_secs()
-        );
-        return Ok(());
-    }
+fn print_register(args: &Args, state: &State) {
     println!(
         "Session {}: {} node(s), allocator {}",
         args.session,
@@ -427,6 +456,89 @@ pub async fn show_locos(args: Vec<String>) -> Result<(), Box<dyn Error + Send + 
             println!("Note: {id}'s loco register differs from the copy shown here.");
         }
     }
+}
+
+/// `--transfer-loco <address> --to <node>`: a test tool that puts a loco into a district,
+/// as a handoff will. The loco gets that node as its district in the register; the node
+/// then takes it on its command station's slot master. `--speed`, `--forward`/`--reverse`
+/// and `--lights`/`--no-lights` set its state; what is not given stays as it is, so running
+/// it again changes only the speed.
+pub async fn transfer_loco(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let mut args = args.into_iter();
+    let address: u16 = args
+        .next()
+        .and_then(|value| value.parse().ok())
+        // DCC long addresses end at 10239; most throttles stop at 9999.
+        .filter(|address| (1..=10239).contains(address))
+        .ok_or("expected a loco address from 1 to 10239 after --transfer-loco")?;
+    let mut to = None;
+    let mut speed: Option<u8> = None;
+    let mut reverse: Option<bool> = None;
+    let mut lights: Option<bool> = None;
+    let mut rest = vec!["--id".to_owned(), "transfer".to_owned()];
+    while let Some(flag) = args.next() {
+        let mut value = || {
+            args.next()
+                .ok_or_else(|| format!("missing value after {flag}"))
+        };
+        match flag.as_str() {
+            "--to" => to = Some(value()?),
+            "--speed" => {
+                let value = value()?;
+                let step: u8 = value
+                    .parse()
+                    .ok()
+                    .filter(|step| *step <= 126)
+                    .ok_or_else(|| format!("invalid speed '{value}'; expected 0 to 126"))?;
+                // LocoNet speed: 0 stop, 1 emergency stop, 2 to 127 for speed 1 to 126.
+                speed = Some(if step == 0 { 0 } else { step + 1 });
+            }
+            "--forward" => reverse = Some(false),
+            "--reverse" => reverse = Some(true),
+            "--lights" => lights = Some(true),
+            "--no-lights" => lights = Some(false),
+            _ => {
+                rest.push(flag.clone());
+                if let Some(value) = args.next() {
+                    rest.push(value);
+                }
+            }
+        }
+    }
+    let to = to.ok_or("missing --to <node>")?;
+    let mut options = parse_args(rest)?;
+    options.plain = true;
+    let mesh = Mesh::open(&options).await?;
+    let state = gather(&mesh, &options, Some(&to)).await?;
+    if !state.districts.contains_key(&to) {
+        return Err(format!("node {to} is not online in session {}", options.session).into());
+    }
+
+    let mut loco = state
+        .register
+        .get(address)
+        .cloned()
+        .unwrap_or_else(|| RegisteredLoco::new(address, "virtual"));
+    loco.district = Some(to.clone());
+    loco.status |= 0x30; // in use
+    if let Some(speed) = speed {
+        loco.speed = speed;
+    }
+    // DIRF: bit 5 reverse, bit 4 F0 (the lights).
+    if let Some(reverse) = reverse {
+        loco.dirf = (loco.dirf & !0x20) | if reverse { 0x20 } else { 0 };
+    }
+    if let Some(lights) = lights {
+        loco.dirf = (loco.dirf & !0x10) | if lights { 0x10 } else { 0 };
+    }
+    loco.version += 1;
+    mesh.updates
+        .put(serde_json::to_vec(&vec![loco.clone()])?)
+        .attachment(options.id.clone())
+        .await?;
+    // Give Zenoh a moment to deliver before the session closes.
+    time::sleep(Duration::from_millis(500)).await;
+    println!("{}", loco.describe());
     Ok(())
 }
 
