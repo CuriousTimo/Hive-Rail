@@ -6,8 +6,12 @@
 //! itself, writes `<* TRACK A POWER OVERLOAD ... *>` and retries until `<* TRACK A NORMAL
 //! ... *>`. Without a motor shield DCC-EX has no tracks and answers power commands with
 //! nothing at all.
+//!
+//! Locos: `<t cab speed dir>` (speed 0 to 126, -1 emergency stop; dir 1 forward),
+//! `<F cab function 0|1>` and `<- cab>` to stop refreshing one. DCC-EX broadcasts each
+//! loco's state as `<l cab register speedByte functionMap>`.
 
-use crate::power::PowerRequest;
+use crate::{locos::RegisteredLoco, power::PowerRequest};
 use std::{
     collections::BTreeMap,
     io::{self, Read, Write},
@@ -55,6 +59,14 @@ pub enum DccExMessage {
     /// `<u protocol>`: the Hive-Rail board add-on answering `<U 0>`.
     Board {
         protocol: u16,
+    },
+    /// `<l cab register speedByte functionMap>`: a loco's state after a change. The speed
+    /// byte is the DCC one (0 stop, 1 emergency stop, 2 to 127) with 0x80 for forward.
+    Loco {
+        cab: u16,
+        speed: u8,
+        forward: bool,
+        functions: u32,
     },
     /// `<@ ...>` text for the command station's own display.
     Display(String),
@@ -117,6 +129,26 @@ impl DccExMessage {
                 }
             }
         }
+        if let Some(rest) = frame.strip_prefix('l') {
+            let numbers: Vec<i64> = rest
+                .split_whitespace()
+                .filter_map(|word| word.parse().ok())
+                .collect();
+            if let [cab, _, speed, functions] = numbers[..] {
+                if let (Ok(cab), Ok(byte), Ok(functions)) = (
+                    u16::try_from(cab),
+                    u8::try_from(speed),
+                    u32::try_from(functions),
+                ) {
+                    return Self::Loco {
+                        cab,
+                        speed: byte & 0x7F,
+                        forward: byte & 0x80 != 0,
+                        functions,
+                    };
+                }
+            }
+        }
         if let Some(rest) = frame.strip_prefix("jC") {
             let mut numbers = rest.split_whitespace().map(str::parse::<u16>);
             if let Some(Ok(minutes)) = numbers.next() {
@@ -153,6 +185,31 @@ impl DccExMessage {
             Self::Display(text) => format!("display {text}"),
             Self::TrackMode { track, mode } => format!("track {track} is {mode}"),
             Self::Board { protocol } => format!("Hive-Rail board add-on, protocol {protocol}"),
+            Self::Loco {
+                cab,
+                speed,
+                forward,
+                functions,
+            } => {
+                let on: Vec<String> = (0..29)
+                    .filter(|function| functions & (1 << function) != 0)
+                    .map(|function| format!("F{function}"))
+                    .collect();
+                format!(
+                    "loco {cab} {}, {}, {}",
+                    match speed {
+                        0 => "stopped".to_owned(),
+                        1 => "emergency stop".to_owned(),
+                        speed => format!("speed {}", speed - 1),
+                    },
+                    if *forward { "forward" } else { "reverse" },
+                    if on.is_empty() {
+                        "no functions".to_owned()
+                    } else {
+                        on.join(" ")
+                    }
+                )
+            }
             Self::Other(text) => format!("unknown <{text}>"),
         }
     }
@@ -241,6 +298,84 @@ impl BoardStatus {
             "<U 1 {} {} {} {} {flags} {address} {speed} {dirf}>",
             self.rocnet_id, self.nodes, self.locos, self.layout_locos
         )
+    }
+}
+
+/// What DCC-EX was last told about one loco: LocoNet speed, DIRF and SND bytes.
+type Drive = (u8, u8, u8);
+
+/// The locos this node's DCC-EX drives, from the loco register: every loco that is
+/// refreshed (in use, or common after a release) in this district, or, without a district,
+/// last driven here. Only what changed is sent.
+///
+/// DCC-EX keeps the locos it drives in its LocoSlot table (120 on an ESP32) and refreshes
+/// them on the track. `<- cab>` takes one out, but emergency-stops it first, so a loco
+/// that left this district stays in the table and keeps following the register while
+/// the train may still stand across the border; it is taken out once it is freed.
+#[derive(Debug, Default)]
+pub struct DccExLocos {
+    sent: BTreeMap<u16, Drive>,
+}
+
+impl DccExLocos {
+    /// Commands that bring DCC-EX in line with one loco from the register.
+    pub fn follow(&mut self, loco: &RegisteredLoco, here: &str) -> Vec<String> {
+        let address = loco.address;
+        // Bit 4 of the slot status: IN_USE (0x30) and COMMON (0x10) are refreshed.
+        let refreshed = loco.status & 0x10 != 0;
+        let ours = loco.district.as_deref().unwrap_or(&loco.node) == here;
+        if !refreshed || !(ours || self.sent.contains_key(&address)) {
+            return match self.sent.remove(&address) {
+                Some(_) => vec![format!("<- {address}>")],
+                None => Vec::new(),
+            };
+        }
+        let now = (loco.speed, loco.dirf, loco.snd);
+        let before = self.sent.insert(address, now);
+        let mut commands = Vec::new();
+        let (speed, dirf, snd) = now;
+        if before.is_none_or(|(old_speed, old_dirf, _)| {
+            old_speed != speed || (old_dirf ^ dirf) & 0x20 != 0
+        }) {
+            // LocoNet speed: 0 stop, 1 emergency stop, 2 to 127; DCC-EX: -1, 0 to 126.
+            let speed = match speed {
+                0 => 0,
+                1 => -1,
+                speed => i16::from(speed) - 1,
+            };
+            let forward = u8::from(dirf & 0x20 == 0);
+            commands.push(format!("<t {address} {speed} {forward}>"));
+        }
+        // F0 is DIRF bit 4, F1 to F4 DIRF bits 0 to 3, F5 to F8 SND bits 0 to 3. A loco new to
+        // DCC-EX has every function off.
+        let (old_dirf, old_snd) = before.map_or((0, 0), |(_, dirf, snd)| (dirf, snd));
+        let functions = [
+            (dirf, old_dirf, 4),
+            (dirf, old_dirf, 0),
+            (dirf, old_dirf, 1),
+            (dirf, old_dirf, 2),
+            (dirf, old_dirf, 3),
+            (snd, old_snd, 0),
+            (snd, old_snd, 1),
+            (snd, old_snd, 2),
+            (snd, old_snd, 3),
+        ];
+        for (function, (byte, old, bit)) in functions.into_iter().enumerate() {
+            let on = byte >> bit & 1;
+            if on != old >> bit & 1 {
+                commands.push(format!("<F {address} {function} {on}>"));
+            }
+        }
+        commands
+    }
+
+    /// After DCC-EX started, which forgets every loco: everything it drives, again.
+    pub fn resend(&mut self, locos: &[RegisteredLoco], here: &str) -> Vec<String> {
+        self.sent.clear();
+        locos
+            .iter()
+            .flat_map(|loco| self.follow(loco, here))
+            .collect()
     }
 }
 
@@ -417,7 +552,76 @@ fn serve(
 
 #[cfg(test)]
 mod tests {
-    use super::{clock_command, DccExMessage, DistrictTracks, FrameDecoder};
+    use super::{clock_command, DccExLocos, DccExMessage, DistrictTracks, FrameDecoder};
+    use crate::locos::RegisteredLoco;
+
+    /// A loco driven from the register: on in this district, then changed, then gone.
+    #[test]
+    fn drives_the_district_locos_from_the_register() {
+        let mut locos = DccExLocos::default();
+        let mut loco = RegisteredLoco::new(4444, "Windows");
+        loco.district = Some("MacBook".into());
+        // Not in use yet: nothing.
+        assert!(locos.follow(&loco, "MacBook").is_empty());
+
+        // In use at LocoNet speed 41 (step 40), forward, F0 and F2 on.
+        loco.status = 0x33;
+        loco.speed = 41;
+        loco.dirf = 0x12;
+        assert_eq!(
+            locos.follow(&loco, "MacBook"),
+            ["<t 4444 40 1>", "<F 4444 0 1>", "<F 4444 2 1>"]
+        );
+        // Only what changed: F2 off, F6 on; then reverse at the same speed.
+        loco.dirf = 0x10;
+        loco.snd = 0x02;
+        assert_eq!(
+            locos.follow(&loco, "MacBook"),
+            ["<F 4444 2 0>", "<F 4444 6 1>"]
+        );
+        loco.dirf = 0x30;
+        assert_eq!(locos.follow(&loco, "MacBook"), ["<t 4444 40 0>"]);
+        // Emergency stop.
+        loco.speed = 1;
+        assert_eq!(locos.follow(&loco, "MacBook"), ["<t 4444 -1 0>"]);
+
+        // In the next district now, but the train may still stand across the border: it
+        // keeps following the register here until it is freed.
+        loco.district = Some("Windows".into());
+        assert!(locos.follow(&loco, "MacBook").is_empty());
+        loco.speed = 21;
+        assert_eq!(locos.follow(&loco, "MacBook"), ["<t 4444 20 0>"]);
+        loco.status = 0x03;
+        assert_eq!(locos.follow(&loco, "MacBook"), ["<- 4444>"]);
+        // Windows never drove it, so does not start now that it is free.
+        assert!(DccExLocos::default().follow(&loco, "Windows").is_empty());
+        loco.status = 0x33;
+        loco.speed = 1;
+
+        // Without a district, the node where it was last driven drives it; DCC-EX
+        // restarted, so everything again.
+        loco.district = None;
+        loco.node = "MacBook".into();
+        assert_eq!(
+            locos.resend(&[loco], "MacBook"),
+            ["<t 4444 -1 0>", "<F 4444 0 1>", "<F 4444 6 1>"]
+        );
+    }
+
+    #[test]
+    fn decodes_the_loco_broadcast() {
+        let message = DccExMessage::parse("l 4444 0 169 5");
+        assert_eq!(
+            message,
+            DccExMessage::Loco {
+                cab: 4444,
+                speed: 41,
+                forward: true,
+                functions: 5
+            }
+        );
+        assert_eq!(message.describe(), "loco 4444 speed 40, forward, F0 F2");
+    }
 
     #[test]
     fn district_power_follows_main_tracks() {

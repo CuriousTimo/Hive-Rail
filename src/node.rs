@@ -300,6 +300,7 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
         None => (None, None),
     };
     let mut dccex_tracks = dccex::DistrictTracks::default();
+    let mut dccex_locos = dccex::DccExLocos::default();
     // Set once DCC-EX answers <U 0>: it runs the Hive-Rail board add-on.
     let mut board_protocol: Option<u16> = None;
     let mut command_station = match &options.dccex {
@@ -599,6 +600,9 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                         }
                         DccExMessage::Version(version) => {
                             command_station = format!("{version} on {}", options.dccex.as_deref().unwrap_or_default());
+                            // DCC-EX answers with its version after each start, with no locos.
+                            let commands = dccex_locos.resend(&register.snapshot(), &options.id);
+                            send_to_dccex(outputs.dccex, commands, &mut log);
                             false
                         }
                         _ => false,
@@ -666,6 +670,7 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                     );
                     send_to_side(&loconet_ports, side, outcome.replies, &mut log);
                     tell_side(&loconet_ports, other_side, other_edge, &outcome.changes, &mut log);
+                    drive_dccex(outputs.dccex, &mut dccex_locos, &outcome.changes, &options.id, &mut log);
                     for (address, slot) in &outcome.acquired {
                         log.event(format!("Took loco {address} on {from}'s slot master: slot {slot}, in use; the slot master now drives it"));
                     }
@@ -731,6 +736,7 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                         // A loco driven elsewhere that a connection here also knows.
                         tell_side(&loconet_ports, LocoNetSide::Clients, &client_edge, &merged.changes, &mut log);
                         tell_side(&loconet_ports, LocoNetSide::Bus, &bus_edge, &merged.changes, &mut log);
+                        drive_dccex(outputs.dccex, &mut dccex_locos, &merged.changes, &options.id, &mut log);
                         // A loco entering or leaving this district is taken on, or released
                         // from, the slot masters of this node's LocoNet connections.
                         for (before, after) in &merged.changes {
@@ -1240,6 +1246,33 @@ fn tell_side(
 ) {
     for (before, after) in changes {
         send_to_side(ports, side, edge.notify(before.as_ref(), after), log);
+    }
+}
+
+/// Drives this district's locos on DCC-EX as the register changes.
+fn drive_dccex(
+    driver: Option<&DccExHandle>,
+    locos: &mut dccex::DccExLocos,
+    changes: &[Change],
+    node_id: &str,
+    log: &mut CliLog,
+) {
+    if driver.is_none() {
+        return;
+    }
+    let commands = changes
+        .iter()
+        .flat_map(|(_, after)| locos.follow(after, node_id))
+        .collect();
+    send_to_dccex(driver, commands, log);
+}
+
+fn send_to_dccex(driver: Option<&DccExHandle>, commands: Vec<String>, log: &mut CliLog) {
+    if let Some(driver) = driver {
+        for command in commands {
+            driver.send(&command);
+            log.line(format!("[DCC-EX] -> {command}"));
+        }
     }
 }
 

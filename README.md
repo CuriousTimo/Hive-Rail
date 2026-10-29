@@ -74,7 +74,7 @@ The roadmap follows the [wiki design specification](https://github.com/CuriousTi
 	- [ ] **4.3** Keep the CLI view clear: node and power overview, event pane, decoded RocNet and LocoNet log, `--plain` output. Partly done: dashboard with district power, fast clock and neighbour table; decoded log lines.
 	- [ ] **4.4** Carry binary RocNet frames on routed Zenoh keys, with origin metadata for loop prevention.
 	- [ ] **4.5** Add the RocNet UDP adapter for Rocrail, with one bridge per LAN segment.
-	- [ ] **4.6** Route loco velocity and function commands to the district owner's simulated DCC-EX.
+	- [x] **4.6** Drive the district's locos on DCC-EX from the loco register (`<t>` speed and direction, `<F>` F0 to F8, `<- cab>` once freed); tested with the transfer test tool on DCC-EX v5.6.6. See the [DCC-EX adapter](https://github.com/CuriousTimo/Hive-Rail/wiki/DCC-EX-Adapter#31-locos).
 	- [ ] **4.7** Pass stage 1: MacBook and Windows nodes with Rocrail.
 - [ ] **Phase 5: Handoff and lease**
 	- [ ] **5.1** Implement locomotive district ownership and leases, with LocoNet throttles exempt from the dead-man timeout.
