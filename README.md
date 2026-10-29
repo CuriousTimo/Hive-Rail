@@ -190,7 +190,13 @@ In Rocrail, add a LocoNet command station using LocoNet over TCP with host `loca
 
 **Fast clock:** Hive-Rail commands the clock. Start it with `c` on any node; every node shows it in the dashboard header and writes it to its LocoNet clients as slot 123, so Rocrail and throttles follow. Turn off Rocrail's own LocoNet clock sync: clock writes from LocoNet clients are ignored and reported.
 
-**DCC-EX:** add `--dccex <port>` to drive a real DCC-EX command station instead of the simulated one, for example `--dccex /dev/cu.usbserial-0001` (macOS), `--dccex /dev/ttyUSB0` (Linux), `--dccex COM3` (Windows) or `--dccex 192.168.4.1:2560` (WiFi). The district then follows DCC-EX: power and emergency stop go to it, its power reports and overload messages come back as `ON`, `OFF` or `SHORT`, and it shows the fast clock on its display. Opening the serial port resets an ESP32, which boots with power off. See the [DCC-EX adapter](https://github.com/CuriousTimo/Hive-Rail/wiki/DCC-EX-Adapter).
+**DCC-EX:** add `--dccex <port>` to drive a real DCC-EX command station instead of the simulated one:
+
+```sh
+cargo run -- --mode node --session bench --id mac --rocnet-address 101 --dccex /dev/cu.usbserial-0001
+```
+
+Other targets: `--dccex /dev/cu.usbserial-0001` (macOS), `--dccex /dev/ttyUSB0` (Linux), `--dccex COM3` (Windows) or `--dccex 192.168.4.1:2560` (WiFi). The district then follows DCC-EX: power and emergency stop go to it, its power reports and overload messages come back as `ON`, `OFF` or `SHORT`, and it shows the fast clock on its display. Opening the serial port resets an ESP32, which boots with power off. Without a motor shield DCC-EX has no tracks, so it does not confirm power changes and its display keeps showing `PWR Off`. See the [DCC-EX adapter](https://github.com/CuriousTimo/Hive-Rail/wiki/DCC-EX-Adapter).
 
 A short is reported, not spread: only the affected district loses power, and Rocrail sees power off if it is connected to that node. The neighbouring districts will later hold their boundary signals at Stop. Allow TCP port 1234 through the Windows firewall if Rocrail runs on another computer.
 
