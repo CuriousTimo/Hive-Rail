@@ -1,14 +1,20 @@
-//! Locomotives driven through this node's LocoNet.
+//! The layout's LocoNet throttle slots, shared by every node over the mesh.
 //!
-//! The node is the command station for its district, so it answers the slot requests
-//! of LocoNet throttles and Rocrail: `LOCO_ADR` gives a loco address its slot, and the
-//! later speed and function messages for that slot belong to that address. A slot that
-//! was taken before this node started has no known address until a client reads or
-//! writes it again.
+//! Every node is the slot master for its own LocoNet, but the slot numbers belong to the
+//! whole layout: slot 7 is the same loco on every node. So a FRED that is unplugged at
+//! one module and plugged in at another asks for its slot again and gets the same loco.
+//!
+//! - Every node keeps a copy of the table. A change is published as a [`SlotEntry`] with
+//!   a higher version; the newest version wins, ties go to the higher node id.
+//! - Only the **allocator**, the online node with the lowest id, hands out new slot
+//!   numbers. Another node asks it with a slot request and answers the throttle when the
+//!   slot arrives, so two nodes never give out the same slot.
+//! - A slot that was taken before any node knew it (for example by Rocrail's own slot
+//!   server) has no known address until a client reads or writes it again.
 
 use crate::loconet::LocoNetMessage;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 const OPC_LOCO_SPD: u8 = 0xA0;
 const OPC_LOCO_DIRF: u8 = 0xA1;
@@ -74,157 +80,308 @@ impl LocoInfo {
     }
 }
 
-#[derive(Debug, Clone)]
-struct Slot {
-    status: u8,
-    address: Option<u16>,
-    speed: u8,
-    dirf: u8,
-    /// Whether this node already asked the LocoNet for the slot's unknown address.
-    asked: bool,
+/// One slot as shared over the mesh on `hive/{session}/slots/update`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SlotEntry {
+    pub slot: u8,
+    pub address: Option<u16>,
+    pub status: u8,
+    pub speed: u8,
+    pub dirf: u8,
+    pub version: u64,
+    /// The node whose LocoNet drives the slot (where the throttle is plugged in).
+    pub node: String,
 }
 
+impl SlotEntry {
+    fn newer_than(&self, other: &SlotEntry) -> bool {
+        (self.version, &self.node) > (other.version, &other.node)
+    }
+
+    fn in_use(&self) -> bool {
+        self.status & SLOT_BUSY_MASK == SLOT_IN_USE
+    }
+
+    /// Short form for the CLI log.
+    pub fn describe(&self) -> String {
+        let loco = LocoInfo::from(self);
+        if self.status & SLOT_BUSY_MASK == 0 && self.address.is_none() {
+            return format!("slot {} free", self.slot);
+        }
+        format!(
+            "slot {} {} {}, {} at {}",
+            self.slot,
+            loco.label(),
+            loco.speed_label(),
+            loco.direction(),
+            self.node
+        )
+    }
+}
+
+impl From<&SlotEntry> for LocoInfo {
+    fn from(entry: &SlotEntry) -> Self {
+        LocoInfo {
+            slot: entry.slot,
+            address: entry.address,
+            speed: entry.speed,
+            forward: entry.dirf & DIRF_REVERSE == 0,
+            functions: u8::from(entry.dirf & DIRF_F0 != 0) | (entry.dirf & 0x0F) << 1,
+        }
+    }
+}
+
+/// What one LocoNet message from this node's clients leads to.
 #[derive(Debug, Default)]
+pub struct Outcome {
+    /// Replies for this node's LocoNet clients.
+    pub replies: Vec<LocoNetMessage>,
+    /// Changed slots to publish to the other nodes.
+    pub publish: Vec<SlotEntry>,
+    /// A loco address that needs a slot from the allocator.
+    pub request: Option<u16>,
+}
+
+#[derive(Debug)]
 pub struct LocoTable {
-    slots: BTreeMap<u8, Slot>,
+    node: String,
+    slots: BTreeMap<u8, SlotEntry>,
+    /// Addresses this node asked the allocator for; their throttles wait for the slot.
+    pending: BTreeSet<u16>,
+    /// Slots taken before this node knew them, whose address it already asked for.
+    asked: BTreeSet<u8>,
 }
 
 impl LocoTable {
-    /// Updates the slots from one LocoNet message and returns the command station's
-    /// replies, which go to every LocoNet client.
-    pub fn apply(&mut self, message: &LocoNetMessage, track_status: u8) -> Vec<LocoNetMessage> {
-        let b = message.as_bytes();
-        match message.opcode() {
-            OPC_LOCO_ADR => {
-                let address = u16::from(b[1]) << 7 | u16::from(b[2]);
-                match self.slot_for(address) {
-                    Some(slot) => vec![self.slot_read(slot, track_status)],
-                    None => vec![LocoNetMessage::long_ack(OPC_LOCO_ADR, ACK_NO_FREE_SLOT)],
-                }
-            }
-            // Only slots this node can describe are answered; another slot master may know more.
-            OPC_RQ_SL_DATA if self.address_known(b[1]) => {
-                vec![self.slot_read(b[1], track_status)]
-            }
-            // A null move (source and destination equal) marks the slot in use.
-            OPC_MOVE_SLOTS if b[1] == b[2] && self.address_known(b[1]) => {
-                self.in_use(b[1]);
-                vec![self.slot_read(b[1], track_status)]
-            }
-            OPC_LOCO_SPD if is_loco_slot(b[1]) => {
-                self.in_use(b[1]).speed = b[2];
-                self.ask_address(b[1])
-            }
-            OPC_LOCO_DIRF if is_loco_slot(b[1]) => {
-                self.in_use(b[1]).dirf = b[2];
-                self.ask_address(b[1])
-            }
-            OPC_SLOT_STAT1 if is_loco_slot(b[1]) => {
-                if b[2] & SLOT_BUSY_MASK == 0 {
-                    self.slots.remove(&b[1]);
-                } else {
-                    self.in_use(b[1]).status = b[2];
-                }
-                Vec::new()
-            }
-            // Slot data: op, 0E, slot, stat, adr, spd, dirf, trk, ss2, adr2, snd, id1, id2, chk.
-            OPC_SL_RD_DATA | OPC_WR_SL_DATA if b.len() == 14 && is_loco_slot(b[2]) => {
-                if b[3] & SLOT_BUSY_MASK == 0 {
-                    // Rocrail's slot server answers a slot it drives as free with address 0;
-                    // only a client's own write releases a slot.
-                    if message.opcode() == OPC_WR_SL_DATA {
-                        self.slots.remove(&b[2]);
-                    }
-                } else {
-                    self.slots.insert(
-                        b[2],
-                        Slot {
-                            status: b[3],
-                            address: Some(u16::from(b[4]) | u16::from(b[9]) << 7),
-                            speed: b[5],
-                            dirf: b[6],
-                            asked: false,
-                        },
-                    );
-                }
-                if message.opcode() == OPC_WR_SL_DATA {
-                    vec![LocoNetMessage::long_ack(OPC_WR_SL_DATA, ACK_ACCEPTED)]
-                } else {
-                    Vec::new()
-                }
-            }
-            _ => Vec::new(),
+    pub fn new(node: &str) -> Self {
+        Self {
+            node: node.to_owned(),
+            slots: BTreeMap::new(),
+            pending: BTreeSet::new(),
+            asked: BTreeSet::new(),
         }
     }
 
-    /// Locos in use, by slot.
-    pub fn locos(&self) -> Vec<LocoInfo> {
-        self.slots
+    /// Updates the slots from one LocoNet message of this node's clients. `allocator`
+    /// says whether this node hands out new slot numbers itself.
+    pub fn apply(
+        &mut self,
+        message: &LocoNetMessage,
+        track_status: u8,
+        allocator: bool,
+    ) -> Outcome {
+        let b = message.as_bytes();
+        let mut outcome = Outcome::default();
+        match message.opcode() {
+            OPC_LOCO_ADR => {
+                let address = u16::from(b[1]) << 7 | u16::from(b[2]);
+                if let Some(number) = self.slot_of(address) {
+                    outcome.replies.push(self.slot_read(number, track_status));
+                } else if allocator {
+                    match self.allocate(address, &self.node.clone()) {
+                        Some(entry) => {
+                            outcome
+                                .replies
+                                .push(self.slot_read(entry.slot, track_status));
+                            outcome.publish.push(entry);
+                        }
+                        None => outcome
+                            .replies
+                            .push(LocoNetMessage::long_ack(OPC_LOCO_ADR, ACK_NO_FREE_SLOT)),
+                    }
+                } else if self.pending.insert(address) {
+                    outcome.request = Some(address);
+                }
+            }
+            // Only slots the layout knows are answered; another slot master may know more.
+            OPC_RQ_SL_DATA if self.address_known(b[1]) => {
+                outcome.replies.push(self.slot_read(b[1], track_status));
+            }
+            // A null move (source and destination equal) marks the slot in use.
+            OPC_MOVE_SLOTS if b[1] == b[2] && self.address_known(b[1]) => {
+                outcome
+                    .publish
+                    .push(self.update(b[1], |slot| slot.status |= SLOT_IN_USE));
+                outcome.replies.push(self.slot_read(b[1], track_status));
+            }
+            OPC_LOCO_SPD if is_loco_slot(b[1]) => {
+                outcome
+                    .publish
+                    .push(self.drive(b[1], |slot| slot.speed = b[2]));
+                outcome.replies.extend(self.ask_address(b[1]));
+            }
+            OPC_LOCO_DIRF if is_loco_slot(b[1]) => {
+                outcome
+                    .publish
+                    .push(self.drive(b[1], |slot| slot.dirf = b[2]));
+                outcome.replies.extend(self.ask_address(b[1]));
+            }
+            OPC_SLOT_STAT1 if is_loco_slot(b[1]) => {
+                let status = b[2];
+                outcome.publish.push(self.update(b[1], |slot| {
+                    slot.status = status;
+                    if status & SLOT_BUSY_MASK == 0 {
+                        slot.address = None;
+                    }
+                }));
+            }
+            // Slot data: op, 0E, slot, stat, adr, spd, dirf, trk, ss2, adr2, snd, id1, id2, chk.
+            OPC_SL_RD_DATA | OPC_WR_SL_DATA if b.len() == 14 && is_loco_slot(b[2]) => {
+                let write = message.opcode() == OPC_WR_SL_DATA;
+                if b[3] & SLOT_BUSY_MASK != 0 {
+                    let address = u16::from(b[4]) | u16::from(b[9]) << 7;
+                    outcome.publish.push(self.update(b[2], |slot| {
+                        slot.status = b[3];
+                        slot.address = Some(address);
+                        slot.speed = b[5];
+                        slot.dirf = b[6];
+                    }));
+                } else if write {
+                    // Rocrail's slot server answers a slot it drives as free with address 0;
+                    // only a client's own write releases a slot.
+                    outcome.publish.push(self.update(b[2], |slot| {
+                        slot.status = b[3];
+                        slot.address = None;
+                    }));
+                }
+                if write {
+                    outcome
+                        .replies
+                        .push(LocoNetMessage::long_ack(OPC_WR_SL_DATA, ACK_ACCEPTED));
+                }
+            }
+            _ => {}
+        }
+        outcome
+    }
+
+    /// Applies slots published by other nodes and returns the replies for throttles on
+    /// this node that were waiting for one of them.
+    pub fn merge(&mut self, entries: Vec<SlotEntry>, track_status: u8) -> Vec<LocoNetMessage> {
+        for entry in entries {
+            if !is_loco_slot(entry.slot) {
+                continue;
+            }
+            match self.slots.get(&entry.slot) {
+                Some(local) if !entry.newer_than(local) => {}
+                _ => {
+                    self.asked.remove(&entry.slot);
+                    self.slots.insert(entry.slot, entry);
+                }
+            }
+        }
+        let answered: Vec<(u16, u8)> = self
+            .pending
             .iter()
-            .filter(|(_, slot)| slot.status & SLOT_BUSY_MASK == SLOT_IN_USE)
-            .map(|(&number, slot)| LocoInfo {
-                slot: number,
-                address: slot.address,
-                speed: slot.speed,
-                forward: slot.dirf & DIRF_REVERSE == 0,
-                functions: u8::from(slot.dirf & DIRF_F0 != 0) | (slot.dirf & 0x0F) << 1,
+            .filter_map(|&address| self.slot_of(address).map(|number| (address, number)))
+            .collect();
+        answered
+            .into_iter()
+            .map(|(address, number)| {
+                self.pending.remove(&address);
+                self.slot_read(number, track_status)
             })
             .collect()
     }
 
-    /// The slot that holds this address, or a newly reserved free one.
-    fn slot_for(&mut self, address: u16) -> Option<u8> {
-        if let Some((&number, _)) = self
-            .slots
-            .iter()
-            .find(|(_, slot)| slot.address == Some(address))
-        {
-            return Some(number);
+    /// On the allocator: a slot for another node's throttle. Returns the entry to publish,
+    /// or None when every slot is taken.
+    pub fn allocate_for(&mut self, address: u16, node: &str) -> Option<SlotEntry> {
+        match self.slot_of(address) {
+            Some(number) => self.slots.get(&number).cloned(),
+            None => self.allocate(address, node),
         }
-        let number = (1..=LAST_LOCO_SLOT).find(|number| !self.slots.contains_key(number))?;
-        self.slots.insert(
-            number,
-            Slot {
-                status: SLOT_128_STEPS,
-                address: Some(address),
-                speed: 0,
-                dirf: 0,
-                asked: false,
-            },
-        );
-        Some(number)
+    }
+
+    /// Every slot this node knows, for a node that just came online.
+    pub fn snapshot(&self) -> Vec<SlotEntry> {
+        self.slots.values().cloned().collect()
+    }
+
+    pub fn is_pending(&self, address: u16) -> bool {
+        self.pending.contains(&address)
+    }
+
+    /// Gives up waiting for the allocator; the throttle will ask again.
+    pub fn cancel(&mut self, address: u16) {
+        self.pending.remove(&address);
+    }
+
+    /// Locos in use that are driven through this node's LocoNet, by slot.
+    pub fn locos(&self) -> Vec<LocoInfo> {
+        self.slots
+            .values()
+            .filter(|entry| entry.in_use() && entry.node == self.node)
+            .map(LocoInfo::from)
+            .collect()
+    }
+
+    fn slot_of(&self, address: u16) -> Option<u8> {
+        self.slots
+            .values()
+            .find(|entry| entry.address == Some(address))
+            .map(|entry| entry.slot)
+    }
+
+    /// Reserves the lowest free slot for this address, driven from `node`.
+    fn allocate(&mut self, address: u16, node: &str) -> Option<SlotEntry> {
+        let number = (1..=LAST_LOCO_SLOT).find(|number| {
+            self.slots
+                .get(number)
+                .is_none_or(|entry| entry.status & SLOT_BUSY_MASK == 0 && entry.address.is_none())
+        })?;
+        let version = self.slots.get(&number).map_or(0, |entry| entry.version) + 1;
+        let entry = SlotEntry {
+            slot: number,
+            address: Some(address),
+            status: SLOT_128_STEPS,
+            speed: 0,
+            dirf: 0,
+            version,
+            node: node.to_owned(),
+        };
+        self.slots.insert(number, entry.clone());
+        Some(entry)
     }
 
     fn address_known(&self, number: u8) -> bool {
         self.slots
             .get(&number)
-            .is_some_and(|slot| slot.address.is_some())
+            .is_some_and(|entry| entry.address.is_some())
     }
 
-    /// Once per slot taken before this node started: asks the LocoNet for its contents.
-    /// A slot master such as Rocrail's slot server answers with `SL_RD_DATA`, which
-    /// gives the address; without one nothing answers.
-    fn ask_address(&mut self, number: u8) -> Vec<LocoNetMessage> {
-        match self.slots.get_mut(&number) {
-            Some(slot) if slot.address.is_none() && !slot.asked => {
-                slot.asked = true;
-                vec![LocoNetMessage::request_slot_data(number)]
-            }
-            _ => Vec::new(),
-        }
-    }
-
-    /// A slot that a client drives is in use, even if this node never assigned it.
-    fn in_use(&mut self, number: u8) -> &mut Slot {
-        let slot = self.slots.entry(number).or_insert(Slot {
-            status: SLOT_128_STEPS,
+    /// Changes a slot on this node's behalf and returns the new entry to publish.
+    fn update(&mut self, number: u8, change: impl FnOnce(&mut SlotEntry)) -> SlotEntry {
+        let node = self.node.clone();
+        let entry = self.slots.entry(number).or_insert(SlotEntry {
+            slot: number,
             address: None,
+            status: SLOT_128_STEPS,
             speed: 0,
             dirf: 0,
-            asked: false,
+            version: 0,
+            node: node.clone(),
         });
-        slot.status |= SLOT_IN_USE;
-        slot
+        change(entry);
+        entry.version += 1;
+        entry.node = node;
+        entry.clone()
+    }
+
+    /// A slot that a client drives is in use, even if no node assigned it.
+    fn drive(&mut self, number: u8, change: impl FnOnce(&mut SlotEntry)) -> SlotEntry {
+        self.update(number, |slot| {
+            slot.status |= SLOT_IN_USE;
+            change(slot);
+        })
+    }
+
+    /// Once per slot taken before the layout knew it: asks the LocoNet for its contents.
+    /// A slot master such as Rocrail's slot server answers with `SL_RD_DATA`, which
+    /// gives the address; without one nothing answers.
+    fn ask_address(&mut self, number: u8) -> Option<LocoNetMessage> {
+        (!self.address_known(number) && self.asked.insert(number))
+            .then(|| LocoNetMessage::request_slot_data(number))
     }
 
     fn slot_read(&self, number: u8, track_status: u8) -> LocoNetMessage {
@@ -246,22 +403,26 @@ fn is_loco_slot(slot: u8) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::LocoTable;
+    use super::{LocoTable, Outcome};
     use crate::loconet::LocoNetMessage;
 
     const TRACK_ON: u8 = 0x07;
 
+    fn send(table: &mut LocoTable, hex: &str, allocator: bool) -> Outcome {
+        table.apply(&LocoNetMessage::from_hex(hex).unwrap(), TRACK_ON, allocator)
+    }
+
     fn apply(table: &mut LocoTable, hex: &str) -> Vec<String> {
-        table
-            .apply(&LocoNetMessage::from_hex(hex).unwrap(), TRACK_ON)
-            .iter()
-            .map(LocoNetMessage::to_hex)
-            .collect()
+        hexes(&send(table, hex, true).replies)
+    }
+
+    fn hexes(messages: &[LocoNetMessage]) -> Vec<String> {
+        messages.iter().map(LocoNetMessage::to_hex).collect()
     }
 
     #[test]
     fn throttle_request_gives_the_address_a_slot() {
-        let mut table = LocoTable::default();
+        let mut table = LocoTable::new("a");
         // LOCO_ADR 3: slot 1, free, 128 steps.
         assert_eq!(
             apply(&mut table, "BF 00 03 43"),
@@ -300,7 +461,7 @@ mod tests {
 
     #[test]
     fn a_slot_taken_before_start_is_driven_without_an_address() {
-        let mut table = LocoTable::default();
+        let mut table = LocoTable::new("a");
         // Recorded from Rocrail: speed 0, then forward with F1 and F2 on.
         assert_eq!(apply(&mut table, "A0 01 00 5E"), ["BB 01 00 45"]);
         assert!(apply(&mut table, "A1 01 03 5C").is_empty());
@@ -326,7 +487,7 @@ mod tests {
 
     #[test]
     fn freeing_a_slot_removes_the_loco() {
-        let mut table = LocoTable::default();
+        let mut table = LocoTable::new("a");
         apply(&mut table, "BF 00 03 43");
         apply(&mut table, "BA 01 01 45");
         assert_eq!(table.locos().len(), 1);
@@ -334,13 +495,90 @@ mod tests {
         // SLOT_STAT1 slot 1, status free.
         apply(&mut table, "B5 01 03 48");
         assert!(table.locos().is_empty());
+        // The freed slot is handed out again.
+        assert_eq!(
+            apply(&mut table, "BF 00 0A 4A"),
+            ["E7 0E 01 03 0A 00 00 07 00 00 00 00 00 19"]
+        );
     }
 
     #[test]
     fn ignores_the_fast_clock_and_dispatch_slots() {
-        let mut table = LocoTable::default();
+        let mut table = LocoTable::new("a");
         assert!(apply(&mut table, "A0 00 10 4F").is_empty());
         assert!(apply(&mut table, "A0 7B 10 34").is_empty());
         assert!(table.locos().is_empty());
+    }
+
+    /// A FREMO session over three modules: the FRED takes loco 1234 at module B, drives
+    /// it, is unplugged and plugged in again at module C, where it asks for its slot.
+    #[test]
+    fn a_fred_keeps_its_slot_across_modules() {
+        // Module A has the lowest id, so it is the allocator.
+        let mut a = LocoTable::new("a");
+        let mut b = LocoTable::new("b");
+        let mut c = LocoTable::new("c");
+
+        // At B: LOCO_ADR 1234. B is not the allocator, so it asks A and waits.
+        let asked = send(&mut b, "BF 09 52 1B", false);
+        assert!(asked.replies.is_empty());
+        assert_eq!(asked.request, Some(1234));
+        assert!(b.is_pending(1234));
+        // The throttle retries before the slot arrives: no second request.
+        assert_eq!(send(&mut b, "BF 09 52 1B", false).request, None);
+
+        // A assigns slot 1, driven from B, and publishes it; every node merges it.
+        let assigned = a.allocate_for(1234, "b").unwrap();
+        assert_eq!((assigned.slot, assigned.node.as_str()), (1, "b"));
+        assert_eq!(
+            hexes(&b.merge(vec![assigned.clone()], TRACK_ON)),
+            ["E7 0E 01 03 52 00 00 07 00 09 00 00 00 48"]
+        );
+        assert!(!b.is_pending(1234));
+        assert!(c.merge(vec![assigned], TRACK_ON).is_empty());
+
+        // At B: null move and speed 40 forward; the changes go to A and C.
+        let mut changes = send(&mut b, "BA 01 01 45", false).publish;
+        changes.extend(send(&mut b, "A0 01 29 77", false).publish);
+        a.merge(changes.clone(), TRACK_ON);
+        c.merge(changes, TRACK_ON);
+        assert_eq!(b.locos()[0].label(), "loco 1234");
+        assert!(c.locos().is_empty());
+
+        // Plugged in at C, the FRED asks for slot 1 and gets loco 1234 at speed 40.
+        assert_eq!(
+            hexes(&send(&mut c, "BB 01 00 45", false).replies),
+            ["E7 0E 01 33 52 29 00 07 00 09 00 00 00 51"]
+        );
+        // Driving from C moves the loco to C on every node.
+        let moved = send(&mut c, "A0 01 33 6D", false).publish;
+        b.merge(moved.clone(), TRACK_ON);
+        assert_eq!(c.locos()[0].speed_label(), "speed 50");
+        assert!(b.locos().is_empty());
+        // A second LOCO_ADR 1234 anywhere gets the same slot, without asking A.
+        let again = send(&mut a, "BF 09 52 1B", true);
+        assert!(again.request.is_none());
+        assert!(again.replies[0].to_hex().starts_with("E7 0E 01"));
+    }
+
+    #[test]
+    fn newer_versions_win_and_late_nodes_get_a_snapshot() {
+        let mut a = LocoTable::new("a");
+        apply(&mut a, "BF 00 03 43");
+        apply(&mut a, "BA 01 01 45");
+
+        // A node that comes online later gets the whole table.
+        let mut d = LocoTable::new("d");
+        d.merge(a.snapshot(), TRACK_ON);
+        assert_eq!(
+            hexes(&send(&mut d, "BB 01 00 45", false).replies),
+            hexes(&send(&mut a, "BB 01 00 45", true).replies)
+        );
+
+        // An older copy does not overwrite a newer one.
+        let old = a.snapshot();
+        apply(&mut a, "A0 01 29 77");
+        a.merge(old, TRACK_ON);
+        assert_eq!(a.locos()[0].speed_label(), "speed 40");
     }
 }

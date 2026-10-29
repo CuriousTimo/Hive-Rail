@@ -92,9 +92,13 @@ The roadmap follows the [wiki design specification](https://github.com/CuriousTi
 	- [ ] **7.2** Add operator controls after the safety model is implemented.
 	- [ ] **7.3** Add ESP32 accessory controls and displays after validating the gateway approach.
 	- [ ] **7.4** Add other non-safety-critical displays and timetable features.
-- [ ] **Phase 8: FRED throttles** (deferred)
-	- [ ] **8.1** Act as slot master on the module LocoNet: throttle slots, dispatch, purge, reconnecting FREDs.
-	- [ ] **8.2** Walk-around test with real FREDs and Fredis.
+- [ ] **Phase 8: FRED throttles** (started; the [node board](https://github.com/CuriousTimo/Hive-Rail/wiki/Hive-Rail-Node-Board) makes Hive-Rail the only slot master on each module LocoNet)
+	- [x] **8.1** Share one throttle slot table across the mesh: slot numbers are layout-wide, handed out by one allocator (the lowest online node), and a FRED plugged in again on another module gets its slot back; tested with three nodes.
+	- [ ] **8.2** Complete the throttle flow: dispatch, taking a dispatched loco, purging idle slots, slot updates for throttles with a display.
+	- [ ] **8.3** Make slot allocation safe during a network split (slot blocks per node, as in the FRED design §7).
+	- [ ] **8.4** Route a throttle's speed and functions to the district that holds the loco (needs 4.6 and 5.1).
+	- [ ] **8.5** Measure the slot response time with a real FRED through the node board and the network.
+	- [ ] **8.6** Walk-around test with real FREDs and Fredis.
 
 Phase 0 measurements are gates, not paperwork: timing assumptions and hardware behavior must be verified before safety or handoff features are treated as ready for a live layout.
 
