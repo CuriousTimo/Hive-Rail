@@ -1,4 +1,5 @@
 mod clock;
+mod dccex;
 mod lbserver;
 mod loconet;
 mod locos;
@@ -65,6 +66,7 @@ fn print_help() {
          cargo run -- --mode node --session <name> --id <id> --rocnet-address <0-65535> --identify\n\
          cargo run -- --mode node --session <name> --id <id> --send-rocnet-hex <@frame>\n\
          cargo run -- --mode node --session <name> --id <id> --loconet-tcp [port]\n\
+         cargo run -- --mode node --session <name> --id <id> --dccex <serial port | host:2560>\n\
          cargo run -- --mode node --session <name> --id <id> --plain\n\
          cargo run -- --validate-profile <path>\n\
          cargo run -- --help\n\n\
@@ -75,7 +77,8 @@ fn print_help() {
          With --plain, the same keys are read one per line from piped stdin (q quits).\n\
          --loconet-tcp serves LocoNet over TCP for Rocrail or JMRI, on port 1234 unless given;\n\
          --rocnet-address sets this node's RocNet ID (default 100).\n\
+         --dccex drives a DCC-EX command station over USB serial (115200 baud) or WiFi TCP.\n\
          Node mode uses Zenoh LAN peer scouting and can exchange simulation RocNet frames.\n\
-         No local RocNet transport or railway hardware is connected."
+         No local RocNet transport is connected yet."
     );
 }

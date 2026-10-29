@@ -19,14 +19,15 @@ impl fmt::Display for PowerRequest {
     }
 }
 
-/// Actual power state of one node's district. `Unknown` (no contact with the
-/// command station) is added with the real DCC-EX driver.
+/// Actual power state of one node's district.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PowerState {
     Off,
     On,
     EmergencyStop,
     Short,
+    /// No contact with the command station.
+    Unknown,
 }
 
 impl PowerState {
@@ -36,6 +37,7 @@ impl PowerState {
             Self::On => "ON",
             Self::EmergencyStop => "STOP",
             Self::Short => "SHORT",
+            Self::Unknown => "UNKNOWN",
         }
     }
 
@@ -44,12 +46,13 @@ impl PowerState {
         match self {
             Self::On => 0x01,
             Self::EmergencyStop => 0x03,
-            Self::Off | Self::Short => 0x00,
+            Self::Off | Self::Short | Self::Unknown => 0x00,
         }
     }
 }
 
-/// Stand-in for DCC-EX until the serial driver exists.
+/// The district's power state: simulated, or following what a real command station
+/// reports through [`report`](Self::report) and [`report_power`](Self::report_power).
 #[derive(Debug)]
 pub struct SimulatedCommandStation {
     state: PowerState,
@@ -82,6 +85,21 @@ impl SimulatedCommandStation {
         match self.state {
             PowerState::On | PowerState::EmergencyStop => self.set(PowerState::Short),
             _ => false,
+        }
+    }
+
+    /// A state reported by the command station, such as a short or lost contact.
+    pub fn report(&mut self, state: PowerState) -> bool {
+        self.set(state)
+    }
+
+    /// DCC-EX's `<p1>`/`<p0>`. Power stays on during an emergency stop, so `<p1>` does
+    /// not end it.
+    pub fn report_power(&mut self, on: bool) -> bool {
+        match (on, self.state) {
+            (true, PowerState::On | PowerState::EmergencyStop) => false,
+            (true, _) => self.set(PowerState::On),
+            (false, _) => self.set(PowerState::Off),
         }
     }
 
@@ -118,6 +136,18 @@ mod tests {
         station.apply(PowerRequest::On);
         assert!(station.apply(PowerRequest::Halt));
         assert_eq!(station.state(), PowerState::EmergencyStop);
+    }
+
+    #[test]
+    fn reported_power_keeps_an_emergency_stop() {
+        let mut station = SimulatedCommandStation::new();
+        assert!(station.report(PowerState::Unknown));
+        assert!(station.report_power(true));
+        station.apply(PowerRequest::Halt);
+        assert!(!station.report_power(true));
+        assert_eq!(station.state(), PowerState::EmergencyStop);
+        assert!(station.report_power(false));
+        assert_eq!(station.state(), PowerState::Off);
     }
 
     #[test]

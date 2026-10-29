@@ -10,7 +10,7 @@ The nodes speak [RocNet over Zenoh](https://github.com/CuriousTimo/Hive-Rail/wik
 
 > **EARLY BETA: USE AT YOUR OWN RISK.** This software has not been tested on real hardware. It is not production-ready or a safety system. Do not connect it to or use it to control a live layout.
 
-This is a very early simulation and networking prototype. Each node runs a simulated command station; it has no connection to a real command station, booster, track sensor, signal, or relay. It cannot drive a train or protect a layout. Rocrail or JMRI can connect to a node over LocoNet TCP for power and the fast clock. Its RocNet support carries power, short and clock frames over Zenoh; it is not connected to a local RocNet transport yet.
+This is a very early simulation and networking prototype. Each node runs a simulated command station, or drives a DCC-EX command station over USB serial or WiFi with `--dccex`; only an ESP32 without a motor shield has been tested, so no track has been powered. There is no connection to a booster, track sensor, signal, or relay. It cannot drive a train or protect a layout. Rocrail or JMRI can connect to a node over LocoNet TCP for power and the fast clock. Its RocNet support carries power, short and clock frames over Zenoh; it is not connected to a local RocNet transport yet.
 
 Zenoh peer scouting discovers nodes on a single local network using `224.0.0.224:7446`, distinct from RocNet/RocRail's `224.0.0.1:4321`, which a node joins only when it runs the RocNet UDP adapter. Peer discovery and heartbeat recovery have been smoke-tested between macOS, Windows, and Linux computers on one LAN. Cross-subnet discovery has not been tested.
 
@@ -34,7 +34,7 @@ These are goals, not finished features. Today this beta can check a module profi
 
 These are intended targets, not a claim of full tested compatibility. GitHub CI builds and tests on Windows, macOS, and Linux; networked runtime has been smoke-tested on all three desktop platforms on one LAN. Raspberry Pi/Orange Pi builds have not been tested, and no command station, booster, sensor, or other real railway hardware has been tested.
 
-The detailed design, unresolved engineering questions, [RocNet mesh design](https://github.com/CuriousTimo/Hive-Rail/wiki/RocNet-on-the-Mesh), [LocoNet adapter](https://github.com/CuriousTimo/Hive-Rail/wiki/LocoNet-Adapter), [transition zone specification](https://github.com/CuriousTimo/Hive-Rail/wiki/Transition-Zone-Specification) and [RocNet compatibility matrix](https://github.com/CuriousTimo/Hive-Rail/wiki/RocNet-Compatibility-Matrix) are in the [Hive-Rail wiki](https://github.com/CuriousTimo/Hive-Rail/wiki).
+The detailed design, unresolved engineering questions, [RocNet mesh design](https://github.com/CuriousTimo/Hive-Rail/wiki/RocNet-on-the-Mesh), [DCC-EX adapter](https://github.com/CuriousTimo/Hive-Rail/wiki/DCC-EX-Adapter), [LocoNet adapter](https://github.com/CuriousTimo/Hive-Rail/wiki/LocoNet-Adapter), [transition zone specification](https://github.com/CuriousTimo/Hive-Rail/wiki/Transition-Zone-Specification) and [RocNet compatibility matrix](https://github.com/CuriousTimo/Hive-Rail/wiki/RocNet-Compatibility-Matrix) are in the [Hive-Rail wiki](https://github.com/CuriousTimo/Hive-Rail/wiki).
 
 ## Planned phases
 
@@ -82,7 +82,7 @@ The roadmap follows the [wiki design specification](https://github.com/CuriousTi
 	- [ ] **5.3** Test both travel directions, reversals, timeouts, and faults F1-F8.
 	- [ ] **5.4** Pass the simulation exit criteria before connecting hardware.
 - [ ] **Phase 6: Hardware drivers**
-	- [ ] **6.1** Implement and replay-test the DCC-EX serial driver using recorded transcripts.
+	- [ ] **6.1** Implement and replay-test the DCC-EX serial driver using recorded transcripts. Power, emergency stop, short (overload) reports and the fast clock are done over USB serial or WiFi TCP and tested on an ESP32 without motor shield; loco commands and a recorded real short are not.
 	- [ ] **6.2** Add the LocoNet adapter (codec, USB serial and LocoNet over TCP); pass stage 2 with an Intellibox Basic and IntelliSwitch. Codec and LocoNet over TCP (text and binary clients) are done; USB serial is not.
 	- [ ] **6.3** Bench-test on an isolated layout section before any wider trial.
 	- [ ] **6.4** Add local RocNet adapters for compatible module equipment.
@@ -189,6 +189,8 @@ In Rocrail, add a LocoNet command station using LocoNet over TCP with host `loca
 | `]` / `[` | Fast clock one hour forward or back |
 
 **Fast clock:** Hive-Rail commands the clock. Start it with `c` on any node; every node shows it in the dashboard header and writes it to its LocoNet clients as slot 123, so Rocrail and throttles follow. Turn off Rocrail's own LocoNet clock sync: clock writes from LocoNet clients are ignored and reported.
+
+**DCC-EX:** add `--dccex <port>` to drive a real DCC-EX command station instead of the simulated one, for example `--dccex /dev/cu.usbserial-0001` (macOS), `--dccex /dev/ttyUSB0` (Linux), `--dccex COM3` (Windows) or `--dccex 192.168.4.1:2560` (WiFi). The district then follows DCC-EX: power and emergency stop go to it, its power reports and overload messages come back as `ON`, `OFF` or `SHORT`, and it shows the fast clock on its display. Opening the serial port resets an ESP32, which boots with power off. See the [DCC-EX adapter](https://github.com/CuriousTimo/Hive-Rail/wiki/DCC-EX-Adapter).
 
 A short is reported, not spread: only the affected district loses power, and Rocrail sees power off if it is connected to that node. The neighbouring districts will later hold their boundary signals at Stop. Allow TCP port 1234 through the Windows firewall if Rocrail runs on another computer.
 

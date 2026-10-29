@@ -1,5 +1,6 @@
 use crate::{
     clock::FastClock,
+    dccex::{self, DccExEvent, DccExHandle, DccExMessage},
     lbserver::{self, LbEvent, LbServerHandle},
     loconet::{LocoNetMessage, HIVE_RAIL_CLOCK_ID},
     locos::{LocoInfo, LocoTable},
@@ -45,6 +46,7 @@ struct NodeArgs {
     identify: bool,
     send_rocnet_hex: Option<String>,
     loconet_tcp: Option<u16>,
+    dccex: Option<String>,
     plain: bool,
 }
 
@@ -113,6 +115,7 @@ struct PowerOutputs<'a> {
     rocnet_id: u16,
     status: &'a Publisher<'static>,
     loconet: Option<&'a LbServerHandle>,
+    dccex: Option<&'a DccExHandle>,
 }
 
 struct PowerControl {
@@ -189,16 +192,31 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
     };
     let mut loconet_clients = 0_usize;
     let mut locos = LocoTable::default();
+    let (dccex_driver, mut dccex_events) = match options.dccex.clone() {
+        Some(target) => {
+            let (driver, events) = dccex::start(target);
+            (Some(driver), Some(events))
+        }
+        None => (None, None),
+    };
+    let mut command_station = match &options.dccex {
+        Some(target) => format!("DCC-EX {target}, connecting"),
+        None => "simulated".to_owned(),
+    };
     let outputs = PowerOutputs {
         node_id: &options.id,
         rocnet_id,
         status: &power_status_publisher,
         loconet: loconet_server.as_ref(),
+        dccex: dccex_driver.as_ref(),
     };
     let mut power = PowerControl {
         station: SimulatedCommandStation::new(),
         last_request: "no request yet".to_owned(),
     };
+    if dccex_driver.is_some() {
+        power.station.report(PowerState::Unknown);
+    }
 
     let mut peers: HashMap<String, PeerState> = HashMap::new();
     let mut log = CliLog {
@@ -249,7 +267,10 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
         )),
         None => log.line("LocoNet over TCP disabled; start with --loconet-tcp <port>".to_owned()),
     }
-    log.line("simulated command station; no railway hardware is connected".to_owned());
+    match &options.dccex {
+        Some(target) => log.line(format!("DCC-EX command station on {target}")),
+        None => log.line("simulated command station; no railway hardware is connected".to_owned()),
+    }
     publish_power_status(&outputs, &power, &mut log).await?;
 
     loop {
@@ -370,6 +391,57 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                     Err(error) => log.line(format!("[mesh] <- ignored invalid RocNet frame from {origin}: {error}")),
                 }
             }
+            event = next_dccex_event(&mut dccex_events) => match event {
+                Some(DccExEvent::Connected(target)) => {
+                    command_station = format!("DCC-EX {target}");
+                    log.event(format!("DCC-EX connected on {target}"));
+                    // Give DCC-EX the current clock on the next tick.
+                    clock_written = None;
+                }
+                Some(DccExEvent::Disconnected(reason)) => {
+                    command_station = format!("DCC-EX {}, disconnected", options.dccex.as_deref().unwrap_or_default());
+                    log.event(format!("DCC-EX disconnected: {reason}"));
+                    if power.station.report(PowerState::Unknown) {
+                        log.event("District power UNKNOWN: no contact with the command station".to_owned());
+                        publish_power_status(&outputs, &power, &mut log).await?;
+                    }
+                }
+                Some(DccExEvent::Received(message)) => {
+                    // Text for the command station's own display is not worth logging.
+                    if !matches!(message, DccExMessage::Display(_)) {
+                        log.line(format!("[dcc ] <- {}", message.describe()));
+                    }
+                    let changed = match &message {
+                        DccExMessage::Power { on, track: None } => power.station.report_power(*on),
+                        DccExMessage::Overload { detail, .. } => {
+                            let changed = power.station.report(PowerState::Short);
+                            if changed {
+                                log.event(format!("SHORT in this district: {detail}"));
+                                send_loconet_power_off(&outputs, &mut log);
+                            }
+                            changed
+                        }
+                        DccExMessage::TrackNormal { track } => {
+                            let changed = power.station.state() == PowerState::Short
+                                && power.station.report(PowerState::On);
+                            if changed {
+                                log.event(format!("Short cleared: DCC-EX restored power on track {track}"));
+                            }
+                            changed
+                        }
+                        DccExMessage::Version(version) => {
+                            command_station = format!("{version} on {}", options.dccex.as_deref().unwrap_or_default());
+                            false
+                        }
+                        _ => false,
+                    };
+                    if changed {
+                        log.event(format!("District power {} (reported by DCC-EX)", power.station.state().label()));
+                        publish_power_status(&outputs, &power, &mut log).await?;
+                    }
+                }
+                None => dccex_events = None,
+            },
             event = next_loconet_event(&mut loconet_events) => match event {
                 Some(LbEvent::Connected(peer)) => {
                     loconet_clients += 1;
@@ -470,6 +542,11 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                             server.send(&message);
                             log.line(format!("[ln  ] -> {}  {}", message.to_hex(), message.describe()));
                         }
+                        if let Some(driver) = outputs.dccex {
+                            let command = dccex::clock_command(state.0, if state.1 { state.2 } else { 0 });
+                            driver.send(&command);
+                            log.line(format!("[dcc ] -> {command}"));
+                        }
                     }
                 }
             }
@@ -516,11 +593,7 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                         if power.station.simulate_short() {
                             log.event("SHORT in this district: power lost without request (simulated)".to_owned());
                             publish_power_status(&outputs, &power, &mut log).await?;
-                            if let Some(server) = outputs.loconet {
-                                let message = LocoNetMessage::power_request(PowerRequest::Off);
-                                server.send(&message);
-                                log.line(format!("[ln  ] -> {}  {}", message.to_hex(), message.describe()));
-                            }
+                            send_loconet_power_off(&outputs, &mut log);
                         } else {
                             log.event("Short not simulated: district has no power".to_owned());
                         }
@@ -548,6 +621,7 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                         local_locos: locos.locos(),
                         last_request: power.last_request.clone(),
                         clock: clock.label(Instant::now()),
+                        command_station: command_station.clone(),
                         loconet: match options.loconet_tcp {
                             Some(port) => format!("TCP :{port}, {loconet_clients} client(s)"),
                             None => "off".to_owned(),
@@ -576,6 +650,11 @@ async fn handle_power_request(
     outputs: &PowerOutputs<'_>,
     log: &mut CliLog,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
+    if let Some(driver) = outputs.dccex {
+        let command = dccex::power_command(request);
+        driver.send(command);
+        log.line(format!("[dcc ] -> {command}  {request}"));
+    }
     if source != RequestSource::LocoNet {
         if let Some(server) = outputs.loconet {
             let message = LocoNetMessage::power_request(request);
@@ -639,7 +718,7 @@ fn loconet_track_status(state: PowerState) -> u8 {
     match state {
         PowerState::On => 0x07,
         PowerState::EmergencyStop => 0x05,
-        PowerState::Off | PowerState::Short => 0x04,
+        PowerState::Off | PowerState::Short | PowerState::Unknown => 0x04,
     }
 }
 
@@ -719,6 +798,26 @@ fn next_stdin_command(
     }
 }
 
+/// Tells local LocoNet clients the district lost power, as a booster trip would.
+fn send_loconet_power_off(outputs: &PowerOutputs<'_>, log: &mut CliLog) {
+    if let Some(server) = outputs.loconet {
+        let message = LocoNetMessage::power_request(PowerRequest::Off);
+        server.send(&message);
+        log.line(format!(
+            "[ln  ] -> {}  {}",
+            message.to_hex(),
+            message.describe()
+        ));
+    }
+}
+
+async fn next_dccex_event(events: &mut Option<mpsc::Receiver<DccExEvent>>) -> Option<DccExEvent> {
+    match events {
+        Some(events) => events.recv().await,
+        None => std::future::pending().await,
+    }
+}
+
 async fn next_loconet_event(events: &mut Option<mpsc::Receiver<LbEvent>>) -> Option<LbEvent> {
     match events {
         Some(events) => events.recv().await,
@@ -769,6 +868,7 @@ fn parse_args(args: Vec<String>) -> Result<NodeArgs, Box<dyn Error + Send + Sync
     let mut identify = false;
     let mut send_rocnet_hex = None;
     let mut loconet_tcp = None;
+    let mut dccex = None;
     let mut plain = false;
     let mut args = args.into_iter().peekable();
 
@@ -781,6 +881,7 @@ fn parse_args(args: Vec<String>) -> Result<NodeArgs, Box<dyn Error + Send + Sync
             "--listen" => listen = Some(next_value(&mut args, &flag)?),
             "--connect" => connect = Some(next_value(&mut args, &flag)?),
             "--send-rocnet-hex" => send_rocnet_hex = Some(next_value(&mut args, &flag)?),
+            "--dccex" => dccex = Some(next_value(&mut args, &flag)?),
             "--rocnet-address" => {
                 let value = next_value(&mut args, &flag)?;
                 rocnet_address = Some(value.parse::<u16>().map_err(|_| {
@@ -822,6 +923,7 @@ fn parse_args(args: Vec<String>) -> Result<NodeArgs, Box<dyn Error + Send + Sync
         identify,
         send_rocnet_hex,
         loconet_tcp,
+        dccex,
         plain,
     })
 }

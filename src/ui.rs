@@ -41,6 +41,7 @@ pub struct Dashboard {
     pub last_request: String,
     pub clock: String,
     pub loconet: String,
+    pub command_station: String,
     pub scouting: String,
     pub heartbeat_interval: Duration,
     pub last_event: String,
@@ -329,9 +330,10 @@ fn render(frame: &mut Frame<'_>, dashboard: &Dashboard, scroll_back: usize, sele
             ),
             Span::raw(&dashboard.scouting),
             Span::raw(format!(
-                "  |  Heartbeat: {} ms  |  LocoNet: {}",
+                "  |  Heartbeat: {} ms  |  LocoNet: {}  |  Command station: {}",
                 dashboard.heartbeat_interval.as_millis(),
-                dashboard.loconet
+                dashboard.loconet,
+                dashboard.command_station
             )),
         ]),
         Line::from(vec![
