@@ -52,6 +52,10 @@ pub enum DccExMessage {
         track: char,
         mode: String,
     },
+    /// `<u protocol>`: the Hive-Rail board add-on answering `<U 0>`.
+    Board {
+        protocol: u16,
+    },
     /// `<@ ...>` text for the command station's own display.
     Display(String),
     Other(String),
@@ -95,6 +99,11 @@ impl DccExMessage {
                     };
                 }
                 _ => return Self::Other(frame.to_owned()),
+            }
+        }
+        if let Some(rest) = frame.strip_prefix('u') {
+            if let Ok(protocol) = rest.trim().parse() {
+                return Self::Board { protocol };
             }
         }
         if let Some(rest) = frame.strip_prefix('=') {
@@ -143,6 +152,7 @@ impl DccExMessage {
             Self::Diagnostic(text) => format!("diag {text}"),
             Self::Display(text) => format!("display {text}"),
             Self::TrackMode { track, mode } => format!("track {track} is {mode}"),
+            Self::Board { protocol } => format!("Hive-Rail board add-on, protocol {protocol}"),
             Self::Other(text) => format!("unknown <{text}>"),
         }
     }
@@ -198,6 +208,38 @@ pub fn power_command(request: PowerRequest) -> &'static str {
         PowerRequest::On => "<1 MAIN>",
         PowerRequest::Off => "<0>",
         PowerRequest::Halt => "<!>",
+    }
+}
+
+/// What the node board's screen and status LEDs show, sent once a second; it is also the
+/// board's link heartbeat. Only sent to a board that answered `<U 0>`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct BoardStatus {
+    pub rocnet_id: u16,
+    pub nodes: usize,
+    pub locos: usize,
+    pub slots: usize,
+    pub allocator: bool,
+    pub slots_in_sync: bool,
+    pub slots_compared: bool,
+    pub emergency_stop: bool,
+    /// The last loco driven on this module: address, LocoNet speed step, forward, F0-F4.
+    pub loco: Option<(u16, u8, bool, u8)>,
+}
+
+impl BoardStatus {
+    pub fn command(&self) -> String {
+        let flags = u8::from(self.allocator)
+            | u8::from(self.slots_in_sync) << 1
+            | u8::from(self.emergency_stop) << 2
+            | u8::from(self.slots_compared) << 3;
+        let (address, speed, forward, functions) = self.loco.unwrap_or((0, 0, true, 0));
+        // DCC-EX takes at most 9 parameters, so F0-F4 and the direction share one.
+        let dirf = functions & 0x1F | u8::from(forward) << 7;
+        format!(
+            "<U 1 {} {} {} {} {flags} {address} {speed} {dirf}>",
+            self.rocnet_id, self.nodes, self.locos, self.slots
+        )
     }
 }
 
@@ -335,9 +377,10 @@ fn serve(
 ) -> String {
     let mut decoder = FrameDecoder::default();
     let mut buffer = [0_u8; 1024];
-    // Ask for the version, power state and track modes; opening the serial port usually resets
+    // Ask for the version, power state, track modes and the board add-on; opening the serial port usually resets
     // the board, which then reports the same after booting.
-    if let Err(error) = link.write_all(b"<s><=>") {
+    // <U 0> asks for the Hive-Rail board add-on; a stock DCC-EX answers <X>.
+    if let Err(error) = link.write_all(b"<s><=><U 0>") {
         return error.to_string();
     }
     loop {
@@ -453,6 +496,24 @@ mod tests {
         );
         assert_eq!(DccExMessage::parse("jC 375").describe(), "fast clock 06:15");
         assert_eq!(clock_command(375, 4), "<JC 375 4>");
+        assert_eq!(
+            DccExMessage::parse("u 1"),
+            DccExMessage::Board { protocol: 1 }
+        );
+        let status = super::BoardStatus {
+            rocnet_id: 101,
+            nodes: 4,
+            locos: 1,
+            slots: 5,
+            allocator: true,
+            slots_in_sync: true,
+            slots_compared: true,
+            emergency_stop: false,
+            loco: Some((1234, 41, false, 0b0_0001)),
+        };
+        // At most 9 parameters, or DCC-EX rejects the command with <X>.
+        assert_eq!(status.command(), "<U 1 101 4 1 5 11 1234 41 1>");
+        assert_eq!(status.command().split_whitespace().count() - 1, 9);
 
         // Message formats from the DCC-EX motor driver source.
         let overload = DccExMessage::parse(

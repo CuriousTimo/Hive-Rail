@@ -21,6 +21,7 @@
 #define WIFI_CHANNEL 1
 #define WIFI_FORCE_AP false
 
-// 128x64 SSD1306 OLED on I2C (IO21 SDA, IO22 SCL).
-#define OLED_DRIVER 0x3c,128,64
-#define SCROLLMODE 1
+// The 128x64 OLED on I2C (IO21 SDA, IO22 SCL) is driven by the Hive-Rail add-on, not by
+// DCC-EX, so there is no OLED_DRIVER here. HIVE_RAIL_NAME is the title on the screen;
+// define HIVE_RAIL_OLED_SH1106 for an SH1106 display.
+#define HIVE_RAIL_NAME "Hive-Rail"

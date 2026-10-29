@@ -1,6 +1,6 @@
 use crate::{
     clock::FastClock,
-    dccex::{self, DccExEvent, DccExHandle, DccExMessage},
+    dccex::{self, BoardStatus, DccExEvent, DccExHandle, DccExMessage},
     lbserver::{self, LbEvent, LbServerHandle},
     loconet::{LocoNetMessage, HIVE_RAIL_CLOCK_ID},
     locos::{LocoInfo, LocoTable, SlotEntry},
@@ -225,6 +225,8 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
         None => (None, None),
     };
     let mut dccex_tracks = dccex::DistrictTracks::default();
+    // Set once DCC-EX answers <U 0>: it runs the Hive-Rail board add-on.
+    let mut board_protocol: Option<u16> = None;
     let mut command_station = match &options.dccex {
         Some(target) => format!("DCC-EX {target}, connecting"),
         None => "simulated".to_owned(),
@@ -319,6 +321,26 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                 };
                 publisher.put(serde_json::to_vec(&message)?).await?;
                 track_slot_mismatch(&peers, locos.checksum(), &mut slot_mismatch);
+                // Once a second: the node board's screen, also its link heartbeat.
+                if let (Some(driver), Some(_)) = (outputs.dccex, board_protocol) {
+                    if sequence.is_multiple_of(4) {
+                        let loco = locos.last_driven();
+                        let status = BoardStatus {
+                            rocnet_id,
+                            nodes: 1 + peers.values().filter(|peer| peer.online).count(),
+                            locos: locos.locos().len(),
+                            slots: locos.taken(),
+                            allocator: lowest_online(&peers, &options.id),
+                            slots_in_sync: !slot_sync_label(&peers, &slot_mismatch).starts_with("SLOTS DIFFER"),
+                            slots_compared: peers.values().any(|peer| peer.online && peer.slots.is_some()),
+                            emergency_stop: power.station.state() == PowerState::EmergencyStop,
+                            loco: loco.and_then(|loco| {
+                                loco.address.map(|address| (address, loco.speed, loco.forward, loco.functions))
+                            }),
+                        };
+                        driver.send(&status.command());
+                    }
+                }
                 for peer_id in refresh_peer_states(&mut peers) {
                     log.event(format!("Peer {peer_id} stale after 3 missed heartbeats; boundary state remains Stop"));
                 }
@@ -429,6 +451,7 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                 Some(DccExEvent::Connected(target)) => {
                     // A reconnect may find a different board or configuration.
                     dccex_tracks = dccex::DistrictTracks::default();
+                    board_protocol = None;
                     command_station = format!("DCC-EX {target}");
                     log.event(format!("DCC-EX connected on {target}"));
                     // Give DCC-EX the current clock on the next tick.
@@ -486,6 +509,12 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                                 log.event(format!("Short cleared: DCC-EX restored power on track {track}"));
                             }
                             changed
+                        }
+                        DccExMessage::Board { protocol } => {
+                            if board_protocol.replace(*protocol).is_none() {
+                                log.event(format!("DCC-EX runs the Hive-Rail board add-on (protocol {protocol}); sending status to its screen"));
+                            }
+                            false
                         }
                         DccExMessage::Version(version) => {
                             command_station = format!("{version} on {}", options.dccex.as_deref().unwrap_or_default());

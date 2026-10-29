@@ -365,6 +365,20 @@ impl LocoTable {
             .collect()
     }
 
+    /// Slots taken on the whole layout.
+    pub fn taken(&self) -> usize {
+        self.slots.values().filter(|entry| entry.in_use()).count()
+    }
+
+    /// The loco most recently driven through this node's LocoNet.
+    pub fn last_driven(&self) -> Option<LocoInfo> {
+        self.slots
+            .values()
+            .filter(|entry| entry.in_use() && entry.node == self.node && entry.address.is_some())
+            .max_by_key(|entry| entry.version)
+            .map(LocoInfo::from)
+    }
+
     fn slot_of(&self, address: u16) -> Option<u8> {
         self.slots
             .values()
