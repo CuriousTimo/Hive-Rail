@@ -119,6 +119,21 @@ impl State {
         self.events.push_back(line);
     }
 
+    /// A node's event, marked with its district and RocNet address: `MacBook (101)`.
+    fn node_event(&mut self, key: &str, text: &str) {
+        // hive/<session>/node/<id>/event
+        let node = key.split('/').nth(3).unwrap_or("?");
+        let label = match self
+            .districts
+            .get(node)
+            .and_then(|district| district.rocnet_id)
+        {
+            Some(rocnet_id) => format!("{node} ({rocnet_id})"),
+            None => node.to_owned(),
+        };
+        self.event(format!("{label}  {text}"));
+    }
+
     fn allocator(&self) -> Option<&str> {
         self.districts
             .iter()
@@ -231,6 +246,8 @@ struct Mesh {
     heartbeats: Subscriber<FifoChannelHandler<Sample>>,
     locos: Subscriber<FifoChannelHandler<Sample>>,
     clock: Subscriber<FifoChannelHandler<Sample>>,
+    /// The nodes' events (`hive/<session>/node/<id>/event`).
+    events: Subscriber<FifoChannelHandler<Sample>>,
     hello: zenoh::pubsub::Publisher<'static>,
     updates: zenoh::pubsub::Publisher<'static>,
     id: String,
@@ -253,6 +270,9 @@ impl Mesh {
                 .await?,
             clock: session
                 .declare_subscriber(format!("hive/{s}/rn/ck"))
+                .await?,
+            events: session
+                .declare_subscriber(format!("hive/{s}/node/*/event"))
                 .await?,
             hello: session
                 .declare_publisher(format!("hive/{s}/observer/hello"))
@@ -327,6 +347,11 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                     Ok(locos) => state.loco_updates(locos, &origin),
                     Err(error) => state.event(format!("ignored invalid loco update from {origin}: {error}")),
                 }
+            }
+            sample = mesh.events.recv_async() => {
+                let sample = sample?;
+                let text = String::from_utf8_lossy(sample.payload().to_bytes().as_ref()).into_owned();
+                state.node_event(sample.key_expr().as_str(), &text);
             }
             sample = mesh.clock.recv_async() => {
                 let sample = sample?;
@@ -580,7 +605,8 @@ fn render(frame: &mut Frame<'_>, state: &State) {
             Constraint::Length(4),
             Constraint::Length(state.districts.len().clamp(1, 12) as u16 + 3),
             Constraint::Min(6),
-            Constraint::Length(8),
+            // The events of every district: a dozen lines.
+            Constraint::Length(14),
         ])
         .split(frame.area());
 
@@ -770,7 +796,7 @@ fn render(frame: &mut Frame<'_>, state: &State) {
         Paragraph::new(events).block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("Events (q quit)"),
+                .title("Events of every district (q quit)"),
         ),
         areas[3],
     );

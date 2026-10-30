@@ -76,7 +76,7 @@ rocnet-address = 101
 # Who owns the slots of the TCP clients (default "external").
 #tcp-slots = "external"
 
-# The LocoNet bus: use connect or serial, not both.
+# The LocoNet bus: use one of connect, serial and udp.
 
 # A node board's LocoNet buffer, by address; the port is 1234 unless given.
 #connect = "192.168.4.1:1234"
@@ -93,8 +93,16 @@ rocnet-address = 101
 # carry both) or "none".
 #serial-flow = "hardware"
 
+# LocoNet over UDP multicast, such as a GCA101 LocoBuffer-UDP (Rocrail's LNUDP): true for
+# the group 224.0.0.1 and port 1235, or a group of your own.
+#udp = "224.0.0.1:1235"
+
+# This computer's address on the GCA101's network, when it has several (Wi-Fi and
+# Ethernet). Default: the system's choice.
+#udp-interface = "192.168.1.20"
+
 # Who owns the slots on the bus (default "node" for a node board, whose bus has FREDs,
-# and "external" for a serial interface, which sits on a command station).
+# and "external" for a serial or UDP interface, which sits on a command station).
 #connect-slots = "external"
 
 # Write the fast clock (slot 123) to the bus every fast minute (default true). Turn it

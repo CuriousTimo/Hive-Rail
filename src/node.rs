@@ -3,11 +3,12 @@ use crate::{
     dccex::{self, BoardStatus, DccExEvent, DccExHandle, DccExMessage},
     lbclient::{self, LbClientHandle},
     lbserver::{self, LbEvent, LbServerHandle},
-    lnserial,
+    lnserial, lnudp,
     loconet::{LocoNetMessage, HIVE_RAIL_CLOCK_ID},
     locos::{Change, LocoInfo, LocoNetEdge, LocoRegister, RegisteredLoco, SlotOwner},
     power::{PowerRequest, PowerState, SimulatedCommandStation},
     rocnet::{ClockAction, ClockUpdate, RocNetFrame},
+    turnouts::Turnouts,
     ui::{command_for_key, ClockChange, Dashboard, PeerRow, TerminalUi, UiCommand},
 };
 use chrono::Local;
@@ -17,6 +18,7 @@ use std::{
     collections::{HashMap, HashSet, VecDeque},
     error::Error,
     io::{self, BufRead, IsTerminal},
+    net::{Ipv4Addr, SocketAddrV4},
     sync::mpsc as std_mpsc,
     thread,
     time::Duration,
@@ -55,6 +57,10 @@ struct NodeArgs {
     loconet_serial: Option<String>,
     loconet_serial_baud: u32,
     loconet_serial_flow: FlowControl,
+    /// A LocoNet UDP multicast group as the bus, such as a GCA101 LocoBuffer-UDP.
+    loconet_udp: Option<SocketAddrV4>,
+    /// The network interface for the group (`0.0.0.0`: the system's choice).
+    loconet_udp_interface: Ipv4Addr,
     /// Whether the bus gets the fast clock (slot 123); an old command station such as the
     /// Intellibox I has none.
     loconet_fast_clock: bool,
@@ -120,6 +126,8 @@ struct CliLog {
     lines: VecDeque<String>,
     last_event: String,
     echo: bool,
+    /// Events not yet published on the mesh, for the dispatcher's screen.
+    outbox: Vec<String>,
 }
 
 impl CliLog {
@@ -133,6 +141,7 @@ impl CliLog {
 
     fn event(&mut self, event: String) {
         self.line(format!("EVENT  {event}"));
+        self.outbox.push(event.clone());
         self.last_event = event;
     }
 }
@@ -159,6 +168,14 @@ impl LocoNetPorts {
     fn to_bus(&self, message: &LocoNetMessage) {
         if let Some(bus) = &self.bus {
             bus.send(message);
+        }
+    }
+
+    /// Whether this side exists: an LbServer for the clients, a bus connection for the bus.
+    fn has(&self, side: LocoNetSide) -> bool {
+        match side {
+            LocoNetSide::Clients => self.server.is_some(),
+            LocoNetSide::Bus => self.bus.is_some(),
         }
     }
 
@@ -255,6 +272,14 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
     let loco_update_subscriber = session
         .declare_subscriber(format!("hive/{}/locos/update", options.session))
         .await?;
+    // This node's events, for the dispatcher's screen.
+    let event_publisher = session
+        .declare_publisher(format!(
+            "hive/{}/node/{}/event",
+            options.session, options.id
+        ))
+        .allowed_destination(Locality::Remote)
+        .await?;
     let throttle_request_publisher = session
         .declare_publisher(format!("hive/{}/locos/request", options.session))
         .allowed_destination(Locality::Remote)
@@ -279,27 +304,35 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
         None => (None, None),
     };
     let mut loconet_clients = 0_usize;
-    let (loconet_bus, mut loconet_bus_events) =
-        match (&options.loconet_connect, &options.loconet_serial) {
-            (Some(target), _) => {
-                let (client, events) = lbclient::start(target.clone());
-                (Some(client), Some(events))
-            }
-            (None, Some(port)) => {
-                let (client, events) = lnserial::start(
-                    port.clone(),
-                    options.loconet_serial_baud,
-                    options.loconet_serial_flow,
-                );
-                (Some(client), Some(events))
-            }
-            (None, None) => (None, None),
-        };
-    // The node board's address or the serial port.
+    let (loconet_bus, mut loconet_bus_events) = match (
+        &options.loconet_connect,
+        &options.loconet_serial,
+        options.loconet_udp,
+    ) {
+        (Some(target), _, _) => {
+            let (client, events) = lbclient::start(target.clone());
+            (Some(client), Some(events))
+        }
+        (None, Some(port), _) => {
+            let (client, events) = lnserial::start(
+                port.clone(),
+                options.loconet_serial_baud,
+                options.loconet_serial_flow,
+            );
+            (Some(client), Some(events))
+        }
+        (None, None, Some(group)) => {
+            let (client, events) = lnudp::start(group, options.loconet_udp_interface);
+            (Some(client), Some(events))
+        }
+        (None, None, None) => (None, None),
+    };
+    // The node board's address, the serial port or the UDP group.
     let bus_name = options
         .loconet_connect
         .clone()
         .or_else(|| options.loconet_serial.clone())
+        .or_else(|| options.loconet_udp.map(|group| format!("UDP {group}")))
         .unwrap_or_default();
     let mut loconet_bus_state = match bus_name.is_empty() {
         false => format!("bus {bus_name}, connecting"),
@@ -311,8 +344,13 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
     };
     let mut register = LocoRegister::new(&options.id);
     // The slots of each LocoNet connection and who owns them.
-    let mut client_edge = LocoNetEdge::new(options.loconet_tcp_slots);
-    let mut bus_edge = LocoNetEdge::new(options.loconet_connect_slots);
+    // The throttle ID written into the slots this node holds: H and its RocNet address.
+    let throttle_id = [b'H', (rocnet_id & 0x7F) as u8];
+    let mut client_edge = LocoNetEdge::new(options.loconet_tcp_slots).with_throttle_id(throttle_id);
+    let mut bus_edge =
+        LocoNetEdge::new(options.loconet_connect_slots).with_throttle_id(throttle_id);
+    // Turnout positions, answered on a side whose command station the node is.
+    let mut turnouts = Turnouts::default();
     // Loco addresses this node asked the allocator a throttle number for, and since when.
     let mut throttle_requests: HashMap<u16, Instant> = HashMap::new();
     // Peers whose loco register checksum differs from ours, and since when.
@@ -352,6 +390,7 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
     let mut log = CliLog {
         lines: VecDeque::with_capacity(MAX_CLI_LINES),
         last_event: "Waiting for Zenoh peers".to_owned(),
+        outbox: Vec::new(),
         echo: tui.is_none(),
     };
     let mut sequence = 0_u64;
@@ -414,6 +453,10 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
     publish_power_status(&outputs, &power, &mut log).await?;
 
     loop {
+        // The events of the last round go to the dispatcher's screen.
+        for event in std::mem::take(&mut log.outbox) {
+            event_publisher.put(event).await?;
+        }
         tokio::select! {
             _ = tokio::signal::ctrl_c() => {
                 if tui.is_none() {
@@ -649,9 +692,10 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                     loconet_bus_state = format!("bus {bus_name} connected");
                     // Give the bus the current clock on the next tick.
                     clock_written = None;
-                    match &options.loconet_serial {
-                        Some(port) => log.event(format!("LocoNet bus connected (serial interface on {port})")),
-                        None => log.event(format!("LocoNet bus connected (node board at {peer})")),
+                    match (&options.loconet_serial, options.loconet_udp) {
+                        (Some(port), _) => log.event(format!("LocoNet bus connected (serial interface on {port})")),
+                        (None, Some(group)) => log.event(format!("LocoNet bus joined (UDP multicast {group})")),
+                        (None, None) => log.event(format!("LocoNet bus connected (node board at {peer})")),
                     }
                 }
                 Some(LbEvent::Disconnected { reason, .. }) if side == LocoNetSide::Bus => {
@@ -685,6 +729,8 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                     let other_side = side.other();
                     let from = match side {
                         LocoNetSide::Clients => peer.to_string(),
+                        // A UDP group has many senders; name the one this came from.
+                        LocoNetSide::Bus if options.loconet_udp.is_some() => format!("bus {bus_name} ({peer})"),
                         LocoNetSide::Bus => format!("bus {bus_name}"),
                     };
                     if !message.is_slot_message() {
@@ -702,6 +748,18 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                         lowest_online(&peers, &options.id),
                     );
                     send_to_side(&loconet_ports, side, outcome.replies, &mut log);
+                    // Turnouts: the node answers as the command station where it owns the
+                    // slots, and switches them on DCC-EX.
+                    let owner = match side {
+                        LocoNetSide::Clients => options.loconet_tcp_slots,
+                        LocoNetSide::Bus => options.loconet_connect_slots,
+                    };
+                    let power_on = power.station.state() == PowerState::On;
+                    let switched = turnouts.receive(&message, owner == SlotOwner::Node, power_on);
+                    send_to_side(&loconet_ports, side, switched.replies, &mut log);
+                    if let Some((turnout, closed)) = switched.switch {
+                        send_to_dccex(outputs.dccex, vec![dccex::accessory(turnout, closed)], &mut log);
+                    }
                     tell_side(&loconet_ports, other_side, other_edge, &outcome.changes, &mut log);
                     drive_dccex(outputs.dccex, &mut dccex_locos, &outcome.changes, &options.id, &mut log);
                     for (address, slot) in &outcome.acquired {
@@ -780,6 +838,10 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                             let was_here = before.as_ref().and_then(|loco| loco.district.as_deref()) == Some(options.id.as_str());
                             let here = after.district.as_deref() == Some(options.id.as_str());
                             for (side, edge) in [(LocoNetSide::Clients, &mut client_edge), (LocoNetSide::Bus, &mut bus_edge)] {
+                                // A side this node does not have has no slot master to ask.
+                                if !loconet_ports.has(side) {
+                                    continue;
+                                }
                                 let messages = match (was_here, here) {
                                     (false, true) => edge.acquire(after.address),
                                     (true, false) => edge.release(after.address),
@@ -860,7 +922,7 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
             }
             _ = clock_tick.tick() => {
                 let now = Instant::now();
-                // Locos held on a slot master: a speed update every 100 s against the purge.
+                // Locos held on a slot master: a speed update every 60 s against the purge.
                 let std_now = std::time::Instant::now();
                 let keep_alive = client_edge.keep_alive(&register, std_now);
                 send_to_side(&loconet_ports, LocoNetSide::Clients, keep_alive, &mut log);
@@ -1402,6 +1464,8 @@ fn parse_args(args: Vec<String>) -> Result<NodeArgs, Box<dyn Error + Send + Sync
     let mut loconet_serial = None;
     let mut loconet_serial_baud = lnserial::DEFAULT_BAUD_RATE;
     let mut loconet_serial_flow = FlowControl::Hardware;
+    let mut loconet_udp = None;
+    let mut loconet_udp_interface = Ipv4Addr::UNSPECIFIED;
     let mut loconet_fast_clock = None;
     let mut dccex = None;
     let mut plain = false;
@@ -1450,6 +1514,22 @@ fn parse_args(args: Vec<String>) -> Result<NodeArgs, Box<dyn Error + Send + Sync
                     format!("invalid {flag} '{value}'; expected 'hardware' or 'none'")
                 })?;
             }
+            "--loconet-udp" => {
+                // The group is optional; the GCA101 and Rocrail use 224.0.0.1:1235.
+                let Some(value) = args.next_if(|value| !value.starts_with("--")) else {
+                    loconet_udp = Some(lnudp::DEFAULT_GROUP);
+                    continue;
+                };
+                loconet_udp = Some(lnudp::parse_group(&value).ok_or_else(|| {
+                    format!("invalid {flag} '{value}'; expected a multicast group such as 224.0.0.1:1235")
+                })?);
+            }
+            "--loconet-udp-interface" => {
+                let value = next_value(&mut args, &flag)?;
+                loconet_udp_interface = value.parse::<Ipv4Addr>().map_err(|_| {
+                    format!("invalid {flag} '{value}'; expected this computer's IPv4 address on the GCA101's network")
+                })?;
+            }
             "--loconet-fast-clock" => {
                 let value = next_value(&mut args, &flag)?;
                 loconet_fast_clock = Some(match value.as_str() {
@@ -1490,8 +1570,13 @@ fn parse_args(args: Vec<String>) -> Result<NodeArgs, Box<dyn Error + Send + Sync
     if identify && send_rocnet_hex.is_some() {
         return Err("choose either --identify or --send-rocnet-hex".into());
     }
-    if loconet_connect.is_some() && loconet_serial.is_some() {
-        return Err("choose either --loconet-connect or --loconet-serial".into());
+    let buses = [
+        loconet_connect.is_some(),
+        loconet_serial.is_some(),
+        loconet_udp.is_some(),
+    ];
+    if buses.into_iter().filter(|chosen| *chosen).count() > 1 {
+        return Err("choose one of --loconet-connect, --loconet-serial and --loconet-udp".into());
     }
     if identify && rocnet_address.is_none() {
         return Err("--identify requires --rocnet-address".into());
@@ -1508,16 +1593,20 @@ fn parse_args(args: Vec<String>) -> Result<NodeArgs, Box<dyn Error + Send + Sync
         loconet_tcp,
         loconet_connect,
         loconet_tcp_slots,
-        // A node board's bus has FREDs; a serial interface sits on a command station.
-        loconet_connect_slots: loconet_connect_slots.unwrap_or(if loconet_serial.is_some() {
-            SlotOwner::External
-        } else {
-            SlotOwner::Node
-        }),
+        // A node board's bus has FREDs; a serial or UDP interface sits on a command station.
+        loconet_connect_slots: loconet_connect_slots.unwrap_or(
+            if loconet_serial.is_some() || loconet_udp.is_some() {
+                SlotOwner::External
+            } else {
+                SlotOwner::Node
+            },
+        ),
         loconet_fast_clock: loconet_fast_clock.unwrap_or(true),
         loconet_serial,
         loconet_serial_baud,
         loconet_serial_flow,
+        loconet_udp,
+        loconet_udp_interface,
         dccex,
         plain,
     })

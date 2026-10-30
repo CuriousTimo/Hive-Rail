@@ -189,6 +189,22 @@ impl LocoNetMessage {
         Self::with_checksum(&[0xB5, slot & 0x7F, status & 0x7F])
     }
 
+    /// Writes a slot (`OPC_WR_SL_DATA`) from the slot master's data for it, with this
+    /// speed, direction and F0 to F8, and this throttle ID. A throttle marks the slot it
+    /// holds with its ID this way (JMRI does), so it knows the slot as its own later, for
+    /// example after a restart. `data` is the slot's `SL_RD_DATA` message.
+    pub fn slot_write(data: &[u8], speed: u8, dirf: u8, snd: u8, id: [u8; 2]) -> Self {
+        let mut body = [0_u8; 13];
+        body.copy_from_slice(&data[..13]);
+        body[0] = 0xEF;
+        body[5] = speed & 0x7F;
+        body[6] = dirf & 0x7F;
+        body[10] = (data[10] & 0x70) | (snd & 0x0F);
+        body[11] = id[0] & 0x7F;
+        body[12] = id[1] & 0x7F;
+        Self::with_checksum(&body)
+    }
+
     pub fn loco_speed(slot: u8, speed: u8) -> Self {
         Self::with_checksum(&[0xA0, slot & 0x7F, speed & 0x7F])
     }

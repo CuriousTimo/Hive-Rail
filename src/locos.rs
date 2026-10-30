@@ -21,13 +21,14 @@
 use crate::loconet::LocoNetMessage;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     time::{Duration, Instant},
 };
 
 const OPC_LOCO_SPD: u8 = 0xA0;
 const OPC_LOCO_DIRF: u8 = 0xA1;
 const OPC_LOCO_SND: u8 = 0xA2;
+const OPC_LONG_ACK: u8 = 0xB4;
 const OPC_SLOT_STAT1: u8 = 0xB5;
 const OPC_MOVE_SLOTS: u8 = 0xBA;
 const OPC_RQ_SL_DATA: u8 = 0xBB;
@@ -48,9 +49,22 @@ const DIRF_F0: u8 = 0x10;
 /// `LONG_ACK` code for "no free slot".
 const ACK_NO_FREE_SLOT: u8 = 0x00;
 const ACK_ACCEPTED: u8 = 0x7F;
-/// A slot master purges a slot nobody touched for about 200 s (LocoNet PE); a speed
-/// update about every 100 s keeps a held slot ours.
-const KEEP_ALIVE: Duration = Duration::from_secs(100);
+/// A slot master purges a slot nobody touched: after about 200 s says the LocoNet PE, but
+/// an Intellibox I does it after about 2 minutes (measured: IN_USE to IDLE in 110 to 120
+/// s). A speed update every 50 s, as JMRI's throttles send, keeps a held slot ours.
+const KEEP_ALIVE: Duration = Duration::from_secs(50);
+/// A slot master that does not answer `LOCO_ADR` (busy, or the message was lost) is asked
+/// again every second, at most 20 times, as JMRI does.
+const ACQUIRE_RETRY: Duration = Duration::from_secs(1);
+const ACQUIRE_ATTEMPTS: u8 = 20;
+/// The throttle ID in a slot this node holds: `H` and the node's RocNet address.
+const DEFAULT_THROTTLE_ID: [u8; 2] = [0x48, 0x00];
+const NO_THROTTLE_ID: [u8; 2] = [0x00, 0x00];
+/// An Intellibox answers a null move within a second, with the slot IN_USE or a refusal;
+/// a slot master that does not answer at all is taken as having accepted it.
+const MOVE_ANSWER_TIMEOUT: Duration = Duration::from_secs(2);
+/// `LONG_ACK` code for a refused `MOVE_SLOTS`: the slot is another throttle's.
+const ACK_REFUSED: u8 = 0x00;
 
 /// One loco as shared with the other nodes in the heartbeat.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -428,10 +442,18 @@ pub struct LocoNetEdge {
     status: BTreeMap<u8, u8>,
     /// External only: slots driven before their address was known, already asked about.
     asked: BTreeSet<u8>,
-    /// External only: locos this node asked the slot master for, to take them.
-    acquiring: BTreeSet<u16>,
+    /// External only: locos this node asked the slot master for, to take them: when it
+    /// last asked, and how often.
+    acquiring: BTreeMap<u16, (Instant, u8)>,
+    /// The throttle ID this node writes into the slots it holds.
+    throttle_id: [u8; 2],
     /// External only: locos this node holds like a throttle, and when it last touched them.
     held: BTreeMap<u16, Instant>,
+    /// External only: null moves sent to take locos (slot, address, when), oldest first,
+    /// until the slot master answers. A loco's speed waits for that answer: a refused move
+    /// means another throttle has the slot, and its loco must not get our speed. The
+    /// refusal (`LONG_ACK`) does not name the slot; it answers the oldest open move.
+    moving: VecDeque<(u8, u16, Instant)>,
 }
 
 impl LocoNetEdge {
@@ -441,9 +463,17 @@ impl LocoNetEdge {
             local: BTreeMap::new(),
             status: BTreeMap::new(),
             asked: BTreeSet::new(),
-            acquiring: BTreeSet::new(),
+            acquiring: BTreeMap::new(),
+            throttle_id: DEFAULT_THROTTLE_ID,
             held: BTreeMap::new(),
+            moving: VecDeque::new(),
         }
+    }
+
+    /// Sets the throttle ID this node writes into the slots it holds (`ID1`, `ID2`).
+    pub fn with_throttle_id(mut self, id: [u8; 2]) -> Self {
+        self.throttle_id = [id[0] & 0x7F, id[1] & 0x7F];
+        self
     }
 
     /// Takes a loco on this connection's slot master, as a throttle does (LocoNet PE,
@@ -454,7 +484,7 @@ impl LocoNetEdge {
         if self.owner != SlotOwner::External || self.held.contains_key(&address) {
             return Vec::new();
         }
-        self.acquiring.insert(address);
+        self.acquiring.insert(address, (Instant::now(), 1));
         vec![LocoNetMessage::loco_address(address)]
     }
 
@@ -483,10 +513,31 @@ impl LocoNetEdge {
         self.held.contains_key(&address)
     }
 
-    /// Speed updates for held slots nobody touched for 100 s, so the slot master does
+    /// Speed updates for held slots nobody touched for 60 s, so the slot master does
     /// not purge them.
     pub fn keep_alive(&mut self, register: &LocoRegister, now: Instant) -> Vec<LocoNetMessage> {
         let mut messages = Vec::new();
+        // LOCO_ADR without an answer: ask again, at most 20 times.
+        self.acquiring.retain(|&address, (asked, attempts)| {
+            if now.duration_since(*asked) < ACQUIRE_RETRY {
+                return true;
+            }
+            if *attempts >= ACQUIRE_ATTEMPTS {
+                return false;
+            }
+            *asked = now;
+            *attempts += 1;
+            messages.push(LocoNetMessage::loco_address(address));
+            true
+        });
+        // Null moves nobody answered: the slot master took them without a word.
+        while let Some(&(slot, address, sent)) = self.moving.front() {
+            if now.duration_since(sent) < MOVE_ANSWER_TIMEOUT {
+                break;
+            }
+            self.moving.pop_front();
+            messages.extend(loco_state(register, slot, address));
+        }
         let due: Vec<u16> = self
             .held
             .iter()
@@ -500,6 +551,35 @@ impl LocoNetEdge {
             }
         }
         messages
+    }
+
+    /// The slot master answered a null move: the slot is ours (IN_USE) or another
+    /// throttle's (refused).
+    fn move_answered(
+        &mut self,
+        register: &LocoRegister,
+        (slot, address, _): (u8, u16, Instant),
+        data: Option<&[u8]>,
+        outcome: &mut EdgeOutcome,
+    ) {
+        if let Some(data) = data {
+            // The slot with the loco's state and our throttle ID, then the state again
+            // for a slot master that does not take slot writes.
+            if let Some(loco) = register.get(address) {
+                outcome.replies.push(LocoNetMessage::slot_write(
+                    data,
+                    loco.speed,
+                    loco.dirf,
+                    loco.snd,
+                    self.throttle_id,
+                ));
+            }
+            outcome.replies.extend(loco_state(register, slot, address));
+            outcome.acquired.push((address, slot));
+        } else {
+            self.held.remove(&address);
+            outcome.conflicts.push(address);
+        }
     }
 
     fn slot_of(&self, address: u16) -> Option<u8> {
@@ -565,23 +645,36 @@ impl LocoNetEdge {
                     let known = self.local.insert(b[2], address) == Some(address);
                     self.status.insert(b[2], b[3]);
                     self.asked.remove(&b[2]);
-                    if self.acquiring.remove(&address) {
-                        // Only a slot a throttle here already drives is in use: Rocrail's
-                        // slot server answers a new LOCO_ADR with IN_USE, unlike the PE.
-                        if known && b[3] & SLOT_BUSY_MASK == SLOT_IN_USE {
+                    if self.acquiring.remove(&address).is_some() {
+                        let in_use = b[3] & SLOT_BUSY_MASK == SLOT_IN_USE;
+                        let id = [b[11], b[12]];
+                        if in_use && id == self.throttle_id {
+                            // Our own slot, for example from before a restart: carry on
+                            // without a null move (an Intellibox refuses one on IN_USE).
+                            self.held.insert(address, Instant::now());
+                            outcome.replies.extend(loco_state(register, b[2], address));
+                            outcome.acquired.push((address, b[2]));
+                        } else if in_use && (known || id != NO_THROTTLE_ID) {
+                            // Another throttle's: one this node saw driving it, or one
+                            // that marked the slot with its ID. Rocrail's slot server
+                            // answers a new LOCO_ADR with IN_USE without an ID, unlike the
+                            // PE; that one is still taken.
                             outcome.conflicts.push(address);
                         } else {
-                            // Take the slot, then give it the loco's state from the register.
+                            // Take the slot; the loco's state from the register follows once
+                            // the slot master confirms the move.
                             self.held.insert(address, Instant::now());
                             outcome.replies.push(LocoNetMessage::null_move(b[2]));
-                            if let Some(loco) = register.get(address) {
-                                outcome.replies.extend([
-                                    LocoNetMessage::loco_speed(b[2], loco.speed),
-                                    LocoNetMessage::loco_dirf(b[2], loco.dirf),
-                                    LocoNetMessage::loco_sound(b[2], loco.snd),
-                                ]);
-                            }
-                            outcome.acquired.push((address, b[2]));
+                            self.moving.push_back((b[2], address, Instant::now()));
+                        }
+                    } else if let Some(index) =
+                        self.moving.iter().position(|&(slot, _, _)| slot == b[2])
+                    {
+                        // The answer to a null move.
+                        let taken = b[3] & SLOT_BUSY_MASK == SLOT_IN_USE;
+                        if let Some(moved) = self.moving.remove(index) {
+                            let data = taken.then_some(b);
+                            self.move_answered(register, moved, data, &mut outcome);
                         }
                     } else if !self.held.contains_key(&address) {
                         outcome.changed(register.update(address, |loco| {
@@ -601,6 +694,14 @@ impl LocoNetEdge {
             }
             OPC_SLOT_STAT1 if is_loco_slot(b[1]) && b[2] & SLOT_BUSY_MASK == 0 => {
                 self.forget_slot(register, b[1], b[2], &mut outcome);
+            }
+            // An Intellibox refuses a null move on a slot another throttle holds.
+            OPC_LONG_ACK
+                if b.len() == 4 && b[1] == OPC_MOVE_SLOTS & 0x7F && b[2] == ACK_REFUSED =>
+            {
+                if let Some(moved) = self.moving.pop_front() {
+                    self.move_answered(register, moved, None, &mut outcome);
+                }
             }
             _ => {}
         }
@@ -793,6 +894,20 @@ fn slot_read(register: &LocoRegister, throttle: u8, track_status: u8) -> LocoNet
     )
 }
 
+/// A held loco's speed and functions from the register, for its slot on the slot master.
+fn loco_state(register: &LocoRegister, slot: u8, address: u16) -> Vec<LocoNetMessage> {
+    register
+        .get(address)
+        .map(|loco| {
+            vec![
+                LocoNetMessage::loco_speed(slot, loco.speed),
+                LocoNetMessage::loco_dirf(slot, loco.dirf),
+                LocoNetMessage::loco_sound(slot, loco.snd),
+            ]
+        })
+        .unwrap_or_default()
+}
+
 fn is_loco_slot(slot: u8) -> bool {
     (1..=LAST_LOCO_SLOT).contains(&slot)
 }
@@ -970,23 +1085,33 @@ mod tests {
             "E7 0E 04 03 05 00 00 07 00 1A 00 00 00 09",
             true,
         );
-        assert_eq!(taken.acquired, [(3333, 4)]);
-        assert_eq!(
-            hexes(&taken.replies),
-            ["BA 04 04 45", "A0 04 29 72", "A1 04 10 4A", "A2 04 00 59"]
-        );
-        // Its answer to the null move (in use, speed 0) does not overwrite the register.
-        send(
+        // The null move first; speed and functions wait for its answer.
+        assert!(taken.acquired.is_empty());
+        assert_eq!(hexes(&taken.replies), ["BA 04 04 45"]);
+        // Its answer (in use, speed 0) does not overwrite the register; the loco's state
+        // from the register goes to the slot.
+        let moved = send(
             &mut edge,
             &mut register,
             "E7 0E 04 33 05 00 00 07 00 1A 00 00 00 39",
             true,
         );
+        assert_eq!(moved.acquired, [(3333, 4)]);
+        // The slot written with the loco's state and our throttle ID, then the state.
+        assert_eq!(
+            hexes(&moved.replies),
+            [
+                "EF 0E 04 33 05 29 10 07 00 1A 00 48 00 40",
+                "A0 04 29 72",
+                "A1 04 10 4A",
+                "A2 04 00 59"
+            ]
+        );
         assert_eq!(register.get(3333).unwrap().speed, 0x29);
         assert!(edge.holds(3333));
 
-        // After 100 s without activity a speed update keeps the slot ours.
-        let later = Instant::now() + Duration::from_secs(101);
+        // After 60 s without activity a speed update keeps the slot ours.
+        let later = Instant::now() + Duration::from_secs(61);
         assert_eq!(hexes(&edge.keep_alive(&register, later)), ["A0 04 29 72"]);
         // Leaving the district makes the slot COMMON, keeping its 128 steps.
         assert_eq!(hexes(&edge.release(3333)), ["B5 04 13 5D"]);
@@ -1000,7 +1125,11 @@ mod tests {
             "E7 0E 07 30 52 00 00 04 00 09 00 00 00 7E",
             true,
         );
-        assert_eq!(fresh.acquired, [(1234, 7)]);
+        assert_eq!(hexes(&fresh.replies), ["BA 07 07 45"]);
+        // A slot master that does not answer the null move: taken after 2 s.
+        let later = Instant::now() + Duration::from_secs(3);
+        rocrail.keep_alive(&register, later);
+        assert!(rocrail.moving.is_empty() && rocrail.holds(1234));
 
         // A loco a throttle here already drives in slot 7 is not taken.
         let mut busy = LocoNetEdge::new(SlotOwner::External);
@@ -1019,6 +1148,132 @@ mod tests {
         );
         assert_eq!(refused.conflicts, [1234]);
         assert!(refused.replies.is_empty() && !busy.holds(1234));
+    }
+
+    /// An Intellibox refuses a null move on a slot another throttle holds (recorded on an
+    /// Intellibox I, loco 4444 in slot 2): a conflict, and no speed for that slot.
+    #[test]
+    fn a_refused_null_move_is_a_conflict() {
+        let mut register = LocoRegister::new("mac");
+        register.update(4444, |loco| {
+            loco.speed = 0x29;
+            loco.district = Some("mac".into());
+        });
+        let mut edge = LocoNetEdge::new(SlotOwner::External);
+        assert_eq!(hexes(&edge.acquire(4444)), ["BF 22 5C 3E"]);
+        let taken = send(
+            &mut edge,
+            &mut register,
+            "E7 0E 02 30 5C 00 10 07 00 22 00 00 00 4D",
+            true,
+        );
+        assert_eq!(hexes(&taken.replies), ["BA 02 02 45"]);
+        let refused = send(&mut edge, &mut register, "B4 3A 00 71", true);
+        assert_eq!(refused.conflicts, [4444]);
+        assert!(refused.replies.is_empty() && !edge.holds(4444));
+        // Nothing follows later either.
+        let later = Instant::now() + Duration::from_secs(3);
+        assert!(edge.keep_alive(&register, later).is_empty());
+    }
+
+    /// Two locos taken at once, as recorded on an Intellibox I: loco 3 is on its own
+    /// throttle in slot 1, loco 4444 is idle in slot 2. The refusal answers the oldest move
+    /// (slot 1); slot 2 is taken and only slot 2 gets a speed.
+    #[test]
+    fn a_refusal_answers_the_oldest_null_move() {
+        let mut register = LocoRegister::new("mac");
+        for address in [3, 4444] {
+            register.update(address, |loco| {
+                loco.speed = 0x29;
+                loco.district = Some("mac".into());
+            });
+        }
+        let mut edge = LocoNetEdge::new(SlotOwner::External);
+        edge.acquire(3);
+        edge.acquire(4444);
+        let mut replies = Vec::new();
+        let mut conflicts = Vec::new();
+        let mut acquired = Vec::new();
+        for answer in [
+            "E7 0E 01 32 03 00 10 07 00 00 00 00 00 31",
+            "E7 0E 02 20 5C 00 10 07 00 22 00 00 00 5D",
+            "B4 3A 00 71",
+            "E7 0E 02 30 5C 00 10 07 00 22 00 00 00 4D",
+        ] {
+            let outcome = send(&mut edge, &mut register, answer, true);
+            replies.extend(hexes(&outcome.replies));
+            conflicts.extend(outcome.conflicts);
+            acquired.extend(outcome.acquired);
+        }
+        assert_eq!(conflicts, [3]);
+        assert_eq!(acquired, [(4444, 2)]);
+        assert_eq!(
+            replies,
+            [
+                "BA 01 01 45",
+                "BA 02 02 45",
+                "EF 0E 02 30 5C 29 00 07 00 22 00 48 00 34",
+                "A0 02 29 74",
+                "A1 02 00 5C",
+                "A2 02 00 5F"
+            ]
+        );
+        assert!(edge.holds(4444) && !edge.holds(3));
+    }
+
+    /// A slot this node marked with its throttle ID, found IN_USE after a restart (as on
+    /// the Intellibox: loco 4444, ID "HR"), is carried on without a null move; another
+    /// throttle's ID is a conflict.
+    #[test]
+    fn knows_its_own_slot_by_the_throttle_id() {
+        let mut register = LocoRegister::new("mac");
+        register.update(4444, |loco| {
+            loco.speed = 0x29;
+            loco.district = Some("mac".into());
+        });
+        let mut edge = LocoNetEdge::new(SlotOwner::External).with_throttle_id([0x48, 0x52]);
+        edge.acquire(4444);
+        let ours = send(
+            &mut edge,
+            &mut register,
+            "E7 0E 02 30 5C 00 10 07 00 22 00 48 52 57",
+            true,
+        );
+        assert_eq!(ours.acquired, [(4444, 2)]);
+        assert_eq!(
+            hexes(&ours.replies),
+            ["A0 02 29 74", "A1 02 00 5C", "A2 02 00 5F"]
+        );
+
+        let mut other = LocoNetEdge::new(SlotOwner::External).with_throttle_id([0x48, 0x53]);
+        other.acquire(4444);
+        let theirs = send(
+            &mut other,
+            &mut register,
+            "E7 0E 02 30 5C 00 10 07 00 22 00 48 52 57",
+            true,
+        );
+        assert_eq!(theirs.conflicts, [4444]);
+        assert!(theirs.replies.is_empty());
+    }
+
+    /// No answer to LOCO_ADR: asked again every second, at most 20 times, as JMRI does.
+    #[test]
+    fn asks_again_without_an_answer() {
+        let register = LocoRegister::new("mac");
+        let mut edge = LocoNetEdge::new(SlotOwner::External);
+        edge.acquire(4444);
+        let mut asked = 1;
+        let mut now = Instant::now();
+        for _ in 0..30 {
+            now += Duration::from_millis(1100);
+            asked += edge
+                .keep_alive(&register, now)
+                .iter()
+                .filter(|message| message.to_hex() == "BF 22 5C 3E")
+                .count();
+        }
+        assert_eq!(asked, 20);
     }
 
     /// Rocrail's slot 7 and the FRED's throttle 1 are the same loco 1234; the node

@@ -5,6 +5,7 @@ mod dispatcher;
 mod lbclient;
 mod lbserver;
 mod lnserial;
+mod lnudp;
 mod loconet;
 mod locos;
 mod node;
@@ -12,6 +13,7 @@ mod power;
 mod profile;
 mod rocnet;
 mod simulation;
+mod turnouts;
 mod ui;
 
 use std::{env, path::Path, process::ExitCode};
@@ -95,9 +97,12 @@ fn print_help() {
          --loconet-tcp-slots external|node: who owns the slots of the LbServer clients (default external:\n\
            their own slot master, such as Rocrail's slot server or a central; node: the node, for throttles).\n\
          --loconet-connect-slots node|external: the same for the bus (default node on a node board, for FREDs;\n\
-           external on a serial interface).\n\
+           external on a serial or UDP interface).\n\
          --loconet-serial <port> joins a LocoNet bus through a serial interface instead, such as an Intellibox I\n\
            (SO 2 = 4); --loconet-serial-baud (default 19200) and --loconet-serial-flow hardware|none (default hardware).\n\
+         --loconet-udp [group[:port]] joins a LocoNet bus over UDP multicast instead, such as a GCA101\n\
+           LocoBuffer-UDP (default 224.0.0.1:1235, as Rocrail's LNUDP); --loconet-udp-interface <ip> picks the\n\
+           network when this computer has several (Wi-Fi and Ethernet).\n\
          --loconet-fast-clock on|off: write the fast clock (slot 123) to the bus (default on;\n\
            off for a central without one, such as an Intellibox I).\n\
          Dispatcher mode (FREMO: Zugleiter) shows every district, the fast clock and the layout's\n\

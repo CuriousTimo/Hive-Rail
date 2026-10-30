@@ -22,7 +22,7 @@ use toml::{Table, Value};
 
 /// Flags that take no value: `true` gives the flag, `false` leaves it out. Every other
 /// flag given `true` or `false` gets `on` or `off`.
-const SWITCHES: &[&str] = &["--identify", "--plain", "--loconet-tcp"];
+const SWITCHES: &[&str] = &["--identify", "--plain", "--loconet-tcp", "--loconet-udp"];
 
 /// Commands that run on their own and take no config file.
 const COMMANDS: &[&str] = &[

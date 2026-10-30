@@ -383,6 +383,14 @@ pub fn clock_command(minute_of_day: u16, rate: u8) -> String {
     format!("<JC {minute_of_day} {rate}>")
 }
 
+/// Switches a turnout on a DCC accessory decoder: `<a linear activate>`, with the LocoNet
+/// turnout number as DCC-EX's linear accessory address (1 to 2044, as JMRI numbers DCC
+/// accessories) and closed as 1, thrown as 0. DCC-EX sends the pulse itself. Not yet
+/// tested with a real accessory decoder.
+pub fn accessory(turnout: u16, closed: bool) -> String {
+    format!("<a {turnout} {}>", u8::from(closed))
+}
+
 /// Splits DCC-EX output into frames. Diagnostics (`<* ... *>`) may span lines and
 /// contain `>`; everything outside angle brackets is ignored.
 #[derive(Debug, Default)]

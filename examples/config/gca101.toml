@@ -1,0 +1,20 @@
+# A node on a GCA101 LocoBuffer-UDP (MGV101): LocoNet over UDP multicast, as Rocrail's LNUDP.
+#   cargo run -- --config examples/config/gca101.toml
+# Each key is a command line flag without its dashes; a [table] is a flag prefix.
+# Options on the command line win: add --id MacBook-2 to run a second node.
+
+mode = "node"
+session = "bench"
+id = "MacBook"
+rocnet-address = 101
+plain = true
+
+[loconet]
+# The GCA101's group and port; true is the same as "224.0.0.1:1235".
+udp = true
+# With Wi-Fi and Ethernet both connected, name this computer's address on the GCA101's network:
+# udp-interface = "192.168.1.20"
+# The command station on the GCA101's LocoNet is the slot master.
+connect-slots = "external"
+# An Intellibox I has no fast clock; leave this out for a central that has one.
+fast-clock = false
