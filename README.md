@@ -64,7 +64,7 @@ The roadmap follows the [wiki design specification](https://github.com/CuriousTi
 	- [ ] **T.5** Name the train at the border from the tracking, the loco register or the operator, and carry its identity through the handoff (with Phase 5).
 	- [ ] **T.6** Pass: a train followed through a simulated district and across a simulated border, by route and driven by hand; the picture survives a node restart and a network split.
 - [ ] **Phase 2: Simulator**
-	- [ ] **2.1** Model virtual nodes, sensors, turnouts, boosters, and transfer blocks.
+	- [ ] **2.1** Model virtual nodes, sensors, turnouts, boosters, and transfer blocks. Trains run on a layout's track graph: `hive-rail --simulate-layout <layout.json>` runs two trains shuttling between the example's termini, setting turnouts as a route would, waiting for occupied track, closing and opening level crossings (closed until the last train has passed), and crossing the district border both ways; every block, sensor and turnout event carries its LocoNet address. Not yet connected to the nodes.
 	- [x] **2.2** Implement and unit-test a local booster-exclusivity check for fixed sample rail segments.
 	- [ ] **2.3** Enforce rail power exclusivity after every simulated event.
 	- [ ] **2.4** Add deterministic network, sensor, short-circuit, crash, and restart fault injection.

@@ -3,6 +3,7 @@ mod config;
 mod dccex;
 mod dispatcher;
 mod layout;
+mod layout_sim;
 mod lbclient;
 mod lbserver;
 mod lnserial;
@@ -50,6 +51,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Some("--show-locos") => dispatcher::show_locos(args.collect()).await,
         Some("--transfer-loco") => dispatcher::transfer_loco(args.collect()).await,
         Some("--check-layout") => check_layout(args.collect()),
+        Some("--simulate-layout") => simulate_layout(args.collect()),
         Some("--validate-profile") => {
             let path = args.next().ok_or("expected a profile path")?;
             let profile = profile::load(Path::new(&path))?;
@@ -133,6 +135,53 @@ fn check_layout(args: Vec<String>) -> Result<(), Box<dyn std::error::Error + Sen
     }
 }
 
+/// `--simulate-layout <layout.json> [--seconds N]`: runs the example trains on a layout
+/// and prints what happens: blocks, sensors, turnouts, level crossings, borders.
+fn simulate_layout(args: Vec<String>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let mut args = args.into_iter();
+    let path = args
+        .next()
+        .ok_or("expected a layout file after --simulate-layout")?;
+    let path = Path::new(&path);
+    let mut seconds = 300.0;
+    while let Some(flag) = args.next() {
+        match flag.as_str() {
+            "--seconds" => {
+                seconds = args
+                    .next()
+                    .and_then(|value| value.parse().ok())
+                    .ok_or("expected a number of seconds after --seconds")?
+            }
+            _ => return Err(format!("unknown --simulate-layout option: {flag}").into()),
+        }
+    }
+    let layout = layout::load(path, path.parent().unwrap_or(Path::new(".")))?;
+    let report = layout.check();
+    if !report.errors.is_empty() {
+        return Err(format!(
+            "the layout has errors; run --check-layout {}",
+            path.display()
+        )
+        .into());
+    }
+    let topology = topology::Topology::build(&layout);
+    let mut sim = layout_sim::LayoutSim::new(&layout, &topology);
+    layout_sim::example_trains(&mut sim);
+    for train in &sim.trains {
+        println!(
+            "{:>7.1} s  {} (loco {}, {} mm) starts on {}",
+            0.0, train.name, train.address, train.length_mm, train.head.piece
+        );
+    }
+    let step = 0.1;
+    for _ in 0..(seconds / step) as usize {
+        for (time, event) in sim.step(step) {
+            println!("{time:>7.1} s  {event}");
+        }
+    }
+    Ok(())
+}
+
 fn print_help() {
     println!(
         "Hive-Rail simulation scaffold\n\n\
@@ -149,6 +198,7 @@ fn print_help() {
          cargo run -- --transfer-loco <address> --to <node> --session <name> [--speed 0-126] [--forward|--reverse] [--lights|--no-lights]\n\
          cargo run -- --validate-profile <path>\n\
          cargo run -- --check-layout <layout.json> [--modules <dir>]\n\
+         cargo run -- --simulate-layout <layout.json> [--seconds N]\n\
          cargo run -- --config <file.toml> [more options]\n\
          cargo run -- --help\n\n\
          --config reads the options from a TOML file: each key is a flag without its dashes, a [table] a flag\n\

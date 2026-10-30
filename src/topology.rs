@@ -87,6 +87,17 @@ impl Leg {
     }
 }
 
+/// A turnout ahead of a train (`Topology::turnout_ahead`).
+#[derive(Debug, Clone)]
+pub struct TurnoutAhead {
+    pub module: String,
+    pub id: String,
+    /// The leg the train enters by.
+    pub entry: Leg,
+    /// The legs it may leave by, and the piece and heading each leads to.
+    pub options: Vec<(Leg, PieceId, Heading)>,
+}
+
 #[derive(Debug, Clone)]
 pub struct PieceInfo {
     pub id: PieceId,
@@ -340,6 +351,43 @@ impl Topology {
             }
             Some(Link::Buffer) | Some(Link::Open) | None => Vec::new(),
         }
+    }
+
+    /// The turnout a train running along `piece` in `heading` meets at the end of it: the
+    /// leg it enters by, and where each leg it may leave by leads (both legs from the
+    /// trunk, the trunk from a leg).
+    pub fn turnout_ahead(&self, piece: &PieceId, heading: Heading) -> Option<TurnoutAhead> {
+        let index = *self.index.get(piece)?;
+        let exit = match heading {
+            Heading::Forward => 1,
+            Heading::Backward => 0,
+        };
+        let Some(Link::Turnout { turnout, leg }) = self.links.get(&(index, exit)) else {
+            return None;
+        };
+        let info = &self.turnouts[*turnout];
+        let leaving: &[Leg] = match leg {
+            Leg::Trunk => &[Leg::Straight, Leg::Diverging],
+            _ => &[Leg::Trunk],
+        };
+        let options = leaving
+            .iter()
+            .filter_map(|&out| {
+                let (piece, end) = info.legs[out as usize]?;
+                let heading = if end == 0 {
+                    Heading::Forward
+                } else {
+                    Heading::Backward
+                };
+                Some((out, self.pieces[piece].id.clone(), heading))
+            })
+            .collect();
+        Some(TurnoutAhead {
+            module: info.module.clone(),
+            id: info.id.clone(),
+            entry: *leg,
+            options,
+        })
     }
 
     /// Every piece and heading reachable from a start, with every turnout free to choose.
