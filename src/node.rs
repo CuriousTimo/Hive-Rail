@@ -977,7 +977,7 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                     None => next_stdin_command(&mut stdin_keys, &mut log),
                 };
                 match command {
-                    UiCommand::None => {}
+                    UiCommand::None | UiCommand::ToggleDetails => {}
                     UiCommand::Quit => break,
                     UiCommand::Power(request) => {
                         handle_power_request(request, RequestSource::Dashboard, &options.id, &mut power, &outputs, &mut log).await?;

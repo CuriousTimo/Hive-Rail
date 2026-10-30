@@ -38,6 +38,7 @@ pub async fn run_sim(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Syn
     let path = Path::new(&path).to_path_buf();
     let mut port = 8080_u16;
     let mut speed = 1.0_f64;
+    let mut session = None;
     while let Some(flag) = args.next() {
         let mut value = || {
             args.next()
@@ -46,6 +47,7 @@ pub async fn run_sim(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Syn
         match flag.as_str() {
             "--port" => port = value()?.parse().map_err(|_| "invalid --port")?,
             "--speed" => speed = value()?.parse().map_err(|_| "invalid --speed")?,
+            "--session" => session = Some(value()?),
             _ => return Err(format!("unknown --web-sim option: {flag}").into()),
         }
     }
@@ -66,6 +68,30 @@ pub async fn run_sim(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Syn
     let mut sim = LayoutSim::new(layout, topology);
     layout_sim::example_trains(&mut sim);
 
+    // On the mesh: the trains go into the session's loco register, in the district their
+    // head is in, so the dispatcher and the district nodes follow them.
+    let mut mesh = match &session {
+        Some(session) => {
+            let mut publisher =
+                crate::dispatcher::LocoPublisher::open(session, "simulator").await?;
+            for train in &sim.trains {
+                let district = topology
+                    .piece(&train.head.piece)
+                    .map(|p| p.district.clone())
+                    .unwrap_or_default();
+                publisher
+                    .put(train.address, &district, RUNNING_STEP, true, true)
+                    .await?;
+            }
+            println!("simulated trains are in session {session}'s loco register; nodes named after the districts follow them");
+            Some(publisher)
+        }
+        None => None,
+    };
+    // Each train's direction as published: it changes when the train reverses.
+    let mut forward: std::collections::HashMap<String, bool> =
+        sim.trains.iter().map(|t| (t.name.clone(), true)).collect();
+
     let (publish, state) = watch::channel(String::new());
     let shared = Arc::new(Shared { layout_json, state });
     let listener = TcpListener::bind(("0.0.0.0", port)).await?;
@@ -81,6 +107,10 @@ pub async fn run_sim(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Syn
             _ = tokio::signal::ctrl_c() => break,
             _ = tick.tick() => {
                 for (time, event) in sim.step(step * speed) {
+                    if let Some(publisher) = mesh.as_mut() {
+                        publish_train(publisher, &sim, topology, &mut forward, &event).await?;
+                        publish_event(publisher, layout, &sim, topology, &event).await?;
+                    }
                     let line = format!("{:>7.1} s  {event}", time);
                     if log.len() == LOG_LINES {
                         log.pop_front();
@@ -96,6 +126,84 @@ pub async fn run_sim(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Syn
     }
     server.abort();
     Ok(())
+}
+
+/// The speed step a running simulated train has in the loco register.
+const RUNNING_STEP: u8 = 40;
+
+/// Tells the mesh what a simulator event means for the loco register: a train in another
+/// district, stopped, or running the other way.
+async fn publish_train(
+    publisher: &mut crate::dispatcher::LocoPublisher,
+    sim: &LayoutSim<'_>,
+    topology: &Topology,
+    forward: &mut std::collections::HashMap<String, bool>,
+    event: &layout_sim::SimEvent,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    use layout_sim::SimEvent;
+    let (name, step) = match event {
+        SimEvent::Border { train, .. } => (train, RUNNING_STEP),
+        SimEvent::Arrived { train, .. } => (train, 0),
+        SimEvent::Departed { train, .. } => {
+            if let Some(direction) = forward.get_mut(train) {
+                *direction = !*direction;
+            }
+            (train, RUNNING_STEP)
+        }
+        _ => return Ok(()),
+    };
+    let Some(train) = sim.trains.iter().find(|t| &t.name == name) else {
+        return Ok(());
+    };
+    let district = topology
+        .piece(&train.head.piece)
+        .map(|p| p.district.clone())
+        .unwrap_or_default();
+    let direction = forward.get(name).copied().unwrap_or(true);
+    publisher
+        .put(train.address, &district, step, direction, true)
+        .await
+}
+
+/// Sends a simulator event to the dispatcher, as the district it happens in reports it:
+/// border crossings, arrivals, departures and level crossings as events, blocks, sensors
+/// and turnouts as details.
+async fn publish_event(
+    publisher: &crate::dispatcher::LocoPublisher,
+    layout: &layout::Layout,
+    sim: &LayoutSim<'_>,
+    topology: &Topology,
+    event: &layout_sim::SimEvent,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    use layout_sim::SimEvent;
+    let train_district = |name: &str| {
+        sim.trains
+            .iter()
+            .find(|t| t.name == name)
+            .and_then(|t| topology.piece(&t.head.piece))
+            .map(|p| p.district.clone())
+            .unwrap_or_default()
+    };
+    let (district, detail) = match event {
+        SimEvent::Block { district, .. }
+        | SimEvent::Sensor { district, .. }
+        | SimEvent::Turnout { district, .. } => (district.clone(), true),
+        SimEvent::Crossing { crossing, .. } => {
+            let module = crossing.split('/').next().unwrap_or("");
+            (layout.district_of(module).unwrap_or("").to_owned(), false)
+        }
+        SimEvent::Border { to, .. } => (to.clone(), false),
+        SimEvent::Arrived { train, .. } | SimEvent::Departed { train, .. } => {
+            (train_district(train), false)
+        }
+    };
+    if district.is_empty() {
+        return Ok(());
+    }
+    // The dispatcher writes the district in front; the text need not repeat it.
+    let text = event.to_string();
+    let text = text.strip_prefix(&format!("{district}: ")).unwrap_or(&text);
+    publisher.event(&district, detail, text).await
 }
 
 async fn accept(listener: TcpListener, shared: Arc<Shared>) {

@@ -69,11 +69,28 @@ function drawLayout(layout) {
   }
   for (const crossing of layout.crossings) {
     const group = el("g", {}, layer("crossings"));
-    for (const at of crossing.at) {
-      const [x, y] = flip(at);
-      el("line", { x1: x - 60, y1: y - 40, x2: x - 60, y2: y + 40, class: "barrier" }, group);
-      el("line", { x1: x + 60, y1: y - 40, x2: x + 60, y2: y + 40, class: "barrier" }, group);
-      el("circle", { cx: x, cy: y, r: 16, class: "crossing" }, group);
+    if (crossing.at.length) {
+      // Along the road, and across it.
+      let along = [0, 1];
+      if (crossing.road.length >= 2) {
+        const [a, b] = [crossing.road[0], crossing.road[crossing.road.length - 1]];
+        const length = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+        along = [(b[0] - a[0]) / length, (b[1] - a[1]) / length];
+      }
+      const across = [-along[1], along[0]];
+      const base = crossing.at[0];
+      const offsets = crossing.at.map((p) => (p[0] - base[0]) * along[0] + (p[1] - base[1]) * along[1]);
+      // A barrier on each side of the tracks, its arm across the road, with the warning
+      // lights at the road's edge next to it.
+      for (const offset of [Math.min(...offsets) - 75, Math.max(...offsets) + 75]) {
+        const centre = [base[0] + along[0] * offset, base[1] + along[1] * offset];
+        const end = (sign, distance) => flip([centre[0] + across[0] * distance * sign, centre[1] + across[1] * distance * sign]);
+        const [x1, y1] = end(-1, 45);
+        const [x2, y2] = end(1, 45);
+        el("line", { x1, y1, x2, y2, class: "barrier" }, group);
+        const [lx, ly] = end(1, 62);
+        el("circle", { cx: lx, cy: ly, r: 12, class: "crossing" }, group);
+      }
     }
     el("title", {}, group).textContent = `Level crossing ${crossing.name}`;
     elements.crossings.set(crossing.id, group);

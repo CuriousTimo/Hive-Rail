@@ -22,7 +22,7 @@ use ratatui::{
     Frame,
 };
 use std::{
-    collections::{BTreeMap, VecDeque},
+    collections::{BTreeMap, HashMap, VecDeque},
     error::Error,
     io::{self, IsTerminal},
     time::Duration,
@@ -30,7 +30,8 @@ use std::{
 use tokio::time::{self, Instant, MissedTickBehavior};
 use zenoh::{handlers::FifoChannelHandler, pubsub::Subscriber, sample::Sample, Session};
 
-const MAX_EVENTS: usize = 200;
+/// Events kept; details (every block, sensor and turnout) come many to the minute.
+const MAX_EVENTS: usize = 500;
 /// How long `--show-locos` waits for the loco register after the first node answers.
 const SHOW_LOCOS_SETTLE: Duration = Duration::from_millis(1500);
 const SHOW_LOCOS_TIMEOUT: Duration = Duration::from_secs(6);
@@ -103,24 +104,41 @@ struct State {
     districts: BTreeMap<String, District>,
     register: LocoRegister,
     clock: FastClock,
-    events: VecDeque<String>,
+    /// Each event and whether it is a detail, shown only with `d`.
+    events: VecDeque<(bool, String)>,
     echo: bool,
+    /// Show the details too (the `d` key).
+    details: bool,
 }
 
 impl State {
     fn event(&mut self, text: String) {
+        self.add_event(false, text);
+    }
+
+    fn add_event(&mut self, detail: bool, text: String) {
         let line = format!("{} {text}", Local::now().format("%H:%M:%S"));
-        if self.echo {
+        if self.echo && (!detail || self.details) {
             println!("{line}");
         }
         if self.events.len() == MAX_EVENTS {
             self.events.pop_front();
         }
-        self.events.push_back(line);
+        self.events.push_back((detail, line));
     }
 
-    /// A node's event, marked with its district and RocNet address: `MacBook (101)`.
-    fn node_event(&mut self, key: &str, text: &str) {
+    /// A node's event, marked with its district and RocNet address: `MacBook (101)`. A
+    /// node sends plain text; the layout simulator sends `{"detail": true, "text": ...}`
+    /// for blocks, sensors and turnouts.
+    fn node_event(&mut self, key: &str, payload: &str) {
+        let (detail, text) = match serde_json::from_str::<serde_json::Value>(payload) {
+            Ok(value) if value.is_object() => (
+                value["detail"].as_bool().unwrap_or(false),
+                value["text"].as_str().unwrap_or("").to_owned(),
+            ),
+            _ => (false, payload.to_owned()),
+        };
+        let text = text.as_str();
         // hive/<session>/node/<id>/event
         let node = key.split('/').nth(3).unwrap_or("?");
         let label = match self
@@ -131,7 +149,7 @@ impl State {
             Some(rocnet_id) => format!("{node} ({rocnet_id})"),
             None => node.to_owned(),
         };
-        self.event(format!("{label}  {text}"));
+        self.add_event(detail, format!("{label}  {text}"));
     }
 
     fn allocator(&self) -> Option<&str> {
@@ -211,17 +229,21 @@ impl State {
         }
     }
 
+    /// Merges loco updates into the dispatcher's copy of the register. Only real changes
+    /// become events: a loco in another district as an event, any other change as a
+    /// detail. The copies every node sends of the same register are not repeated.
     fn loco_updates(&mut self, locos: Vec<RegisteredLoco>, origin: &str) {
-        for loco in &locos {
-            if self.echo {
-                println!(
-                    "{} {}  from {origin}",
-                    Local::now().format("%H:%M:%S"),
-                    loco.describe()
-                );
+        let merged = self.register.merge(locos);
+        for (before, after) in merged.changes {
+            let moved = before.as_ref().map(|b| &b.district) != Some(&after.district);
+            match (&after.district, moved) {
+                (Some(district), true) => self.event(format!(
+                    "loco {} now in district {district}  (from {origin})",
+                    after.address
+                )),
+                _ => self.add_event(true, format!("{}  from {origin}", after.describe())),
             }
         }
-        self.register.merge(locos);
     }
 
     fn clock_frame(&mut self, frame: &RocNetFrame) {
@@ -319,6 +341,7 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
         clock: FastClock::new(Instant::now()),
         events: VecDeque::new(),
         echo: tui.is_none(),
+        details: false,
     };
     state.event(format!(
         "dispatcher {} watching session {}",
@@ -362,8 +385,10 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
             _ = tick.tick() => {
                 state.refresh();
                 if let Some(ui) = tui.as_mut() {
-                    if matches!(ui.handle_input()?, UiCommand::Quit) {
-                        break;
+                    match ui.handle_input()? {
+                        UiCommand::Quit => break,
+                        UiCommand::ToggleDetails => state.details = !state.details,
+                        _ => {}
                     }
                     ui.draw_with(|frame| render(frame, &state))?;
                 }
@@ -407,6 +432,7 @@ async fn gather(
         clock: FastClock::new(Instant::now()),
         events: VecDeque::new(),
         echo: false,
+        details: false,
     };
     let deadline = Instant::now() + want.map_or(SHOW_LOCOS_TIMEOUT, |_| WANTED_NODE_TIMEOUT);
     let mut settle_until: Option<Instant> = None;
@@ -488,6 +514,92 @@ fn print_register(args: &Args, state: &State) {
 /// then takes it on its command station's slot master. `--speed`, `--forward`/`--reverse`
 /// and `--lights`/`--no-lights` set its state; what is not given stays as it is, so running
 /// it again changes only the speed.
+/// Puts locos into the layout's loco register from a program that is not a node, such as
+/// the layout simulator: which district a loco is in, its speed and direction. The nodes
+/// then take it on, or release it from, their slot masters as for a real handoff.
+pub struct LocoPublisher {
+    mesh: Mesh,
+    id: String,
+    session: String,
+    locos: HashMap<u16, RegisteredLoco>,
+}
+
+impl LocoPublisher {
+    pub async fn open(session: &str, id: &str) -> Result<Self, Box<dyn Error + Send + Sync>> {
+        let options = parse_args(vec![
+            "--session".to_owned(),
+            session.to_owned(),
+            "--id".to_owned(),
+            id.to_owned(),
+            "--plain".to_owned(),
+        ])?;
+        let mesh = Mesh::open(&options).await?;
+        // The register as the nodes have it, so the versions published here are newer.
+        let state = gather(&mesh, &options, None).await?;
+        let locos = state
+            .register
+            .snapshot()
+            .into_iter()
+            .map(|loco| (loco.address, loco))
+            .collect();
+        Ok(Self {
+            mesh,
+            id: id.to_owned(),
+            session: session.to_owned(),
+            locos,
+        })
+    }
+
+    /// An event in a district, as that district's node reports it, for the dispatcher's
+    /// list; `detail` events show only with its `d` key.
+    pub async fn event(
+        &self,
+        district: &str,
+        detail: bool,
+        text: &str,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+        let payload = serde_json::json!({ "detail": detail, "text": text }).to_string();
+        self.mesh
+            ._session
+            .put(
+                format!("hive/{}/node/{district}/event", self.session),
+                payload,
+            )
+            .await?;
+        Ok(())
+    }
+
+    /// Publishes a loco: its district, a speed step (0 to 126), its direction and lights.
+    pub async fn put(
+        &mut self,
+        address: u16,
+        district: &str,
+        step: u8,
+        forward: bool,
+        lights: bool,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+        let mut loco = self
+            .locos
+            .get(&address)
+            .cloned()
+            .unwrap_or_else(|| RegisteredLoco::new(address, &self.id));
+        loco.district = Some(district.to_owned());
+        loco.status |= 0x30; // in use
+                             // LocoNet speed: 0 stop, 1 emergency stop, 2 to 127 for speed 1 to 126.
+        loco.speed = if step == 0 { 0 } else { step.min(126) + 1 };
+        loco.dirf = if forward { 0 } else { 0x20 } | if lights { 0x10 } else { 0 };
+        loco.version += 1;
+        loco.node = self.id.clone();
+        self.locos.insert(address, loco.clone());
+        self.mesh
+            .updates
+            .put(serde_json::to_vec(&vec![loco])?)
+            .attachment(self.id.clone())
+            .await?;
+        Ok(())
+    }
+}
+
 pub async fn transfer_loco(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut args = args.into_iter();
     let address: u16 = args
@@ -786,18 +898,24 @@ fn render(frame: &mut Frame<'_>, state: &State) {
     frame.render_widget(slots, areas[2]);
 
     let visible = usize::from(areas[3].height.saturating_sub(2));
-    let events: Vec<Line> = state
+    let shown: Vec<&String> = state
         .events
         .iter()
-        .skip(state.events.len().saturating_sub(visible))
+        .filter(|(detail, _)| state.details || !detail)
+        .map(|(_, line)| line)
+        .collect();
+    let events: Vec<Line> = shown
+        .iter()
+        .skip(shown.len().saturating_sub(visible))
         .map(|line| Line::from(line.as_str()))
         .collect();
+    let title = if state.details {
+        "Events of every district, all details (d: fewer, q: quit)"
+    } else {
+        "Events of every district (d: all details, q: quit)"
+    };
     frame.render_widget(
-        Paragraph::new(events).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title("Events of every district (q quit)"),
-        ),
+        Paragraph::new(events).block(Block::default().borders(Borders::ALL).title(title)),
         areas[3],
     );
 }

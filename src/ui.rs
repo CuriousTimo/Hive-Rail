@@ -69,6 +69,9 @@ pub enum UiCommand {
     SimulateShort,
     /// Forget a stale peer; the node refuses this for a peer that is still online.
     RemovePeer(String),
+    /// Show every detail in the event list (blocks, sensors, turnouts), or only what
+    /// matters; the dispatcher's `d`.
+    ToggleDetails,
 }
 
 pub struct TerminalUi {
@@ -185,6 +188,7 @@ pub fn command_for_key(key: char) -> Option<UiCommand> {
         '-' => UiCommand::Clock(ClockChange::Rate(-1)),
         ']' => UiCommand::Clock(ClockChange::Hours(1)),
         '[' => UiCommand::Clock(ClockChange::Hours(-1)),
+        'd' => UiCommand::ToggleDetails,
         _ => return None,
     })
 }

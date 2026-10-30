@@ -202,7 +202,7 @@ fn print_help() {
          cargo run -- --validate-profile <path>\n\
          cargo run -- --check-layout <layout.json> [--modules <dir>]\n\
          cargo run -- --simulate-layout <layout.json> [--seconds N]\n\
-         cargo run -- --web-sim <layout.json> [--port 8080] [--speed 1]   (web view: http://localhost:8080)\n\
+         cargo run -- --web-sim <layout.json> [--port 8080] [--speed 1] [--session <name>]   (web view: http://localhost:8080)\n\
          cargo run -- --config <file.toml> [more options]\n\
          cargo run -- --help\n\n\
          --config reads the options from a TOML file: each key is a flag without its dashes, a [table] a flag\n\

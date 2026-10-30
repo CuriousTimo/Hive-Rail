@@ -1031,6 +1031,21 @@ impl Layout {
         // Borders: single or double track only, and a transfer block for each track.
         for border in self.borders() {
             self.check_border(&border, &mut report);
+            // A level crossing never sits on a module at a district border: its sensors
+            // and outputs would belong to the district on the other side of the handover.
+            for side in [&border.a, &border.b] {
+                let Some((module_id, _)) = split_end(side) else {
+                    continue;
+                };
+                if let Some((module, _)) = self.modules.get(module_id) {
+                    for crossing in &module.crossings {
+                        report.error(format!(
+                            "{module_id}: level crossing {} is on a module at the district border {} – {}; move it to a module inside a district",
+                            crossing.name, border.districts.0, border.districts.1
+                        ));
+                    }
+                }
+            }
         }
         report
     }
@@ -1248,6 +1263,25 @@ mod tests {
                 report.errors
             );
         }
+    }
+
+    #[test]
+    fn a_level_crossing_on_a_border_module_is_an_error() {
+        let mut layout = example();
+        let crossing = layout.modules["timo-2e96-west"].0.crossings[0].clone();
+        layout
+            .modules
+            .get_mut("timo-2e96-border")
+            .unwrap()
+            .0
+            .crossings
+            .push(crossing);
+        let report = layout.check();
+        assert!(
+            report.errors.iter().any(|e| e.contains("level crossing Feldweg is on a module at the district border")),
+            "{:#?}",
+            report.errors
+        );
     }
 
     #[test]
