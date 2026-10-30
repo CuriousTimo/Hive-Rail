@@ -188,6 +188,12 @@ async fn publish_event(
         SimEvent::Block { district, .. }
         | SimEvent::Sensor { district, .. }
         | SimEvent::Turnout { district, .. } => (district.clone(), true),
+        SimEvent::Signal { district, .. } => (district.clone(), true),
+        SimEvent::Feed { block, district } => {
+            let _ = block;
+            (district.clone(), false)
+        }
+        SimEvent::Route { train, .. } => (train_district(train), true),
         SimEvent::Crossing { crossing, .. } => {
             let module = crossing.split('/').next().unwrap_or("");
             (layout.district_of(module).unwrap_or("").to_owned(), false)

@@ -17,6 +17,157 @@ use std::collections::{BTreeMap, BTreeSet};
 /// How far before the end of its destination piece a train stops, in mm.
 const STOP_MARGIN_MM: f64 = 40.0;
 
+/// How far before a signal at stop a train halts.
+const SIGNAL_MARGIN_MM: f64 = 30.0;
+
+/// How many signals ahead of a train are cleared for it at most.
+const SECTIONS_AHEAD: usize = 2;
+
+/// A transfer block at a district border: fed by the sending district while a train comes
+/// in, by the receiving district once the train is fully inside and nothing is left on the
+/// sending side, and by the sending district again once it is empty.
+#[derive(Debug, Clone)]
+pub struct Transfer {
+    pub source: String,
+    pub receiving: String,
+    /// The piece on the sending side of the border.
+    pub source_piece: PieceId,
+    pub fed_by: String,
+}
+
+fn transfers(topology: &Topology) -> BTreeMap<String, Transfer> {
+    let joints = topology.border_joints();
+    let mut transfers = BTreeMap::new();
+    for (key, block) in &topology.blocks {
+        if block.role.as_deref() != Some("transfer") {
+            continue;
+        }
+        let other = joints.iter().find_map(|(a, b)| {
+            if a == &block.piece {
+                Some(b.clone())
+            } else if b == &block.piece {
+                Some(a.clone())
+            } else {
+                None
+            }
+        });
+        let Some(source_piece) = other else {
+            continue;
+        };
+        let source = topology
+            .piece(&source_piece)
+            .map(|p| p.district.clone())
+            .unwrap_or_default();
+        transfers.insert(
+            key.clone(),
+            Transfer {
+                receiving: block.district.clone(),
+                source_piece,
+                fed_by: source.clone(),
+                source,
+            },
+        );
+    }
+    transfers
+}
+
+/// A signal on a piece, facing trains running in `heading` along it.
+#[derive(Debug, Clone)]
+struct SignalInfo {
+    key: String,
+    district: String,
+    piece: PieceId,
+    heading: Heading,
+    /// Where it stands, in mm from the piece's `from` point.
+    at_mm: Option<f64>,
+    aspects: Vec<String>,
+    address: u16,
+}
+
+/// The signals of every module: devices of type `signal` on a track, with their running
+/// direction turned into a heading along the piece (from the module's geometry).
+fn signals(layout: &Layout) -> Vec<SignalInfo> {
+    let mut signals = Vec::new();
+    for (module_id, (module, _)) in &layout.modules {
+        for device in module.devices.iter().filter(|d| d.kind == "signal") {
+            let Some(track) = &device.track else {
+                continue;
+            };
+            let heading = device
+                .direction
+                .as_deref()
+                .and_then(|direction| heading_for(module, track, direction))
+                .unwrap_or(Heading::Forward);
+            let aspects = device
+                .aspects
+                .as_ref()
+                .and_then(|a| a.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_str().map(str::to_owned))
+                        .collect()
+                })
+                .unwrap_or_else(|| vec!["red".to_owned(), "green".to_owned()]);
+            signals.push(SignalInfo {
+                key: format!("{module_id}/{}", device.id),
+                district: layout.district_of(module_id).unwrap_or("").to_owned(),
+                piece: PieceId::new(module_id, track),
+                heading,
+                at_mm: device.at_mm.map(f64::from),
+                aspects,
+                address: device.address,
+            });
+        }
+    }
+    signals
+}
+
+/// The pieces of the open line, run one way only: on a module without points every piece
+/// with a running direction (right-hand running on double track). In a station a train
+/// may run against a track's regular direction, to reach a platform or to turn back.
+fn one_way(layout: &Layout) -> BTreeMap<PieceId, Heading> {
+    let mut one_way = BTreeMap::new();
+    for (module_id, (module, _)) in &layout.modules {
+        if !module.turnouts.is_empty() {
+            continue;
+        }
+        for piece in &module.track {
+            let Some(direction) = &piece.direction else {
+                continue;
+            };
+            let first = direction.split('>').next().unwrap_or("");
+            let end = |point: &str| point.split('.').next().unwrap_or("").to_owned();
+            let heading = if end(&piece.from) == first {
+                Some(Heading::Forward)
+            } else if end(&piece.to) == first {
+                Some(Heading::Backward)
+            } else {
+                heading_for(module, &piece.id, direction)
+            };
+            if let Some(heading) = heading {
+                one_way.insert(PieceId::new(module_id, &piece.id), heading);
+            }
+        }
+    }
+    one_way
+}
+
+/// The heading along a piece that runs in a module direction such as `A>B`: forward when
+/// the piece's drawing runs from the first end towards the second.
+pub(crate) fn heading_for(module: &ModuleFile, piece: &str, direction: &str) -> Option<Heading> {
+    let (from, to) = direction.split_once('>')?;
+    let geometry = module.geometry.as_ref()?;
+    let (a, b) = (geometry.ends.get(from)?.at, geometry.ends.get(to)?.at);
+    let line = geometry.track.get(piece)?;
+    let (first, last) = (line.first()?, line.last()?);
+    let along = (last[0] - first[0]) * (b[0] - a[0]) + (last[1] - first[1]) * (b[1] - a[1]);
+    Some(if along >= 0.0 {
+        Heading::Forward
+    } else {
+        Heading::Backward
+    })
+}
+
 /// A place on the track: a piece, the heading along it, and how far along it in that
 /// heading (0 at the end the train entered by).
 #[derive(Debug, Clone, PartialEq)]
@@ -47,6 +198,9 @@ pub struct Train {
     /// The pieces behind the head, oldest first; the head's own piece is not in it.
     trail: Vec<(PieceId, Heading)>,
     pub state: TrainState,
+    /// The route reserved to the next destination: every piece and heading from the head
+    /// on. Empty until it could be reserved.
+    pub route: Vec<(PieceId, Heading)>,
     /// Destination blocks (`module/block`), visited in turn.
     pub plan: Vec<String>,
     next_stop: usize,
@@ -77,6 +231,21 @@ pub enum SimEvent {
         closed: bool,
         address: Option<u16>,
     },
+    /// A route was reserved for a train (its pieces in order), or a piece released.
+    Route {
+        train: String,
+        to: String,
+        pieces: usize,
+    },
+    /// A transfer block is now fed by this district.
+    Feed { block: String, district: String },
+    /// A signal changed its aspect.
+    Signal {
+        signal: String,
+        district: String,
+        aspect: String,
+        address: u16,
+    },
     /// A level crossing closed (lights on, barriers down) or opened.
     Crossing {
         crossing: String,
@@ -102,6 +271,15 @@ pub struct LayoutSim<'a> {
     /// Turnout positions by `module/turnout`: closed is straight.
     pub turnouts: BTreeMap<String, bool>,
     occupied: BTreeSet<String>,
+    /// Track pieces reserved for a train's route, by piece: the train's name.
+    pub reserved: BTreeMap<PieceId, String>,
+    /// The transfer blocks at district borders and which district feeds each now.
+    pub transfers: BTreeMap<String, Transfer>,
+    /// The open-line pieces trains run along one way only, and that way.
+    one_way: BTreeMap<PieceId, Heading>,
+    /// The signals and the aspect each shows now.
+    signals: Vec<SignalInfo>,
+    pub aspects: BTreeMap<String, String>,
     /// The trains between each level crossing's closing and opening sensors: the
     /// crossing stays closed until the last of them has passed.
     crossing_trains: BTreeMap<String, BTreeSet<String>>,
@@ -121,6 +299,11 @@ impl<'a> LayoutSim<'a> {
             turnouts,
             occupied: BTreeSet::new(),
             crossing_trains: BTreeMap::new(),
+            reserved: BTreeMap::new(),
+            transfers: transfers(topology),
+            one_way: one_way(layout),
+            signals: signals(layout),
+            aspects: BTreeMap::new(),
             time_s: 0.0,
         }
     }
@@ -142,6 +325,7 @@ impl<'a> LayoutSim<'a> {
             head,
             trail: Vec::new(),
             state: TrainState::Running,
+            route: Vec::new(),
             plan: plan.iter().map(|stop| (*stop).to_owned()).collect(),
             next_stop: 0,
             dwell_s: 10.0,
@@ -156,10 +340,6 @@ impl<'a> LayoutSim<'a> {
         self.topology
             .piece(piece)
             .map_or(0.0, |info| f64::from(info.length_mm))
-    }
-
-    fn closed(&self, module: &str, turnout: &str) -> Option<bool> {
-        self.turnouts.get(&format!("{module}/{turnout}")).copied()
     }
 
     /// The blocks occupied now (`module/block`).
@@ -248,56 +428,255 @@ impl<'a> LayoutSim<'a> {
             .map(|block| block.piece.clone())
     }
 
-    /// Where the train goes after its head piece: through a turnout ahead the leg towards
-    /// its destination (and the turnout set so), otherwise the only way on.
-    fn choose_next(
-        &mut self,
-        index: usize,
-        events: &mut Vec<(f64, SimEvent)>,
-    ) -> Option<(PieceId, Heading)> {
+    /// Where a train running along a piece in `heading` stops when the way beyond is not
+    /// set: just before the signal there, or at the end of the piece.
+    fn stop_point(&self, piece: &PieceId, heading: Heading) -> f64 {
+        let length = self.piece_length(piece);
+        self.signals
+            .iter()
+            .find(|s| s.piece == *piece && s.heading == heading)
+            .and_then(|s| s.at_mm)
+            .map_or(length, |at| {
+                let along = match heading {
+                    Heading::Forward => at,
+                    Heading::Backward => length - at,
+                };
+                (along - SIGNAL_MARGIN_MM).clamp(0.0, length)
+            })
+    }
+
+    /// Whether a signal stands at the exit of this piece for trains running in `heading`.
+    fn signal_at(&self, piece: &PieceId, heading: Heading) -> bool {
+        self.signals
+            .iter()
+            .any(|s| s.piece == *piece && s.heading == heading)
+    }
+
+    /// The shortest way from a piece to another, through any turnout and along the open
+    /// line only in its running direction; with `avoid`, only over pieces not in it.
+    fn find_way(
+        &self,
+        start: &(PieceId, Heading),
+        goal: &PieceId,
+        avoid: Option<&BTreeSet<PieceId>>,
+    ) -> Option<Vec<(PieceId, Heading)>> {
+        if start.0 == *goal {
+            return Some(vec![start.clone()]);
+        }
+        let mut parent: BTreeMap<(PieceId, Heading), (PieceId, Heading)> = BTreeMap::new();
+        let mut queue = std::collections::VecDeque::from([start.clone()]);
+        while let Some(state) = queue.pop_front() {
+            for next in self.topology.next(&state.0, state.1, |_, _| None) {
+                if next == *start
+                    || parent.contains_key(&next)
+                    || self.one_way.get(&next.0).is_some_and(|way| *way != next.1)
+                    || avoid.is_some_and(|avoid| avoid.contains(&next.0))
+                {
+                    continue;
+                }
+                parent.insert(next.clone(), state.clone());
+                if next.0 == *goal {
+                    let mut way = vec![next.clone()];
+                    let mut at = next;
+                    while let Some(before) = parent.get(&at) {
+                        way.push(before.clone());
+                        at = before.clone();
+                    }
+                    way.reverse();
+                    return Some(way);
+                }
+                queue.push_back(next);
+            }
+        }
+        None
+    }
+
+    /// Reserves the next section of the train's way to its destination, all or nothing:
+    /// from the end of what it holds up to the next signal (or the destination), over
+    /// pieces no other train covers or has reserved, with every turnout on it set. False
+    /// when the section is taken (the train waits at the signal) or the way is complete.
+    fn reserve(&mut self, index: usize, events: &mut Vec<(f64, SimEvent)>) -> bool {
         let train = &self.trains[index];
-        let (piece, heading) = (train.head.piece.clone(), train.head.heading);
-        let destination = self.destination(train);
-        if let Some(ahead) = self.topology.turnout_ahead(&piece, heading) {
-            let choice = match ahead.entry {
-                // Facing: the leg from which the destination can be reached.
-                Leg::Trunk => ahead
-                    .options
-                    .iter()
-                    .find(|(_, next, heading)| {
-                        destination.as_ref().is_some_and(|goal| {
-                            self.topology
-                                .reachable(next, *heading)
-                                .iter()
-                                .any(|(p, _)| p == goal)
-                        })
-                    })
-                    .or(ahead.options.first())
-                    .cloned(),
-                // Trailing: out by the trunk, the turnout set to the leg we come from.
-                entry => ahead
-                    .options
-                    .first()
-                    .map(|(_, next, h)| (entry, next.clone(), *h)),
-            }?;
-            let closed = choice.0 == Leg::Straight
-                || (choice.0 == Leg::Trunk && ahead.entry == Leg::Straight);
+        let Some(goal) = self.destination(train) else {
+            return false;
+        };
+        let start = train
+            .route
+            .last()
+            .cloned()
+            .unwrap_or((train.head.piece.clone(), train.head.heading));
+        if !train.route.is_empty() && start.0 == goal {
+            return false;
+        }
+        // Signals already cleared ahead: the route is set as the train comes, not all the
+        // way at once, so it holds no station throat it is still far from.
+        let cleared = train.route[..train.route.len().saturating_sub(1)]
+            .iter()
+            .filter(|(p, h)| self.signal_at(p, *h))
+            .count();
+        if cleared >= SECTIONS_AHEAD {
+            return false;
+        }
+        let mut blocked: BTreeSet<PieceId> = self
+            .reserved
+            .iter()
+            .filter(|(_, by)| **by != train.name)
+            .map(|(piece, _)| piece.clone())
+            .collect();
+        for (i, other) in self.trains.iter().enumerate() {
+            if i != index {
+                blocked.extend(self.covered(other).into_iter().map(|(p, _, _)| p));
+            }
+        }
+        // A free way if there is one (a passing siding instead of a taken track), else
+        // the shortest, to wait for.
+        let Some(way) = self
+            .find_way(&start, &goal, Some(&blocked))
+            .or_else(|| self.find_way(&start, &goal, None))
+        else {
+            return false;
+        };
+        // The section: up to and including the next piece with a signal at its exit.
+        let end = way
+            .iter()
+            .enumerate()
+            .skip(1)
+            .find(|(_, (piece, heading))| self.signal_at(piece, *heading))
+            .map_or(way.len() - 1, |(i, _)| i);
+        let section = &way[..=end];
+        let first_new = usize::from(!train.route.is_empty());
+        if section[first_new..]
+            .iter()
+            .any(|(p, _)| blocked.contains(p))
+        {
+            return false;
+        }
+        // The turnouts on the way.
+        for pair in section.windows(2) {
+            let Some(ahead) = self.topology.turnout_ahead(&pair[0].0, pair[0].1) else {
+                continue;
+            };
+            let Some((leg, _, _)) = ahead.options.iter().find(|(_, p, _)| *p == pair[1].0) else {
+                continue;
+            };
+            let closed =
+                *leg == Leg::Straight || (*leg == Leg::Trunk && ahead.entry == Leg::Straight);
             let key = format!("{}/{}", ahead.module, ahead.id);
             if self.turnouts.get(&key) != Some(&closed) {
-                self.turnouts.insert(key.clone(), closed);
+                self.turnouts.insert(key, closed);
                 events.push((
                     self.time_s,
                     self.turnout_event(&ahead.module, &ahead.id, closed),
                 ));
             }
-            return Some((choice.1, choice.2));
         }
-        self.topology
-            .next(&piece, heading, |module, turnout| {
-                self.closed(module, turnout)
+        let section = section[first_new..].to_vec();
+        let train = &mut self.trains[index];
+        events.push((
+            self.time_s,
+            SimEvent::Route {
+                train: train.name.clone(),
+                to: section
+                    .last()
+                    .map(|(p, _)| p.to_string())
+                    .unwrap_or_default(),
+                pieces: section.len(),
+            },
+        ));
+        train.route.extend(section);
+        self.update_reserved();
+        true
+    }
+
+    /// The pieces reserved now: every train's route ahead of it.
+    fn update_reserved(&mut self) {
+        self.reserved = self
+            .trains
+            .iter()
+            .flat_map(|train| {
+                train
+                    .route
+                    .iter()
+                    .map(move |(piece, _)| (piece.clone(), train.name.clone()))
             })
-            .into_iter()
-            .next()
+            .collect();
+    }
+
+    /// The aspect each signal shows. A signal guards the exit of its piece: it shows
+    /// proceed while a train holds the section beyond it, stop otherwise. A three-aspect
+    /// signal shows caution when the next signal on the way is at stop, or the way ends
+    /// at the destination.
+    fn update_signals(&mut self, events: &mut Vec<(f64, SimEvent)>) {
+        let mut changes = Vec::new();
+        for signal in &self.signals {
+            let mut aspect = "red";
+            for train in &self.trains {
+                let Some(position) = train
+                    .route
+                    .iter()
+                    .position(|(p, h)| *p == signal.piece && *h == signal.heading)
+                else {
+                    continue;
+                };
+                if position + 1 >= train.route.len() {
+                    continue;
+                }
+                let next_clear = train.route[position + 1..]
+                    .iter()
+                    .enumerate()
+                    .find(|(_, (p, h))| self.signal_at(p, *h))
+                    .is_some_and(|(i, _)| position + 1 + i + 1 < train.route.len());
+                aspect = if !next_clear && signal.aspects.iter().any(|a| a == "yellow") {
+                    "yellow"
+                } else {
+                    "green"
+                };
+                break;
+            }
+            if self.aspects.get(&signal.key).map(String::as_str) != Some(aspect) {
+                changes.push((signal.clone(), aspect.to_owned()));
+            }
+        }
+        for (signal, aspect) in changes {
+            self.aspects.insert(signal.key.clone(), aspect.clone());
+            events.push((
+                self.time_s,
+                SimEvent::Signal {
+                    signal: signal.key,
+                    district: signal.district,
+                    aspect,
+                    address: signal.address,
+                },
+            ));
+        }
+    }
+
+    /// Which district feeds each transfer block: the sending one while a train covers the
+    /// sending side of the border, the receiving one while the block is occupied and the
+    /// sending side clear, the sending one again once it is free.
+    fn update_feeds(&mut self, events: &mut Vec<(f64, SimEvent)>) {
+        let covered: BTreeSet<PieceId> = self
+            .trains
+            .iter()
+            .flat_map(|t| self.covered(t).into_iter().map(|(p, _, _)| p))
+            .collect();
+        for (key, transfer) in self.transfers.iter_mut() {
+            let feed = if self.occupied.contains(key) && !covered.contains(&transfer.source_piece) {
+                &transfer.receiving
+            } else {
+                &transfer.source
+            };
+            if *feed != transfer.fed_by {
+                transfer.fed_by = feed.clone();
+                events.push((
+                    self.time_s,
+                    SimEvent::Feed {
+                        block: key.clone(),
+                        district: feed.clone(),
+                    },
+                ));
+            }
+        }
     }
 
     fn turnout_event(&self, module: &str, turnout: &str, closed: bool) -> SimEvent {
@@ -319,6 +698,10 @@ impl<'a> LayoutSim<'a> {
         let mut events = Vec::new();
         self.time_s += dt_s;
         for index in 0..self.trains.len() {
+            // As far ahead as the track is free, section by section.
+            if !matches!(self.trains[index].state, TrainState::Dwelling { .. }) {
+                while self.reserve(index, &mut events) {}
+            }
             self.step_train(index, dt_s, &mut events);
         }
         // Occupancy changes.
@@ -347,6 +730,8 @@ impl<'a> LayoutSim<'a> {
             ));
         }
         self.occupied = occupied;
+        self.update_feeds(&mut events);
+        self.update_signals(&mut events);
         events
     }
 
@@ -359,6 +744,10 @@ impl<'a> LayoutSim<'a> {
                 return;
             }
             TrainState::Waiting | TrainState::Running => {}
+        }
+        if self.trains[index].route.is_empty() {
+            self.trains[index].state = TrainState::Waiting;
+            return;
         }
         let start = self.trains[index].head.clone();
         let mut travel = self.trains[index].speed_mm_s * dt_s;
@@ -375,29 +764,34 @@ impl<'a> LayoutSim<'a> {
                         until_s: self.time_s + train.dwell_s,
                     };
                     let block = train.plan[train.next_stop].clone();
-                    events.push((
-                        self.time_s,
-                        SimEvent::Arrived {
-                            train: train.name.clone(),
-                            block,
-                        },
-                    ));
+                    train.route.clear();
+                    let name = train.name.clone();
+                    self.update_reserved();
+                    events.push((self.time_s, SimEvent::Arrived { train: name, block }));
                     break;
                 }
             }
-            if train.head.along_mm + travel <= length {
+            // With the way beyond not set, the train halts at the signal.
+            let set_beyond = train.route.len() >= 2;
+            let limit = if set_beyond {
+                length
+            } else {
+                self.stop_point(&train.head.piece, train.head.heading)
+            };
+            if train.head.along_mm + travel <= limit {
                 self.trains[index].head.along_mm += travel;
                 self.trains[index].state = TrainState::Running;
                 break;
             }
-            // The head reaches the end of its piece: on to the next one, if free.
-            let rest = train.head.along_mm + travel - length;
-            let Some((next, heading)) = self.choose_next(index, events) else {
+            if !set_beyond {
                 let train = &mut self.trains[index];
-                train.head.along_mm = length;
+                train.head.along_mm = limit.max(train.head.along_mm);
                 train.state = TrainState::Waiting;
                 break;
-            };
+            }
+            // The head reaches the end of its piece: on to the next one, if free.
+            let rest = train.head.along_mm + travel - length;
+            let (next, heading) = self.trains[index].route[1].clone();
             if self.piece_taken(&next, index) {
                 let train = &mut self.trains[index];
                 train.head.along_mm = length;
@@ -410,6 +804,7 @@ impl<'a> LayoutSim<'a> {
                 .map(|p| p.district.clone());
             let to = self.topology.piece(&next).map(|p| p.district.clone());
             let train = &mut self.trains[index];
+            train.route.remove(0);
             train
                 .trail
                 .push((train.head.piece.clone(), train.head.heading));
@@ -653,6 +1048,21 @@ impl std::fmt::Display for SimEvent {
                 if *closed { "straight" } else { "diverging" },
                 address(a)
             ),
+            SimEvent::Route { train, to, pieces } => {
+                write!(f, "route for {train} to {to} reserved ({pieces} pieces)")
+            }
+            SimEvent::Feed { block, district } => {
+                write!(f, "transfer block {block} now fed by {district}")
+            }
+            SimEvent::Signal {
+                signal,
+                district,
+                aspect,
+                address,
+            } => write!(
+                f,
+                "{district}: signal {signal} shows {aspect} (LocoNet {address})"
+            ),
             SimEvent::Crossing { name, closed, .. } => write!(
                 f,
                 "level crossing {name} {}",
@@ -846,5 +1256,140 @@ mod tests {
             SimEvent::Block { block, occupied: true, address: Some(201), district, .. }
                 if block == "timo-2e96-west/line_1" && district == "MacBook"
         )));
+    }
+
+    /// No piece is ever held by two trains: not reserved by both, not reserved by one
+    /// while the other stands on it. A train held at a signal stops before it.
+    #[test]
+    fn no_two_trains_ever_hold_one_piece() {
+        let layout = layout();
+        let topology = Topology::build(&layout);
+        let mut sim = LayoutSim::new(&layout, &topology);
+        example_trains(&mut sim);
+        for _ in 0..3000 {
+            sim.step(0.1);
+            for train in &sim.trains {
+                if train.state == TrainState::Waiting && train.route.len() < 2 {
+                    let stop = sim.stop_point(&train.head.piece, train.head.heading);
+                    assert!(
+                        train.head.along_mm <= stop + 1e-6,
+                        "{} past the signal on {} at {:.1} s",
+                        train.name,
+                        train.head.piece,
+                        sim.time_s
+                    );
+                }
+            }
+            for (a, train) in sim.trains.iter().enumerate() {
+                let covered: BTreeSet<PieceId> =
+                    sim.covered(train).into_iter().map(|(p, _, _)| p).collect();
+                for (piece, by) in &sim.reserved {
+                    assert!(
+                        by == &train.name || !covered.contains(piece),
+                        "{piece} reserved by {by} under {} at {:.1} s",
+                        train.name,
+                        sim.time_s
+                    );
+                }
+                for other in &sim.trains[a + 1..] {
+                    let theirs: BTreeSet<PieceId> =
+                        sim.covered(other).into_iter().map(|(p, _, _)| p).collect();
+                    assert!(
+                        covered.is_disjoint(&theirs),
+                        "trains collide at {:.1} s",
+                        sim.time_s
+                    );
+                }
+            }
+        }
+    }
+
+    /// With a train standing on the line beyond the border, the IC is held at the border
+    /// signal, which stays at stop, short of it; once the line is clear it goes on.
+    #[test]
+    fn a_train_is_held_at_a_signal_until_the_section_is_clear() {
+        let layout = layout();
+        let topology = Topology::build(&layout);
+        let mut sim = LayoutSim::new(&layout, &topology);
+        example_trains(&mut sim);
+        sim.add_train(
+            "Lok 5",
+            5,
+            300.0,
+            Place {
+                piece: PieceId::new("anna-2e96-east", "1"),
+                heading: Heading::Forward,
+                along_mm: 600.0,
+            },
+            &[],
+        );
+        for _ in 0..400 {
+            sim.step(0.1);
+        }
+        let ic = &sim.trains[0];
+        assert_eq!(ic.state, TrainState::Waiting);
+        assert_eq!(ic.head.piece, PieceId::new("timo-2e96-border", "1"));
+        assert!(ic.head.along_mm <= 850.0 - SIGNAL_MARGIN_MM + 1e-6);
+        assert_eq!(sim.aspects["timo-2e96-border/sig_1"], "red");
+
+        sim.trains.retain(|t| t.name != "Lok 5");
+        let mut crossed = false;
+        for _ in 0..200 {
+            crossed |= sim
+                .step(0.1)
+                .iter()
+                .any(|(_, e)| matches!(e, SimEvent::Border { train, .. } if train == "IC 2001"));
+        }
+        assert!(crossed);
+    }
+
+    /// The border signal clears for the IC as its route is set beyond it (caution first,
+    /// while the next signal is still at stop, then proceed) and falls back to stop
+    /// once the train has passed.
+    #[test]
+    fn a_signal_clears_ahead_of_the_train_and_drops_behind_it() {
+        let events = run(30.0);
+        let aspects: Vec<(f64, &str)> = events
+            .iter()
+            .filter_map(|(t, e)| match e {
+                SimEvent::Signal { signal, aspect, .. } if signal == "timo-2e96-border/sig_1" => {
+                    Some((*t, aspect.as_str()))
+                }
+                _ => None,
+            })
+            .collect();
+        let order: Vec<&str> = aspects.iter().map(|(_, a)| *a).collect();
+        assert_eq!(order, ["red", "yellow", "green", "red"], "{aspects:?}");
+        let border = events
+            .iter()
+            .find(|(_, e)| matches!(e, SimEvent::Border { train, .. } if train == "IC 2001"))
+            .unwrap()
+            .0;
+        assert!(
+            aspects[2].0 < border && aspects[3].0 >= border,
+            "{aspects:?}"
+        );
+    }
+
+    /// The transfer block on Windows' side of the border is fed by MacBook while the IC
+    /// comes in, by Windows once the train is fully inside, by MacBook again once free.
+    #[test]
+    fn a_transfer_block_changes_feed_when_the_train_is_inside() {
+        let events = run(30.0);
+        let feeds: Vec<&str> = events
+            .iter()
+            .filter_map(|(_, e)| match e {
+                SimEvent::Feed { block, district } if block == "anna-2e96-border/t1" => {
+                    Some(district.as_str())
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(feeds, ["Windows", "MacBook"]);
+        let layout = layout();
+        let topology = Topology::build(&layout);
+        let sim = LayoutSim::new(&layout, &topology);
+        assert_eq!(sim.transfers["anna-2e96-border/t1"].fed_by, "MacBook");
+        assert_eq!(sim.transfers["timo-2e96-border/t2"].source, "Windows");
     }
 }

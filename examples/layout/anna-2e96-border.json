@@ -102,11 +102,12 @@
       "id": "sig_2",
       "type": "signal",
       "role": "boundary",
-      "bus": "dcc",
-      "address": 31,
+      "bus": "loconet",
+      "address": 131,
       "track": "2",
       "at_mm": 50,
-      "for": "B>A"
+      "for": "B>A",
+      "aspects": ["red", "yellow", "green"]
     }
   ],
   "geometry": {

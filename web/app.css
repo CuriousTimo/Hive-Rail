@@ -10,6 +10,9 @@
   --block: #56636f;
   --occupied: #ff4d4d;
   --transfer: #4da3ff;
+  --reserved: #ffd34d;
+  --lamp-off: #2b3138;
+  --signal: #0b0e11;
   --platform: #3b4652;
   --road: #4a4033;
   --building: #2c3540;
@@ -35,6 +38,9 @@
     --road: #c9b99c;
     --building: #a9b4bf;
     --accent: #b8860b;
+    --reserved: #e0b000;
+    --lamp-off: #c7ced5;
+    --signal: #3a434c;
   }
 }
 
@@ -93,6 +99,8 @@ th { font-weight: 600; color: var(--muted); font-size: 12px; }
 .swatch.free { background: var(--block); }
 .swatch.occupied { background: var(--occupied); }
 .swatch.transfer { background: var(--transfer); }
+.swatch.reserved { background: var(--reserved); }
+.legend.districts { margin-top: 6px; }
 .swatch.closed { background: var(--closed); }
 .swatch.lit { background: var(--lit); }
 
@@ -112,7 +120,15 @@ th { font-weight: 600; color: var(--muted); font-size: 12px; }
 .track { fill: none; stroke: var(--track); stroke-width: 6; stroke-linecap: round; stroke-linejoin: round; }
 .block { fill: none; stroke: var(--block); stroke-width: 14; stroke-linecap: butt; opacity: 0.9; }
 .block.transfer { stroke: var(--transfer); }
+.block.reserved { stroke: var(--reserved); }
 .block.occupied { stroke: var(--occupied); }
+.reserved-track { fill: none; stroke: none; stroke-width: 10; stroke-linecap: round; stroke-linejoin: round; }
+.reserved-track.on { stroke: var(--reserved); }
+.feed { fill: none; stroke-width: 30; stroke-linecap: butt; opacity: 0.85; }
+.feed-label { font-size: 30px; font-weight: 600; paint-order: stroke; stroke: var(--bg); stroke-width: 8px; }
+.signal-head { stroke: var(--signal); stroke-width: 18; stroke-linecap: round; }
+.signal-foot { stroke: var(--signal); stroke-width: 5; stroke-linecap: round; }
+.lamp { stroke: none; }
 .turnout { stroke: var(--bg); stroke-width: 4; }
 .turnout.straight { fill: var(--straight); }
 .turnout.diverging { fill: var(--diverging); }

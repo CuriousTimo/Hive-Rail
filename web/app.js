@@ -3,13 +3,17 @@
 // has y down, so every point is drawn at (x, -y).
 
 const SVG = "http://www.w3.org/2000/svg";
-// Train colours stay clear of the track colours: red occupied, blue transfer, green and
-// orange turnouts.
-const TRAIN_COLOURS = ["#ffd34d", "#ff8fe0", "#f2f2f2", "#c9a6ff", "#9bd8ff", "#d4ff6b"];
+// Train colours stay clear of the track colours: red occupied, yellow reserved, blue
+// transfer, green and orange turnouts.
+const TRAIN_COLOURS = ["#ff8fe0", "#f2f2f2", "#c9a6ff", "#9bd8ff", "#d4ff6b", "#ffb3a7"];
+// One colour per district: its name on the map, and the transfer blocks it feeds.
+const DISTRICT_COLOURS = ["#20c5b5", "#a77bff", "#e08a3c", "#5fa8ff", "#e45c9c", "#9ccf4a"];
+const LAMP = { red: "#ff4d4d", yellow: "#ffd34d", green: "#52d68a" };
 
 const svg = document.getElementById("map");
 const layer = (name) => document.getElementById(`layer-${name}`);
-const elements = { blocks: new Map(), turnouts: new Map(), crossings: new Map() };
+const elements = { blocks: new Map(), pieces: new Map(), feeds: new Map(), turnouts: new Map(), crossings: new Map(), signals: new Map() };
+let districtColour = () => "var(--muted)";
 let fit = { x: 0, y: 0, w: 1000, h: 500 };
 let view = { ...fit };
 
@@ -32,6 +36,10 @@ function text(content, [x, y], className, parent, anchor = "middle") {
 function drawLayout(layout) {
   document.getElementById("meeting").textContent = layout.meeting;
   document.title = `Hive-Rail – ${layout.meeting}`;
+  districtColour = (district) => DISTRICT_COLOURS[Math.max(0, layout.districts.indexOf(district)) % DISTRICT_COLOURS.length];
+  document.getElementById("districts").innerHTML = layout.districts
+    .map((d) => `<li><span class="swatch" style="background:${districtColour(d)}"></span>Fed by ${escapeHtml(d)}</li>`)
+    .join("");
 
   for (const module of layout.modules) {
     const outline = el("polygon", { points: pointsAttr(module.outline), class: "module" }, layer("modules"));
@@ -45,7 +53,7 @@ function drawLayout(layout) {
     if (first) {
       const top = Math.max(...first.outline.map((p) => p[1]));
       const left = Math.min(...first.outline.map((p) => p[0]));
-      text(`District ${district}`, [left + 20, top + 60], "district-label", layer("labels"), "start");
+      text(`District ${district}`, [left + 20, top + 60], "district-label", layer("labels"), "start").style.fill = districtColour(district);
     }
   }
   for (const platform of layout.platforms) {
@@ -61,11 +69,30 @@ function drawLayout(layout) {
   }
   for (const piece of layout.pieces) {
     el("polyline", { points: pointsAttr(piece.points), class: "track" }, layer("track"));
+    // Shown in yellow while reserved for a train's route.
+    const reserved = el("polyline", { points: pointsAttr(piece.points), class: "reserved-track" }, layer("track"));
+    elements.pieces.set(piece.id, reserved);
   }
   for (const block of layout.blocks) {
+    if (block.role === "transfer") {
+      // A casing in the colour of the district feeding the block, with its name beside it.
+      const casing = el("polyline", { points: pointsAttr(block.points), class: "feed" }, layer("blocks"));
+      const [a, b] = [block.points[0] || [0, 0], block.points[block.points.length - 1] || [0, 0]];
+      const middle = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+      // Beside the block, on the side away from the middle of its module (outside the
+      // double track), a little down so the text sits clear of the casing.
+      const module = layout.modules.find((m) => block.id.startsWith(`${m.id}/`));
+      const centre = module ? module.outline.reduce((s, p) => [s[0] + p[0] / module.outline.length, s[1] + p[1] / module.outline.length], [0, 0]) : middle;
+      const length = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+      let normal = [-(b[1] - a[1]) / length, (b[0] - a[0]) / length];
+      if ((middle[0] - centre[0]) * normal[0] + (middle[1] - centre[1]) * normal[1] < 0) normal = [-normal[0], -normal[1]];
+      const away = normal[1] < 0 ? 58 : 34;
+      const label = text("", [middle[0] + normal[0] * away, middle[1] + normal[1] * away], "feed-label", layer("labels"));
+      elements.feeds.set(block.id, { casing, label });
+    }
     const line = el("polyline", { points: pointsAttr(block.points), class: `block${block.role === "transfer" ? " transfer" : ""}` }, layer("blocks"));
     el("title", {}, line).textContent = `Block ${block.id} (${block.district}${block.role ? ", " + block.role : ""})`;
-    elements.blocks.set(block.id, line);
+    elements.blocks.set(block.id, { line, piece: block.piece });
   }
   for (const crossing of layout.crossings) {
     const group = el("g", {}, layer("crossings"));
@@ -94,6 +121,32 @@ function drawLayout(layout) {
     }
     el("title", {}, group).textContent = `Level crossing ${crossing.name}`;
     elements.crossings.set(crossing.id, group);
+  }
+  for (const signal of layout.signals) {
+    // By the track on the right of the trains it faces, the lamps in a row along the
+    // track (stop nearest the train), a foot across at the far end.
+    const [dx, dy] = signal.direction;
+    const right = [dy, -dx];
+    const at = (along, side) => flip([signal.at[0] + dx * along + right[0] * side, signal.at[1] + dy * along + right[1] * side]);
+    const group = el("g", { class: "signal" }, layer("signals"));
+    const count = signal.aspects.length;
+    // Close by the track: between two tracks of a station there is room on the platform.
+    const side = 28;
+    const [hx1, hy1] = at(0, side);
+    const [hx2, hy2] = at(-16 * (count - 1), side);
+    el("line", { x1: hx1, y1: hy1, x2: hx2, y2: hy2, class: "signal-head" }, group);
+    const [fx1, fy1] = at(-16 * (count - 1) - 14, side - 12);
+    const [fx2, fy2] = at(-16 * (count - 1) - 14, side + 12);
+    el("line", { x1: fx1, y1: fy1, x2: fx2, y2: fy2, class: "signal-foot" }, group);
+    const lamps = new Map();
+    // Red nearest the track's danger point, then yellow, then green.
+    signal.aspects.forEach((aspect, index) => {
+      const [x, y] = at(-16 * index, side);
+      lamps.set(aspect, el("circle", { cx: x, cy: y, r: 6.5, class: "lamp" }, group));
+    });
+    const title = el("title", {}, group);
+    title.textContent = `Signal ${signal.name} (${signal.district}, LocoNet ${signal.address})`;
+    elements.signals.set(signal.id, { lamps, title, name: signal.name, district: signal.district, address: signal.address });
   }
   for (const turnout of layout.turnouts) {
     const [x, y] = flip(turnout.at);
@@ -136,7 +189,23 @@ function formatTime(seconds) {
 function update(state) {
   document.getElementById("time").textContent = formatTime(state.time_s);
   const occupied = new Set(state.occupied);
-  for (const [id, line] of elements.blocks) line.classList.toggle("occupied", occupied.has(id));
+  const reserved = state.reserved || {};
+  for (const [id, line] of elements.pieces) line.classList.toggle("on", id in reserved);
+  for (const [id, { line, piece }] of elements.blocks) {
+    line.classList.toggle("occupied", occupied.has(id));
+    line.classList.toggle("reserved", !occupied.has(id) && piece in reserved);
+  }
+  for (const [id, { casing, label }] of elements.feeds) {
+    const district = (state.feeds || {})[id];
+    casing.setAttribute("stroke", district ? districtColour(district) : "none");
+    label.textContent = district ? `fed by ${district}` : "";
+    label.setAttribute("fill", district ? districtColour(district) : "none");
+  }
+  for (const [id, signal] of elements.signals) {
+    const aspect = (state.signals || {})[id] || "red";
+    for (const [colour, lamp] of signal.lamps) lamp.setAttribute("fill", colour === aspect ? LAMP[colour] : "var(--lamp-off)");
+    signal.title.textContent = `Signal ${signal.name} (${signal.district}, LocoNet ${signal.address}): ${aspect}`;
+  }
   for (const [id, dot] of elements.turnouts) {
     const straight = state.turnouts[id] !== false;
     dot.classList.toggle("straight", straight);

@@ -1,7 +1,8 @@
 //! What the web view draws: the modules of a layout placed in the world by joining their
 //! ends, with their drawings (outline, track, blocks, points, platforms, buildings, roads)
-//! in world coordinates, and the live state on top (occupied blocks, turnout positions,
-//! closed level crossings, trains).
+//! in world coordinates, and the live state on top (occupied and reserved track, turnout
+//! positions, signal aspects, which district feeds each transfer block, closed level
+//! crossings, trains).
 //!
 //! World coordinates are millimetres with y pointing up (towards the back of the first
 //! module); the page flips y for the screen. A module is placed so that each connected end
@@ -42,6 +43,7 @@ pub struct LayoutView {
     pub blocks: Vec<BlockView>,
     pub turnouts: Vec<TurnoutView>,
     pub crossings: Vec<CrossingView>,
+    pub signals: Vec<SignalView>,
     pub buildings: Vec<BuildingView>,
     pub platforms: Vec<Vec<Point>>,
     pub stations: Vec<LabelView>,
@@ -71,6 +73,8 @@ pub struct PieceView {
 #[derive(Debug, Serialize)]
 pub struct BlockView {
     pub id: String,
+    /// The track piece it lies on (as in `pieces`).
+    pub piece: String,
     pub district: String,
     pub role: Option<String>,
     pub points: Vec<Point>,
@@ -108,11 +112,30 @@ pub struct LabelView {
     pub module: String,
 }
 
+/// A signal: where it stands by the track, the way trains it faces run (a unit vector),
+/// and the aspects it can show.
+#[derive(Debug, Serialize)]
+pub struct SignalView {
+    pub id: String,
+    pub name: String,
+    pub district: String,
+    pub address: u16,
+    pub at: Point,
+    pub direction: Point,
+    pub aspects: Vec<String>,
+}
+
 /// The live state, sent to the page several times a second.
 #[derive(Debug, Serialize)]
 pub struct Snapshot {
     pub time_s: f64,
     pub occupied: Vec<String>,
+    /// Track pieces reserved for a train's route, by piece: the train.
+    pub reserved: BTreeMap<String, String>,
+    /// Signal aspects by `module/signal`.
+    pub signals: BTreeMap<String, String>,
+    /// The district feeding each transfer block now, by `module/block`.
+    pub feeds: BTreeMap<String, String>,
     /// Turnout positions by `module/turnout`: true is straight.
     pub turnouts: BTreeMap<String, bool>,
     pub crossings_closed: Vec<String>,
@@ -323,6 +346,7 @@ impl ViewBuilder {
             blocks: Vec::new(),
             turnouts: Vec::new(),
             crossings: Vec::new(),
+            signals: Vec::new(),
             buildings: Vec::new(),
             platforms: Vec::new(),
             stations: Vec::new(),
@@ -403,6 +427,49 @@ impl ViewBuilder {
                     });
                 }
             }
+            for device in module.devices.iter().filter(|d| d.kind == "signal") {
+                let (Some(track), Some(at_mm)) = (&device.track, device.at_mm) else {
+                    continue;
+                };
+                let piece = PieceId::new(id, track);
+                let at = f64::from(at_mm);
+                let line = self.span(&piece, (at - 20.0).max(0.0), at + 20.0);
+                let (Some(first), Some(last)) = (line.first(), line.last()) else {
+                    continue;
+                };
+                // Along the piece from its `from` point; the other way for trains running
+                // backward along it.
+                let heading = device
+                    .direction
+                    .as_deref()
+                    .and_then(|d| crate::layout_sim::heading_for(module, track, d))
+                    .unwrap_or(Heading::Forward);
+                let (dx, dy) = (last[0] - first[0], last[1] - first[1]);
+                let length = dx.hypot(dy).max(f64::EPSILON);
+                let sign = if heading == Heading::Forward {
+                    1.0
+                } else {
+                    -1.0
+                };
+                view.signals.push(SignalView {
+                    id: format!("{id}/{}", device.id),
+                    name: device.id.clone(),
+                    district: layout.district_of(id).unwrap_or("").to_owned(),
+                    address: device.address,
+                    at: self.span(&piece, at, at).first().copied().unwrap_or(*first),
+                    direction: [sign * dx / length, sign * dy / length],
+                    aspects: device
+                        .aspects
+                        .as_ref()
+                        .and_then(|a| a.as_array())
+                        .map(|a| {
+                            a.iter()
+                                .filter_map(|v| v.as_str().map(str::to_owned))
+                                .collect()
+                        })
+                        .unwrap_or_else(|| vec!["red".to_owned(), "green".to_owned()]),
+                });
+            }
             for building in &module.buildings {
                 if let Some(outline) = geometry.buildings.get(&building.id) {
                     view.buildings.push(BuildingView {
@@ -449,6 +516,7 @@ impl ViewBuilder {
             let [a, b] = block.cuts_mm;
             view.blocks.push(BlockView {
                 id: key.clone(),
+                piece: block.piece.to_string(),
                 district: block.district.clone(),
                 role: block.role.clone(),
                 points: self.span(&block.piece, f64::from(a), f64::from(b)),
@@ -491,6 +559,17 @@ impl ViewBuilder {
         Snapshot {
             time_s: sim.time_s,
             occupied: sim.occupied().iter().cloned().collect(),
+            reserved: sim
+                .reserved
+                .iter()
+                .map(|(piece, train)| (piece.to_string(), train.clone()))
+                .collect(),
+            signals: sim.aspects.clone(),
+            feeds: sim
+                .transfers
+                .iter()
+                .map(|(block, transfer)| (block.clone(), transfer.fed_by.clone()))
+                .collect(),
             turnouts: sim.turnouts.clone(),
             crossings_closed: sim.closed_crossings().cloned().collect(),
             trains,
@@ -524,6 +603,23 @@ mod tests {
     }
 
     /// A module turned round and joined at its other end comes out turned by 180°.
+    #[test]
+    fn signals_face_the_trains_they_are_for() {
+        let layout = layout();
+        let topology = Topology::build(&layout);
+        let view = ViewBuilder::new(&layout, &topology).layout(&layout, &topology);
+        let signal = |id: &str| view.signals.iter().find(|s| s.id == id).unwrap();
+        // Track 1 runs east (A>B), track 2 west, on the line and at the border.
+        assert!(signal("timo-2e96-border/sig_1").direction[0] > 0.99);
+        assert!(signal("anna-2e96-border/sig_2").direction[0] < -0.99);
+        // Bdorf's exit from track 2 faces trains leaving west, drawn from the east.
+        assert!(signal("anna-bdorf/sig_b2").direction[0] < -0.99);
+        assert_eq!(
+            signal("anna-bdorf/sig_be").aspects,
+            ["red", "yellow", "green"]
+        );
+    }
+
     #[test]
     fn a_turned_module_is_drawn_turned() {
         let mut layout = layout();

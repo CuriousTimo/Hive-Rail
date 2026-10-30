@@ -129,6 +129,26 @@
       "type": "light",
       "bus": "loconet",
       "address": 113
+    },
+    {
+      "id": "sig_w1",
+      "type": "signal",
+      "bus": "loconet",
+      "address": 127,
+      "track": "1",
+      "at_mm": 850,
+      "for": "A>B",
+      "aspects": ["red", "yellow", "green"]
+    },
+    {
+      "id": "sig_w2",
+      "type": "signal",
+      "bus": "loconet",
+      "address": 129,
+      "track": "2",
+      "at_mm": 50,
+      "for": "B>A",
+      "aspects": ["red", "yellow", "green"]
     }
   ],
   "geometry": {

@@ -834,6 +834,22 @@ pub(crate) fn address_space(device: &Device) -> &'static str {
     }
 }
 
+/// The addresses a device takes: one, or two for a signal with more than two aspects (red
+/// and green on the first, yellow on the second, as LocoNet and DCC signal decoders
+/// pair them).
+pub(crate) fn addresses_used(device: &Device) -> std::ops::RangeInclusive<u16> {
+    let aspects = device
+        .aspects
+        .as_ref()
+        .and_then(|a| a.as_array())
+        .map_or(0, Vec::len);
+    if device.kind == "signal" && aspects > 2 {
+        device.address..=device.address.saturating_add(1)
+    } else {
+        device.address..=device.address
+    }
+}
+
 /// `module.end` in a connection.
 pub(crate) fn split_end(text: &str) -> Option<(&str, &str)> {
     text.rsplit_once('.')
@@ -1011,10 +1027,12 @@ impl Layout {
                     continue;
                 };
                 for device in &module.devices {
-                    addresses
-                        .entry((address_space(device), device.address))
-                        .or_default()
-                        .push(format!("{module_id}/{}", device.id));
+                    for address in addresses_used(device) {
+                        addresses
+                            .entry((address_space(device), address))
+                            .or_default()
+                            .push(format!("{module_id}/{}", device.id));
+                    }
                 }
             }
             for ((space, address), devices) in addresses {
@@ -1158,6 +1176,28 @@ mod tests {
                 .errors
                 .iter()
                 .any(|e| e.contains("board pin address 17")),
+            "{:#?}",
+            report.errors
+        );
+    }
+
+    #[test]
+    fn a_three_aspect_signal_takes_two_addresses() {
+        let mut layout = example();
+        // The entry signal of Adorf (125, three aspects) also takes 126.
+        let (module, _) = layout.modules.get_mut("timo-adorf").unwrap();
+        let light = module
+            .devices
+            .iter_mut()
+            .find(|d| d.kind == "light")
+            .unwrap();
+        light.address = 126;
+        let report = layout.check();
+        assert!(
+            report
+                .errors
+                .iter()
+                .any(|e| e.contains("LocoNet switch address 126")),
             "{:#?}",
             report.errors
         );

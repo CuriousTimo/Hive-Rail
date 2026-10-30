@@ -219,6 +219,36 @@
       "type": "light",
       "bus": "loconet",
       "address": 103
+    },
+    {
+      "id": "sig_a1",
+      "type": "signal",
+      "bus": "loconet",
+      "address": 121,
+      "track": "1",
+      "at_mm": 1080,
+      "for": "A>B",
+      "aspects": ["red", "green"]
+    },
+    {
+      "id": "sig_a3",
+      "type": "signal",
+      "bus": "loconet",
+      "address": 123,
+      "track": "s1",
+      "at_mm": 940,
+      "for": "A>B",
+      "aspects": ["red", "green"]
+    },
+    {
+      "id": "sig_ae",
+      "type": "signal",
+      "bus": "loconet",
+      "address": 125,
+      "track": "2b",
+      "at_mm": 70,
+      "for": "B>A",
+      "aspects": ["red", "yellow", "green"]
     }
   ],
   "geometry": {

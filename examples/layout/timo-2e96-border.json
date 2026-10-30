@@ -84,11 +84,12 @@
       "id": "sig_1",
       "type": "signal",
       "role": "boundary",
-      "bus": "dcc",
-      "address": 31,
+      "bus": "loconet",
+      "address": 131,
       "track": "1",
       "at_mm": 850,
-      "for": "A>B"
+      "for": "A>B",
+      "aspects": ["red", "yellow", "green"]
     },
     {
       "id": "ir_t2",
