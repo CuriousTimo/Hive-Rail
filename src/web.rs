@@ -107,6 +107,9 @@ pub async fn run_sim(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Syn
             _ = tokio::signal::ctrl_c() => break,
             followed = follow_clock(mesh.as_mut()) => followed?,
             _ = tick.tick() => {
+                if let Some(publisher) = mesh.as_mut() {
+                    publisher.drain();
+                }
                 for (time, event) in sim.step(step * speed) {
                     if let Some(publisher) = mesh.as_mut() {
                         publish_train(publisher, &sim, topology, &mut forward, &event).await?;

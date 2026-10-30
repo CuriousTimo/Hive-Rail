@@ -312,6 +312,7 @@ impl Mesh {
                 .await?,
             updates: session
                 .declare_publisher(format!("hive/{s}/locos/update"))
+                .allowed_destination(zenoh::sample::Locality::Remote)
                 .await?,
             clock_set: session
                 .declare_publisher(format!("hive/{s}/rn/ck"))
@@ -625,14 +626,41 @@ impl LocoPublisher {
         text: &str,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
         let payload = serde_json::json!({ "detail": detail, "text": text }).to_string();
+        // Not to this program's own subscriber, which nobody reads here.
         self.mesh
             ._session
             .put(
                 format!("hive/{}/node/{district}/event", self.session),
                 payload,
             )
+            .allowed_destination(zenoh::sample::Locality::Remote)
             .await?;
         Ok(())
+    }
+
+    /// Empties what the mesh delivered that this program does not show: heartbeats and
+    /// node events. Unread, their queues fill and the mesh waits for room. Loco updates
+    /// from the nodes are kept, so the versions published here stay the newest.
+    /// Call it regularly.
+    pub fn drain(&mut self) {
+        while let Ok(Some(_)) = self.mesh.heartbeats.try_recv() {}
+        while let Ok(Some(_)) = self.mesh.events.try_recv() {}
+        while let Ok(Some(sample)) = self.mesh.locos.try_recv() {
+            let Ok(locos) =
+                serde_json::from_slice::<Vec<RegisteredLoco>>(sample.payload().to_bytes().as_ref())
+            else {
+                continue;
+            };
+            for loco in locos {
+                let newer = self
+                    .locos
+                    .get(&loco.address)
+                    .is_none_or(|known| loco.version > known.version);
+                if newer {
+                    self.locos.insert(loco.address, loco);
+                }
+            }
+        }
     }
 
     /// Publishes a loco: its district, a speed step (0 to 126), its direction and lights.
