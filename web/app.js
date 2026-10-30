@@ -188,6 +188,15 @@ function formatTime(seconds) {
 
 function update(state) {
   document.getElementById("time").textContent = formatTime(state.time_s);
+  // The fast clock: only when the simulator runs on the mesh.
+  const clock = state.clock;
+  document.getElementById("fast-clock-item").hidden = !clock;
+  if (clock) {
+    document.getElementById("fast-clock").textContent = clock.known ? clock.time : "--:--";
+    const label = document.getElementById("fast-clock-state");
+    label.textContent = !clock.known ? "waiting" : clock.running ? `×${clock.rate}` : `paused (×${clock.rate})`;
+    label.classList.toggle("paused", clock.known && !clock.running);
+  }
   const occupied = new Set(state.occupied);
   const reserved = state.reserved || {};
   for (const [id, line] of elements.pieces) line.classList.toggle("on", id in reserved);
@@ -271,6 +280,13 @@ const endDrag = () => { drag = null; svg.classList.remove("dragging"); };
 svg.addEventListener("pointerup", endDrag);
 svg.addEventListener("pointercancel", endDrag);
 svg.addEventListener("dblclick", () => { view = { ...fit }; applyView(); });
+
+// Real-world time, from this device's clock.
+function tickWallClock() {
+  document.getElementById("wall-clock").textContent = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+tickWallClock();
+setInterval(tickWallClock, 1000);
 
 async function start() {
   const response = await fetch("api/layout");

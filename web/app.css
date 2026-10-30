@@ -67,7 +67,15 @@ header {
 
 .brand { font-weight: 700; letter-spacing: 0.04em; }
 .meeting { color: var(--muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.clocks { display: flex; gap: 18px; align-items: baseline; }
+.clock-item { display: flex; align-items: baseline; gap: 6px; white-space: nowrap; }
+.clock-name { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
 .clock { font-variant-numeric: tabular-nums; font-size: 18px; color: var(--accent); }
+.clock.wall { color: var(--text); }
+.clock.sim { font-size: 14px; color: var(--muted); }
+.clock-state { font-size: 12px; color: var(--muted); }
+.clock-state.paused { color: var(--diverging); }
+@media (max-width: 800px) { .clock-item:last-child { display: none; } }
 .connection { font-size: 12px; color: var(--muted); }
 .connection.live { color: var(--straight); }
 

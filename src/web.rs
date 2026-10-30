@@ -105,6 +105,7 @@ pub async fn run_sim(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Syn
     loop {
         tokio::select! {
             _ = tokio::signal::ctrl_c() => break,
+            followed = follow_clock(mesh.as_mut()) => followed?,
             _ = tick.tick() => {
                 for (time, event) in sim.step(step * speed) {
                     if let Some(publisher) = mesh.as_mut() {
@@ -120,12 +121,34 @@ pub async fn run_sim(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Syn
                 let snapshot = view.snapshot(&sim, topology);
                 let mut json = serde_json::to_value(&snapshot)?;
                 json["log"] = serde_json::Value::from(log.iter().cloned().collect::<Vec<_>>());
+                // The layout's fast clock, as the nodes keep it (only on the mesh).
+                if let Some(publisher) = &mesh {
+                    let clock = &publisher.clock;
+                    let now = tokio::time::Instant::now();
+                    let minute = clock.minute_of_day(now);
+                    json["clock"] = serde_json::json!({
+                        "known": clock.known(),
+                        "time": format!("{:02}:{:02}", minute / 60, minute % 60),
+                        "running": clock.running(),
+                        "rate": clock.rate(),
+                    });
+                }
                 let _ = publish.send(json.to_string());
             }
         }
     }
     server.abort();
     Ok(())
+}
+
+/// Follows the mesh's fast clock; without the mesh, never returns.
+async fn follow_clock(
+    publisher: Option<&mut crate::dispatcher::LocoPublisher>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    match publisher {
+        Some(publisher) => publisher.follow_clock().await,
+        None => std::future::pending().await,
+    }
 }
 
 /// The speed step a running simulated train has in the loco register.

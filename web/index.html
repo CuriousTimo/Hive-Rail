@@ -10,7 +10,17 @@
   <header>
     <div class="brand">Hive-Rail</div>
     <div id="meeting" class="meeting"></div>
-    <div class="clock" title="Simulation time"><span id="time">0:00</span></div>
+    <div class="clocks">
+      <div class="clock-item" id="fast-clock-item" title="The layout's fast clock, as the nodes keep it">
+        <span class="clock-name">Fast clock</span><span id="fast-clock" class="clock">--:--</span><span id="fast-clock-state" class="clock-state"></span>
+      </div>
+      <div class="clock-item" title="Real-world time on this device">
+        <span class="clock-name">Time</span><span id="wall-clock" class="clock wall">--:--:--</span>
+      </div>
+      <div class="clock-item" title="Time since the simulation started">
+        <span class="clock-name">Sim</span><span id="time" class="clock sim">0:00</span>
+      </div>
+    </div>
     <div id="connection" class="connection">connecting…</div>
   </header>
   <main>

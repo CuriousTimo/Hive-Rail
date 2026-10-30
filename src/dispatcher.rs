@@ -10,8 +10,8 @@ use crate::{
     clock::FastClock,
     locos::{LocoRegister, RegisteredLoco},
     node::{zenoh_config, Heartbeat, HEARTBEAT_TIMEOUT, REGISTER_SYNC_GRACE},
-    rocnet::RocNetFrame,
-    ui::{format_age, power_style, TerminalUi, UiCommand},
+    rocnet::{ClockAction, ClockUpdate, RocNetFrame},
+    ui::{format_age, power_style, ClockChange, TerminalUi, UiCommand},
 };
 use chrono::Local;
 use ratatui::{
@@ -246,21 +246,30 @@ impl State {
         }
     }
 
-    fn clock_frame(&mut self, frame: &RocNetFrame) {
-        if let Some(update) = frame.clock_update() {
-            let rate = if update.divider == 0 {
-                self.clock.rate()
-            } else {
-                update.divider
-            };
-            self.clock.set(
-                u16::from(update.hour) * 60 + u16::from(update.minute),
-                rate,
-                update.divider != 0,
-                Instant::now(),
-            );
+    fn clock_frame(&mut self, frame: &RocNetFrame, origin: &str) {
+        let was = self.clock.label(Instant::now());
+        if apply_clock(&mut self.clock, frame) == Some(ClockAction::Set) {
+            let now = self.clock.label(Instant::now());
+            self.event(format!("fast clock set by {origin}: {was} -> {now}"));
         }
     }
+}
+
+/// Follows a clock set or sync from the mesh; returns which it was.
+fn apply_clock(clock: &mut FastClock, frame: &RocNetFrame) -> Option<ClockAction> {
+    let update = frame.clock_update()?;
+    let rate = if update.divider == 0 {
+        clock.rate()
+    } else {
+        update.divider
+    };
+    clock.set(
+        u16::from(update.hour) * 60 + u16::from(update.minute),
+        rate,
+        update.divider != 0,
+        Instant::now(),
+    );
+    Some(update.action)
 }
 
 struct Mesh {
@@ -272,6 +281,8 @@ struct Mesh {
     events: Subscriber<FifoChannelHandler<Sample>>,
     hello: zenoh::pubsub::Publisher<'static>,
     updates: zenoh::pubsub::Publisher<'static>,
+    /// Clock sets from the dispatcher's keys, as a node's dashboard sends them.
+    clock_set: zenoh::pubsub::Publisher<'static>,
     id: String,
 }
 
@@ -302,9 +313,33 @@ impl Mesh {
             updates: session
                 .declare_publisher(format!("hive/{s}/locos/update"))
                 .await?,
+            clock_set: session
+                .declare_publisher(format!("hive/{s}/rn/ck"))
+                .allowed_destination(zenoh::sample::Locality::Remote)
+                .await?,
             _session: session,
             id: args.id.clone(),
         })
+    }
+
+    /// Sets the layout's fast clock: every node takes it, and the clock master keeps it.
+    async fn set_clock(&self, clock: &FastClock) -> Result<(), Box<dyn Error + Send + Sync>> {
+        let minute = clock.minute_of_day(Instant::now());
+        // The dispatcher has no RocNet address of its own; 0 is the sender.
+        let frame = RocNetFrame::clock(
+            0,
+            ClockUpdate {
+                action: ClockAction::Set,
+                hour: (minute / 60) as u8,
+                minute: (minute % 60) as u8,
+                divider: if clock.running() { clock.rate() } else { 0 },
+            },
+        );
+        self.clock_set
+            .put(frame.as_bytes().to_vec())
+            .attachment(self.id.clone())
+            .await?;
+        Ok(())
     }
 
     /// Asks the allocator for the loco register and the clock.
@@ -378,8 +413,9 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
             }
             sample = mesh.clock.recv_async() => {
                 let sample = sample?;
+                let origin = origin(&sample);
                 if let Ok(frame) = RocNetFrame::from_bytes(sample.payload().to_bytes().as_ref()) {
-                    state.clock_frame(&frame);
+                    state.clock_frame(&frame, &origin);
                 }
             }
             _ = tick.tick() => {
@@ -388,6 +424,18 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                     match ui.handle_input()? {
                         UiCommand::Quit => break,
                         UiCommand::ToggleDetails => state.details = !state.details,
+                        UiCommand::Clock(change) => {
+                            let now = Instant::now();
+                            let was = state.clock.label(now);
+                            match change {
+                                ClockChange::ToggleRunning => state.clock.toggle_running(now),
+                                ClockChange::Rate(delta) => state.clock.change_rate(delta, now),
+                                ClockChange::Hours(delta) => state.clock.shift_hours(delta, now),
+                            }
+                            let label = state.clock.label(now);
+                            state.event(format!("fast clock set here: {was} -> {label}"));
+                            mesh.set_clock(&state.clock).await?;
+                        }
                         _ => {}
                     }
                     ui.draw_with(|frame| render(frame, &state))?;
@@ -464,6 +512,12 @@ async fn gather(
                     state.register.merge(locos);
                 }
             }
+            sample = mesh.clock.recv_async() => {
+                let sample = sample?;
+                if let Ok(frame) = RocNetFrame::from_bytes(sample.payload().to_bytes().as_ref()) {
+                    apply_clock(&mut state.clock, &frame);
+                }
+            }
         }
     }
     Ok(state)
@@ -522,6 +576,8 @@ pub struct LocoPublisher {
     id: String,
     session: String,
     locos: HashMap<u16, RegisteredLoco>,
+    /// The layout's fast clock, as the nodes keep it.
+    pub clock: FastClock,
 }
 
 impl LocoPublisher {
@@ -547,7 +603,17 @@ impl LocoPublisher {
             id: id.to_owned(),
             session: session.to_owned(),
             locos,
+            clock: state.clock,
         })
+    }
+
+    /// Waits for the next clock set or sync on the mesh and follows it.
+    pub async fn follow_clock(&mut self) -> Result<(), Box<dyn Error + Send + Sync>> {
+        let sample = self.mesh.clock.recv_async().await?;
+        if let Ok(frame) = RocNetFrame::from_bytes(sample.payload().to_bytes().as_ref()) {
+            apply_clock(&mut self.clock, &frame);
+        }
+        Ok(())
     }
 
     /// An event in a district, as that district's node reports it, for the dispatcher's
@@ -862,6 +928,7 @@ fn render(frame: &mut Frame<'_>, state: &State) {
                     loco.direction()
                 )),
                 Cell::from(functions(&loco)),
+                Cell::from(entry.district.clone().unwrap_or_else(|| "-".to_owned())),
                 Cell::from(entry.node.clone()),
                 Cell::from(entry.version.to_string()),
             ])
@@ -874,6 +941,7 @@ fn render(frame: &mut Frame<'_>, state: &State) {
             Constraint::Length(10),
             Constraint::Length(7),
             Constraint::Min(12),
+            Constraint::Min(12),
             Constraint::Length(6),
         ],
     )
@@ -885,6 +953,7 @@ fn render(frame: &mut Frame<'_>, state: &State) {
             "Speed",
             "Direction",
             "F0-F4",
+            "District",
             "Driven at",
             "Ver",
         ])
@@ -910,9 +979,9 @@ fn render(frame: &mut Frame<'_>, state: &State) {
         .map(|line| Line::from(line.as_str()))
         .collect();
     let title = if state.details {
-        "Events of every district, all details (d: fewer, q: quit)"
+        "Events of every district, all details (d: fewer, c: clock run/pause, + -: rate, [ ]: hour, q: quit)"
     } else {
-        "Events of every district (d: all details, q: quit)"
+        "Events of every district (d: all details, c: clock run/pause, + -: rate, [ ]: hour, q: quit)"
     };
     frame.render_widget(
         Paragraph::new(events).block(Block::default().borders(Borders::ALL).title(title)),
