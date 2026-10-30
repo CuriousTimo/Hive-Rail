@@ -6,7 +6,9 @@
 
 Hive-Rail is being built to help separate groups of model railway modules operate together as one layout. Instead of relying on one central computer, the plan is for a small computer to look after each powered section of track and share information with the computers looking after neighboring sections.
 
-The nodes speak [RocNet over Zenoh](https://github.com/CuriousTimo/Hive-Rail/wiki/RocNet-on-the-Mesh). Each node connects its own command station and equipment through an adapter: DCC-EX (expected in most clusters), LocoNet centrals such as the Intellibox, and Rocrail. Support for FRED/Fredi walk-around throttles is designed but deferred.
+> **Hive-Rail: distributed train tracking that keeps working until the last mesh node dies.** Each node follows the trains of its own district, block by block, also trains driven by hand without a route; every node keeps a copy of where all trains are; and a train takes its identity along when it crosses into the next district. That is why Hive-Rail needs to know the modules put together in each district. See [Distributed train tracking](https://github.com/CuriousTimo/Hive-Rail/wiki/Hive%E2%80%90Rail:-Architecture-and-Design-Specification#10-distributed-train-tracking).
+
+The nodes speak [RocNet over Zenoh](https://github.com/CuriousTimo/Hive-Rail/wiki/RocNet-on-the-Mesh). Each node connects its own command station and equipment through an adapter: DCC-EX (expected in most clusters), LocoNet centrals such as the Intellibox, and Rocrail. Support for FRED/Fredi walk-around throttles has started: the shared loco register and throttle numbers work; dispatch is next.
 
 > **EARLY BETA: USE AT YOUR OWN RISK.** This software has not been tested on real hardware. It is not production-ready or a safety system. Do not connect it to or use it to control a live layout.
 
@@ -53,6 +55,13 @@ The roadmap follows the [wiki design specification](https://github.com/CuriousTi
 	- [ ] **1.5** Build the topology graph and handle node restarts and loss.
 	- [ ] **1.6** Add atomic configuration writes, backup recovery, and tests.
 	- [x] **1.7** Read a node's or the dispatcher's options from a TOML config file (`--config`); every command line flag works in it and the command line wins. The first part of the [node file](https://github.com/CuriousTimo/Hive-Rail/wiki/Module-and-Layout-Files#4-the-node-file); examples in `examples/config/`.
+- [ ] **Phase T: Distributed train tracking** (the core idea; after Phase 1, before Phase 5; see [Architecture §10](https://github.com/CuriousTimo/Hive-Rail/wiki/Hive%E2%80%90Rail:-Architecture-and-Design-Specification#10-distributed-train-tracking))
+	- [ ] **T.1** Give the module profile blocks, occupancy sensors and turnouts, and build each district's block graph from its modules (with 1.3 to 1.5).
+	- [ ] **T.2** Follow trains within a district: placing, moving into the next block by direction and turnout positions, freeing the old block, gaps between detected blocks, ghosts and ambiguities to the operator.
+	- [ ] **T.3** Replicate the train picture (loco, district, block, speed, direction, functions) on every node, with versions; only the owning district changes a train; merge after a split or restart.
+	- [ ] **T.4** Save the train picture to disk, so the first node to start after all were off reads it back and the operator confirms it. The loco register can be saved first.
+	- [ ] **T.5** Name the train at the border from the tracking, the loco register or the operator, and carry its identity through the handoff (with Phase 5).
+	- [ ] **T.6** Pass: a train followed through a simulated district and across a simulated border, by route and driven by hand; the picture survives a node restart and a network split.
 - [ ] **Phase 2: Simulator**
 	- [ ] **2.1** Model virtual nodes, sensors, turnouts, boosters, and transfer blocks.
 	- [x] **2.2** Implement and unit-test a local booster-exclusivity check for fixed sample rail segments.
