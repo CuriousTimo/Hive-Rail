@@ -1,0 +1,56 @@
+{
+  "schema_version": 2,
+  "meeting": "Bench, double track with a district border",
+  "modules": [
+    {
+      "module_id": "timo-2e96-west"
+    },
+    {
+      "module_id": "timo-adorf"
+    },
+    {
+      "module_id": "timo-2e96-border"
+    },
+    {
+      "module_id": "anna-2e96-border"
+    },
+    {
+      "module_id": "anna-2e96-east"
+    }
+  ],
+  "connections": [
+    {
+      "a": "timo-2e96-west.B",
+      "b": "timo-adorf.A"
+    },
+    {
+      "a": "timo-adorf.B",
+      "b": "timo-2e96-border.A"
+    },
+    {
+      "a": "timo-2e96-border.B",
+      "b": "anna-2e96-border.A"
+    },
+    {
+      "a": "anna-2e96-border.B",
+      "b": "anna-2e96-east.A"
+    }
+  ],
+  "districts": [
+    {
+      "node": "MacBook",
+      "modules": [
+        "timo-2e96-west",
+        "timo-adorf",
+        "timo-2e96-border"
+      ]
+    },
+    {
+      "node": "Windows",
+      "modules": [
+        "anna-2e96-border",
+        "anna-2e96-east"
+      ]
+    }
+  ]
+}

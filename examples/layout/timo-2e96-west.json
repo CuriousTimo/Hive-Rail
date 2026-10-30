@@ -1,0 +1,138 @@
+{
+  "schema_version": 2,
+  "module_id": "timo-2e96-west",
+  "friendly_name": "Double track, west",
+  "owner": "Timo",
+  "scale": "H0",
+  "length_mm": 900,
+  "ends": [
+    {
+      "id": "A",
+      "profile": "2E96",
+      "tracks": [
+        "1",
+        "2"
+      ]
+    },
+    {
+      "id": "B",
+      "profile": "2E96",
+      "tracks": [
+        "2",
+        "1"
+      ]
+    }
+  ],
+  "track": [
+    {
+      "id": "1",
+      "from": "A.1",
+      "to": "B.1",
+      "length_mm": 900,
+      "direction": "A>B"
+    },
+    {
+      "id": "2",
+      "from": "A.2",
+      "to": "B.2",
+      "length_mm": 900,
+      "direction": "B>A"
+    }
+  ],
+  "blocks": [
+    {
+      "id": "line_1",
+      "track": "1",
+      "cuts_mm": [
+        20,
+        880
+      ],
+      "detected_rail": "outer",
+      "occupancy": "occ_1"
+    },
+    {
+      "id": "line_2",
+      "track": "2",
+      "cuts_mm": [
+        20,
+        880
+      ],
+      "detected_rail": "outer",
+      "occupancy": "occ_2"
+    }
+  ],
+  "devices": [
+    {
+      "id": "occ_1",
+      "type": "occupancy",
+      "bus": "loconet",
+      "address": 201,
+      "block": "line_1"
+    },
+    {
+      "id": "occ_2",
+      "type": "occupancy",
+      "bus": "loconet",
+      "address": 202,
+      "block": "line_2"
+    }
+  ],
+  "geometry": {
+    "outline": [
+      [
+        0,
+        0
+      ],
+      [
+        900,
+        0
+      ],
+      [
+        900,
+        546
+      ],
+      [
+        0,
+        546
+      ]
+    ],
+    "ends": {
+      "A": {
+        "at": [
+          0,
+          273
+        ],
+        "facing": 180
+      },
+      "B": {
+        "at": [
+          900,
+          273
+        ],
+        "facing": 0
+      }
+    },
+    "track": {
+      "1": [
+        [
+          0,
+          250
+        ],
+        [
+          900,
+          250
+        ]
+      ],
+      "2": [
+        [
+          0,
+          296
+        ],
+        [
+          900,
+          296
+        ]
+      ]
+    }
+  }
+}

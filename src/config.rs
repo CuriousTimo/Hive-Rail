@@ -29,6 +29,7 @@ const COMMANDS: &[&str] = &[
     "--show-locos",
     "--transfer-loco",
     "--validate-profile",
+    "--check-layout",
     "--help",
     "-h",
     "--mode=simulation",

@@ -50,7 +50,8 @@ The roadmap follows the [wiki design specification](https://github.com/CuriousTi
 - [ ] **Phase 1: Core data**
 	- [x] **1.1** Load and deserialize the version 1 module profile JSON.
 	- [x] **1.2** Check the schema version, required identity fields, duplicate port IDs, and independent transfer-block sensor/relay requirements.
-	- [ ] **1.3** Complete validation for all profile, module, port, and device constraints.
+	- [ ] **1.3** Complete validation for all profile, module, port, and device constraints. Module and layout files (schema version 2, [Module and Layout Files](https://github.com/CuriousTimo/Hive-Rail/wiki/Module-and-Layout-Files)) load and are checked with `hive-rail --check-layout <layout.json>`: track graph, blocks, devices, stations, end profiles and track counts at each connection, every module in one district, address clashes within a district (LocoNet sensors and switches apart), district borders only single or double track, a transfer block on each border track, changed module files. `examples/layout/` holds a double-track meeting with a station with a passing siding and a border between two districts.
+	- [ ] **1.8** Module library, district files from several owners (shared by email, USB stick, SSH, NFS or SMB), export and import, publishing on the mesh, and the planning team's lock ([Module and Layout Files §9](https://github.com/CuriousTimo/Hive-Rail/wiki/Module-and-Layout-Files#9-the-meeting-step-by-step)).
 	- [ ] **1.4** Implement two-sided binding confirmation and link status.
 	- [ ] **1.5** Build the topology graph and handle node restarts and loss.
 	- [ ] **1.6** Add atomic configuration writes, backup recovery, and tests.

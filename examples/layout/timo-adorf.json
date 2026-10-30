@@ -1,0 +1,286 @@
+{
+  "schema_version": 2,
+  "module_id": "timo-adorf",
+  "friendly_name": "Adorf, double track with passing siding",
+  "owner": "Timo",
+  "scale": "H0",
+  "length_mm": 1800,
+  "ends": [
+    {
+      "id": "A",
+      "profile": "2E96",
+      "tracks": [
+        "1",
+        "2"
+      ]
+    },
+    {
+      "id": "B",
+      "profile": "2E96",
+      "tracks": [
+        "2",
+        "1"
+      ]
+    }
+  ],
+  "track": [
+    {
+      "id": "1a",
+      "from": "A.1",
+      "to": "W1.trunk",
+      "length_mm": 250,
+      "direction": "A>B"
+    },
+    {
+      "id": "1",
+      "from": "W1.straight",
+      "to": "W2.straight",
+      "length_mm": 1300,
+      "direction": "A>B"
+    },
+    {
+      "id": "s1",
+      "from": "W1.diverging",
+      "to": "W2.diverging",
+      "length_mm": 1320,
+      "direction": "A>B"
+    },
+    {
+      "id": "1b",
+      "from": "W2.trunk",
+      "to": "B.1",
+      "length_mm": 250,
+      "direction": "A>B"
+    },
+    {
+      "id": "2",
+      "from": "A.2",
+      "to": "B.2",
+      "length_mm": 1800,
+      "direction": "B>A"
+    }
+  ],
+  "turnouts": [
+    {
+      "id": "W1",
+      "device": "point_w1"
+    },
+    {
+      "id": "W2",
+      "device": "point_w2"
+    }
+  ],
+  "stations": [
+    {
+      "name": "Adorf",
+      "code": "Ad",
+      "tracks": [
+        {
+          "name": "1",
+          "track": "1",
+          "usable_mm": 1200,
+          "platform": true
+        },
+        {
+          "name": "3",
+          "track": "s1",
+          "usable_mm": 1150,
+          "platform": false
+        },
+        {
+          "name": "2",
+          "track": "2",
+          "usable_mm": 1700,
+          "platform": true
+        }
+      ]
+    }
+  ],
+  "blocks": [
+    {
+      "id": "adorf_1",
+      "track": "1",
+      "cuts_mm": [
+        20,
+        1280
+      ],
+      "detected_rail": "outer",
+      "occupancy": "occ_1"
+    },
+    {
+      "id": "adorf_3",
+      "track": "s1",
+      "cuts_mm": [
+        60,
+        1260
+      ],
+      "detected_rail": "outer",
+      "occupancy": "occ_3"
+    },
+    {
+      "id": "adorf_2",
+      "track": "2",
+      "cuts_mm": [
+        20,
+        1780
+      ],
+      "detected_rail": "outer",
+      "occupancy": "occ_2",
+      "role": "entry",
+      "for": "B>A"
+    }
+  ],
+  "devices": [
+    {
+      "id": "point_w1",
+      "type": "turnout",
+      "bus": "loconet",
+      "address": 21
+    },
+    {
+      "id": "point_w2",
+      "type": "turnout",
+      "bus": "loconet",
+      "address": 22
+    },
+    {
+      "id": "occ_1",
+      "type": "occupancy",
+      "bus": "loconet",
+      "address": 203,
+      "block": "adorf_1"
+    },
+    {
+      "id": "occ_3",
+      "type": "occupancy",
+      "bus": "loconet",
+      "address": 204,
+      "block": "adorf_3"
+    },
+    {
+      "id": "occ_2",
+      "type": "occupancy",
+      "bus": "loconet",
+      "address": 205,
+      "block": "adorf_2"
+    }
+  ],
+  "geometry": {
+    "outline": [
+      [
+        0,
+        0
+      ],
+      [
+        1800,
+        0
+      ],
+      [
+        1800,
+        546
+      ],
+      [
+        0,
+        546
+      ]
+    ],
+    "ends": {
+      "A": {
+        "at": [
+          0,
+          273
+        ],
+        "facing": 180
+      },
+      "B": {
+        "at": [
+          1800,
+          273
+        ],
+        "facing": 0
+      }
+    },
+    "points": {
+      "W1": [
+        250,
+        250
+      ],
+      "W2": [
+        1550,
+        250
+      ]
+    },
+    "track": {
+      "1a": [
+        [
+          0,
+          250
+        ],
+        [
+          250,
+          250
+        ]
+      ],
+      "1": [
+        [
+          250,
+          250
+        ],
+        [
+          1550,
+          250
+        ]
+      ],
+      "s1": [
+        [
+          250,
+          250
+        ],
+        [
+          400,
+          204
+        ],
+        [
+          1400,
+          204
+        ],
+        [
+          1550,
+          250
+        ]
+      ],
+      "1b": [
+        [
+          1550,
+          250
+        ],
+        [
+          1800,
+          250
+        ]
+      ],
+      "2": [
+        [
+          0,
+          296
+        ],
+        [
+          1800,
+          296
+        ]
+      ]
+    },
+    "platforms": {
+      "Adorf 1/3": [
+        [
+          450,
+          215
+        ],
+        [
+          1350,
+          240
+        ]
+      ]
+    }
+  }
+}

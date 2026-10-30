@@ -2,6 +2,7 @@ mod clock;
 mod config;
 mod dccex;
 mod dispatcher;
+mod layout;
 mod lbclient;
 mod lbserver;
 mod lnserial;
@@ -47,6 +48,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         },
         Some("--show-locos") => dispatcher::show_locos(args.collect()).await,
         Some("--transfer-loco") => dispatcher::transfer_loco(args.collect()).await,
+        Some("--check-layout") => check_layout(args.collect()),
         Some("--validate-profile") => {
             let path = args.next().ok_or("expected a profile path")?;
             let profile = profile::load(Path::new(&path))?;
@@ -66,6 +68,70 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
 }
 
+/// `--check-layout <layout.json> [--modules <dir>]`: loads a layout and its module files
+/// (by default next to the layout file) and reports what is wrong, before the meeting.
+fn check_layout(args: Vec<String>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let mut args = args.into_iter();
+    let path = args
+        .next()
+        .ok_or("expected a layout file after --check-layout")?;
+    let path = Path::new(&path);
+    let mut modules_dir = path.parent().unwrap_or(Path::new(".")).to_path_buf();
+    while let Some(flag) = args.next() {
+        match flag.as_str() {
+            "--modules" => {
+                modules_dir = args
+                    .next()
+                    .ok_or("expected a directory after --modules")?
+                    .into()
+            }
+            _ => return Err(format!("unknown --check-layout option: {flag}").into()),
+        }
+    }
+    let layout = layout::load(path, &modules_dir)?;
+    let report = layout.check();
+    println!(
+        "{}: {} modules, {} districts",
+        layout.file.meeting,
+        layout.file.modules.len(),
+        layout.file.districts.len()
+    );
+    for district in &layout.file.districts {
+        println!(
+            "  district {}: {}",
+            district.node,
+            district.modules.join(", ")
+        );
+    }
+    for border in layout.borders() {
+        println!(
+            "  border {} – {} ({} – {})",
+            border.a, border.b, border.districts.0, border.districts.1
+        );
+    }
+    println!("Module checksums (for the layout file):");
+    for (id, (_, sum)) in &layout.modules {
+        println!("  {id}: {sum}");
+    }
+    for warning in &report.warnings {
+        println!("WARNING {warning}");
+    }
+    for error in &report.errors {
+        println!("ERROR   {error}");
+    }
+    if report.errors.is_empty() {
+        println!("layout valid ({} warnings)", report.warnings.len());
+        Ok(())
+    } else {
+        Err(format!(
+            "{} errors, {} warnings",
+            report.errors.len(),
+            report.warnings.len()
+        )
+        .into())
+    }
+}
+
 fn print_help() {
     println!(
         "Hive-Rail simulation scaffold\n\n\
@@ -81,6 +147,7 @@ fn print_help() {
          cargo run -- --show-locos --session <name>\n\
          cargo run -- --transfer-loco <address> --to <node> --session <name> [--speed 0-126] [--forward|--reverse] [--lights|--no-lights]\n\
          cargo run -- --validate-profile <path>\n\
+         cargo run -- --check-layout <layout.json> [--modules <dir>]\n\
          cargo run -- --config <file.toml> [more options]\n\
          cargo run -- --help\n\n\
          --config reads the options from a TOML file: each key is a flag without its dashes, a [table] a flag\n\
