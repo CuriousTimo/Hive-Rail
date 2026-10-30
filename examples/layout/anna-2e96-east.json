@@ -77,6 +77,60 @@
       "bus": "loconet",
       "address": 204,
       "block": "line_2"
+    },
+    {
+      "id": "lc_lights",
+      "type": "light",
+      "bus": "loconet",
+      "address": 111
+    },
+    {
+      "id": "lc_barriers",
+      "type": "animation",
+      "bus": "loconet",
+      "address": 112
+    },
+    {
+      "id": "lc_close_1",
+      "type": "sensor",
+      "bus": "loconet",
+      "address": 211,
+      "track": "1",
+      "at_mm": 100,
+      "for": "A>B"
+    },
+    {
+      "id": "lc_open_1",
+      "type": "sensor",
+      "bus": "loconet",
+      "address": 212,
+      "track": "1",
+      "at_mm": 600,
+      "for": "A>B"
+    },
+    {
+      "id": "lc_close_2",
+      "type": "sensor",
+      "bus": "loconet",
+      "address": 213,
+      "track": "2",
+      "at_mm": 800,
+      "for": "B>A"
+    },
+    {
+      "id": "lc_open_2",
+      "type": "sensor",
+      "bus": "loconet",
+      "address": 214,
+      "track": "2",
+      "at_mm": 300,
+      "for": "B>A"
+    },
+    {
+      "id": "light_farm",
+      "type": "light",
+      "bus": "loconet",
+      "address": 113
     }
   ],
   "geometry": {
@@ -135,6 +189,87 @@
           296
         ]
       ]
+    },
+    "roads": {
+      "Dorfstraße": [
+        [
+          450,
+          0
+        ],
+        [
+          450,
+          546
+        ]
+      ]
+    },
+    "buildings": {
+      "farm": [
+        [
+          600,
+          400
+        ],
+        [
+          760,
+          400
+        ],
+        [
+          760,
+          500
+        ],
+        [
+          600,
+          500
+        ]
+      ]
+    },
+    "devices": {
+      "lc_lights": [
+        420,
+        200
+      ],
+      "lc_barriers": [
+        480,
+        345
+      ],
+      "light_farm": [
+        680,
+        450
+      ]
     }
-  }
+  },
+  "crossings": [
+    {
+      "id": "lc",
+      "name": "Dorfstraße",
+      "tracks": [
+        {
+          "track": "1",
+          "at_mm": 450
+        },
+        {
+          "track": "2",
+          "at_mm": 450
+        }
+      ],
+      "lights": "lc_lights",
+      "barriers": "lc_barriers",
+      "close": [
+        "lc_close_1",
+        "lc_close_2"
+      ],
+      "open": [
+        "lc_open_1",
+        "lc_open_2"
+      ]
+    }
+  ],
+  "buildings": [
+    {
+      "id": "farm",
+      "name": "Bauernhof",
+      "lights": [
+        "light_farm"
+      ]
+    }
+  ]
 }

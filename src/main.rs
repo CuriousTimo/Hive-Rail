@@ -14,6 +14,7 @@ mod power;
 mod profile;
 mod rocnet;
 mod simulation;
+mod topology;
 mod turnouts;
 mod ui;
 

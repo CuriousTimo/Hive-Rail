@@ -1,0 +1,424 @@
+{
+  "schema_version": 2,
+  "module_id": "anna-bdorf",
+  "friendly_name": "Bdorf, east terminus with crossover and passing siding",
+  "owner": "Anna",
+  "scale": "H0",
+  "length_mm": 1800,
+  "ends": [
+    {
+      "id": "A",
+      "profile": "2E96",
+      "tracks": [
+        "1",
+        "2"
+      ]
+    },
+    {
+      "id": "B",
+      "profile": "2E96",
+      "tracks": [
+        "2",
+        "1"
+      ]
+    }
+  ],
+  "track": [
+    {
+      "id": "1a",
+      "from": "A.1",
+      "to": "X3.trunk",
+      "length_mm": 100,
+      "direction": "A>B"
+    },
+    {
+      "id": "1",
+      "from": "X3.straight",
+      "to": "B.1",
+      "length_mm": 1700,
+      "direction": "A>B"
+    },
+    {
+      "id": "x",
+      "from": "X3.diverging",
+      "to": "X4.diverging",
+      "length_mm": 120
+    },
+    {
+      "id": "2e",
+      "from": "B.2",
+      "to": "W4.trunk",
+      "length_mm": 200,
+      "direction": "B>A"
+    },
+    {
+      "id": "2",
+      "from": "W4.straight",
+      "to": "W3.straight",
+      "length_mm": 1100,
+      "direction": "B>A"
+    },
+    {
+      "id": "s2",
+      "from": "W4.diverging",
+      "to": "W3.diverging",
+      "length_mm": 1120,
+      "direction": "B>A"
+    },
+    {
+      "id": "2c",
+      "from": "W3.trunk",
+      "to": "X4.trunk",
+      "length_mm": 300,
+      "direction": "B>A"
+    },
+    {
+      "id": "2a",
+      "from": "X4.straight",
+      "to": "A.2",
+      "length_mm": 200,
+      "direction": "B>A"
+    }
+  ],
+  "turnouts": [
+    {
+      "id": "X3",
+      "device": "point_x3"
+    },
+    {
+      "id": "X4",
+      "device": "point_x4"
+    },
+    {
+      "id": "W3",
+      "device": "point_w3"
+    },
+    {
+      "id": "W4",
+      "device": "point_w4"
+    }
+  ],
+  "stations": [
+    {
+      "name": "Bdorf",
+      "code": "Bd",
+      "tracks": [
+        {
+          "name": "1",
+          "track": "1",
+          "usable_mm": 1400,
+          "platform": true
+        },
+        {
+          "name": "2",
+          "track": "2",
+          "usable_mm": 1000,
+          "platform": true
+        },
+        {
+          "name": "4",
+          "track": "s2",
+          "usable_mm": 950,
+          "platform": false
+        }
+      ]
+    }
+  ],
+  "blocks": [
+    {
+      "id": "bdorf_1",
+      "track": "1",
+      "cuts_mm": [
+        100,
+        1600
+      ],
+      "detected_rail": "outer",
+      "occupancy": "occ_1"
+    },
+    {
+      "id": "bdorf_2",
+      "track": "2",
+      "cuts_mm": [
+        20,
+        1080
+      ],
+      "detected_rail": "outer",
+      "occupancy": "occ_2"
+    },
+    {
+      "id": "bdorf_4",
+      "track": "s2",
+      "cuts_mm": [
+        60,
+        1060
+      ],
+      "detected_rail": "outer",
+      "occupancy": "occ_4"
+    }
+  ],
+  "devices": [
+    {
+      "id": "point_x3",
+      "type": "turnout",
+      "bus": "loconet",
+      "address": 13
+    },
+    {
+      "id": "point_x4",
+      "type": "turnout",
+      "bus": "loconet",
+      "address": 14
+    },
+    {
+      "id": "point_w3",
+      "type": "turnout",
+      "bus": "loconet",
+      "address": 23
+    },
+    {
+      "id": "point_w4",
+      "type": "turnout",
+      "bus": "loconet",
+      "address": 24
+    },
+    {
+      "id": "occ_1",
+      "type": "occupancy",
+      "bus": "loconet",
+      "address": 205,
+      "block": "bdorf_1"
+    },
+    {
+      "id": "occ_2",
+      "type": "occupancy",
+      "bus": "loconet",
+      "address": 206,
+      "block": "bdorf_2"
+    },
+    {
+      "id": "occ_4",
+      "type": "occupancy",
+      "bus": "loconet",
+      "address": 207,
+      "block": "bdorf_4"
+    },
+    {
+      "id": "light_station_hall",
+      "type": "light",
+      "bus": "loconet",
+      "address": 101
+    },
+    {
+      "id": "light_station_platform",
+      "type": "light",
+      "bus": "loconet",
+      "address": 102
+    }
+  ],
+  "geometry": {
+    "outline": [
+      [
+        0,
+        0
+      ],
+      [
+        1800,
+        0
+      ],
+      [
+        1800,
+        546
+      ],
+      [
+        0,
+        546
+      ]
+    ],
+    "ends": {
+      "A": {
+        "at": [
+          0,
+          273
+        ],
+        "facing": 180
+      },
+      "B": {
+        "at": [
+          1800,
+          273
+        ],
+        "facing": 0
+      }
+    },
+    "points": {
+      "X3": [
+        100,
+        250
+      ],
+      "X4": [
+        200,
+        296
+      ],
+      "W3": [
+        500,
+        296
+      ],
+      "W4": [
+        1600,
+        296
+      ]
+    },
+    "track": {
+      "1a": [
+        [
+          0,
+          250
+        ],
+        [
+          100,
+          250
+        ]
+      ],
+      "1": [
+        [
+          100,
+          250
+        ],
+        [
+          1800,
+          250
+        ]
+      ],
+      "x": [
+        [
+          100,
+          250
+        ],
+        [
+          200,
+          296
+        ]
+      ],
+      "2e": [
+        [
+          1800,
+          296
+        ],
+        [
+          1600,
+          296
+        ]
+      ],
+      "2": [
+        [
+          1600,
+          296
+        ],
+        [
+          500,
+          296
+        ]
+      ],
+      "s2": [
+        [
+          1600,
+          296
+        ],
+        [
+          1450,
+          342
+        ],
+        [
+          650,
+          342
+        ],
+        [
+          500,
+          296
+        ]
+      ],
+      "2c": [
+        [
+          500,
+          296
+        ],
+        [
+          200,
+          296
+        ]
+      ],
+      "2a": [
+        [
+          200,
+          296
+        ],
+        [
+          0,
+          296
+        ]
+      ]
+    },
+    "platforms": {
+      "Bdorf 1": [
+        [
+          300,
+          215
+        ],
+        [
+          1600,
+          240
+        ]
+      ],
+      "Bdorf 2/4": [
+        [
+          650,
+          306
+        ],
+        [
+          1450,
+          331
+        ]
+      ]
+    },
+    "buildings": {
+      "station": [
+        [
+          700,
+          60
+        ],
+        [
+          1200,
+          60
+        ],
+        [
+          1200,
+          160
+        ],
+        [
+          700,
+          160
+        ]
+      ]
+    },
+    "devices": {
+      "light_station_hall": [
+        950,
+        110
+      ],
+      "light_station_platform": [
+        950,
+        200
+      ]
+    }
+  },
+  "buildings": [
+    {
+      "id": "station",
+      "name": "Bahnhof Bdorf",
+      "lights": [
+        "light_station_hall",
+        "light_station_platform"
+      ]
+    }
+  ]
+}

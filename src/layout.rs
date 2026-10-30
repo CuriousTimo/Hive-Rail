@@ -51,7 +51,50 @@ pub struct ModuleFile {
     #[serde(default)]
     pub devices: Vec<Device>,
     #[serde(default)]
+    pub buildings: Vec<Building>,
+    #[serde(default)]
+    pub crossings: Vec<Crossing>,
+    #[serde(default)]
     pub geometry: Option<Geometry>,
+}
+
+/// A building on the module, with the lights in it (devices of type `light`).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Building {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub lights: Vec<String>,
+}
+
+/// A level crossing: where the road crosses each track, its warning lights and barriers
+/// (outputs), and the sensors that close it before a train and open it after.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Crossing {
+    pub id: String,
+    pub name: String,
+    pub tracks: Vec<CrossingTrack>,
+    /// The warning lights: a device of type `light`.
+    #[serde(default)]
+    pub lights: Option<String>,
+    /// The barriers: a device of type `animation`.
+    #[serde(default)]
+    pub barriers: Option<String>,
+    /// Sensors that close the crossing when a train approaches.
+    #[serde(default)]
+    pub close: Vec<String>,
+    /// Sensors that open it again once the train has passed.
+    #[serde(default)]
+    pub open: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CrossingTrack {
+    pub track: String,
+    pub at_mm: u32,
 }
 
 /// A module end: its FREMO end profile and its tracks, from left to right as seen
@@ -170,6 +213,12 @@ pub struct Geometry {
     pub platforms: BTreeMap<String, Vec<[f64; 2]>>,
     #[serde(default)]
     pub devices: BTreeMap<String, [f64; 2]>,
+    /// Building outlines, by building id.
+    #[serde(default)]
+    pub buildings: BTreeMap<String, Vec<[f64; 2]>>,
+    /// Roads, by name: a polyline, for example across a level crossing.
+    #[serde(default)]
+    pub roads: BTreeMap<String, Vec<[f64; 2]>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -344,7 +393,7 @@ const DEVICE_ROLES: [&str; 6] = [
 
 /// A point a track piece starts or ends at.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-enum Point {
+pub(crate) enum Point {
     End { end: String, track: String },
     Leg { turnout: String, leg: String },
     Buffer,
@@ -361,7 +410,7 @@ impl fmt::Display for Point {
 }
 
 impl ModuleFile {
-    fn end(&self, id: &str) -> Option<&End> {
+    pub(crate) fn end(&self, id: &str) -> Option<&End> {
         self.ends.iter().find(|end| end.id == id)
     }
 
@@ -373,7 +422,7 @@ impl ModuleFile {
         self.devices.iter().find(|device| device.id == id)
     }
 
-    fn point(&self, text: &str) -> Result<Point, String> {
+    pub(crate) fn point(&self, text: &str) -> Result<Point, String> {
         if text == "end" {
             return Ok(Point::Buffer);
         }
@@ -406,7 +455,7 @@ impl ModuleFile {
     }
 
     /// The track piece that leaves this end on this track.
-    fn piece_at(&self, end: &str, track: &str) -> Option<&TrackPiece> {
+    pub(crate) fn piece_at(&self, end: &str, track: &str) -> Option<&TrackPiece> {
         let point = format!("{end}.{track}");
         self.track
             .iter()
@@ -438,6 +487,8 @@ impl ModuleFile {
             ("turnout", self.turnouts.iter().map(|x| &x.id).collect()),
             ("block", self.blocks.iter().map(|x| &x.id).collect()),
             ("device", self.devices.iter().map(|x| &x.id).collect()),
+            ("building", self.buildings.iter().map(|x| &x.id).collect()),
+            ("crossing", self.crossings.iter().map(|x| &x.id).collect()),
         ] {
             let mut seen = BTreeSet::new();
             for id in ids {
@@ -668,6 +719,59 @@ impl ModuleFile {
             }
         }
 
+        // A device named by a building or a crossing must exist and be of the right type.
+        let expect =
+            |report: &mut Report, owner: &str, id: &str, kinds: &[&str]| match self.device(id) {
+                Some(device) if kinds.contains(&device.kind.as_str()) => {}
+                Some(device) => report.error(format!(
+                    "{name}: {owner}: {id} is a {}, expected {}",
+                    device.kind,
+                    kinds.join(" or ")
+                )),
+                None => report.error(format!("{name}: {owner}: no device '{id}'")),
+            };
+        for building in &self.buildings {
+            for light in &building.lights {
+                expect(
+                    report,
+                    &format!("building {}", building.id),
+                    light,
+                    &["light"],
+                );
+            }
+        }
+        for crossing in &self.crossings {
+            let owner = format!("crossing {}", crossing.id);
+            if crossing.tracks.is_empty() {
+                error(report, format!("{owner} crosses no track"));
+            }
+            for place in &crossing.tracks {
+                match self.piece(&place.track) {
+                    Some(piece) if place.at_mm > piece.length_mm => error(
+                        report,
+                        format!(
+                            "{owner}: at_mm is beyond the end of track {} ({} mm)",
+                            piece.id, piece.length_mm
+                        ),
+                    ),
+                    Some(_) => {}
+                    None => error(report, format!("{owner}: no track '{}'", place.track)),
+                }
+            }
+            if let Some(lights) = &crossing.lights {
+                expect(report, &owner, lights, &["light"]);
+            }
+            if let Some(barriers) = &crossing.barriers {
+                expect(report, &owner, barriers, &["animation"]);
+            }
+            for sensor in crossing.close.iter().chain(&crossing.open) {
+                expect(report, &owner, sensor, &["sensor"]);
+            }
+            if crossing.close.is_empty() {
+                report.warning(format!("{name}: {owner} has no sensor that closes it"));
+            }
+        }
+
         if let Some(geometry) = &self.geometry {
             let warn = |report: &mut Report, kind: &str, id: &str| {
                 report.warning(format!(
@@ -694,6 +798,11 @@ impl ModuleFile {
                     warn(report, "device", id);
                 }
             }
+            for id in geometry.buildings.keys() {
+                if !self.buildings.iter().any(|building| &building.id == id) {
+                    warn(report, "building", id);
+                }
+            }
         }
     }
 
@@ -714,7 +823,7 @@ impl ModuleFile {
 
 /// The address space a device lives in, for the clash check: per bus, and on LocoNet
 /// sensors and outputs apart.
-fn address_space(device: &Device) -> &'static str {
+pub(crate) fn address_space(device: &Device) -> &'static str {
     match (device.bus.as_str(), device.kind.as_str()) {
         ("loconet", "sensor" | "occupancy" | "transponder" | "button") => "LocoNet sensor",
         ("loconet", _) => "LocoNet switch",
@@ -726,7 +835,7 @@ fn address_space(device: &Device) -> &'static str {
 }
 
 /// `module.end` in a connection.
-fn split_end(text: &str) -> Option<(&str, &str)> {
+pub(crate) fn split_end(text: &str) -> Option<(&str, &str)> {
     text.rsplit_once('.')
 }
 
@@ -1113,6 +1222,32 @@ mod tests {
             "{:#?}",
             report.errors
         );
+    }
+
+    /// A level crossing's barriers must be an animation, its lights a light and its
+    /// sensors sensors; a building's lights lights.
+    #[test]
+    fn checks_crossings_and_buildings() {
+        let layout = example();
+        let (module, _) = &layout.modules["timo-2e96-west"];
+        assert_eq!(module.crossings[0].name, "Feldweg");
+        let mut broken = module.clone();
+        broken.crossings[0].barriers = Some("lc_lights".into());
+        broken.crossings[0].close.push("missing".into());
+        broken.buildings[0].lights.push("lc_close_1".into());
+        let mut report = Report::default();
+        broken.check(&mut report);
+        for expected in [
+            "lc_lights is a light, expected animation",
+            "no device 'missing'",
+            "lc_close_1 is a sensor, expected light",
+        ] {
+            assert!(
+                report.errors.iter().any(|e| e.contains(expected)),
+                "{expected}: {:#?}",
+                report.errors
+            );
+        }
     }
 
     #[test]
