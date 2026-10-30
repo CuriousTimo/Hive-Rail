@@ -1,0 +1,199 @@
+// Hive-Rail web view: draws the layout from /api/layout as SVG and keeps it live from
+// /events (Server-Sent Events). Layout coordinates are millimetres with y up; the screen
+// has y down, so every point is drawn at (x, -y).
+
+const SVG = "http://www.w3.org/2000/svg";
+// Train colours stay clear of the track colours: red occupied, blue transfer, green and
+// orange turnouts.
+const TRAIN_COLOURS = ["#ffd34d", "#ff8fe0", "#f2f2f2", "#c9a6ff", "#9bd8ff", "#d4ff6b"];
+
+const svg = document.getElementById("map");
+const layer = (name) => document.getElementById(`layer-${name}`);
+const elements = { blocks: new Map(), turnouts: new Map(), crossings: new Map() };
+let fit = { x: 0, y: 0, w: 1000, h: 500 };
+let view = { ...fit };
+
+function el(name, attributes, parent) {
+  const node = document.createElementNS(SVG, name);
+  for (const [key, value] of Object.entries(attributes)) node.setAttribute(key, value);
+  if (parent) parent.appendChild(node);
+  return node;
+}
+
+const flip = ([x, y]) => [x, -y];
+const pointsAttr = (points) => points.map((p) => flip(p).map((v) => v.toFixed(1)).join(",")).join(" ");
+
+function text(content, [x, y], className, parent, anchor = "middle") {
+  const node = el("text", { x: x.toFixed(1), y: (-y).toFixed(1), class: className, "text-anchor": anchor }, parent);
+  node.textContent = content;
+  return node;
+}
+
+function drawLayout(layout) {
+  document.getElementById("meeting").textContent = layout.meeting;
+  document.title = `Hive-Rail – ${layout.meeting}`;
+
+  for (const module of layout.modules) {
+    const outline = el("polygon", { points: pointsAttr(module.outline), class: "module" }, layer("modules"));
+    const title = el("title", {}, outline);
+    title.textContent = `${module.name} (${module.id}${module.owner ? ", " + module.owner : ""}), district ${module.district}`;
+    text(module.id, module.label, "module-label", layer("labels"));
+  }
+  // The district names, above the first module of each district.
+  for (const district of layout.districts) {
+    const first = layout.modules.find((m) => m.district === district);
+    if (first) {
+      const top = Math.max(...first.outline.map((p) => p[1]));
+      const left = Math.min(...first.outline.map((p) => p[0]));
+      text(`District ${district}`, [left + 20, top + 60], "district-label", layer("labels"), "start");
+    }
+  }
+  for (const platform of layout.platforms) {
+    el("polygon", { points: pointsAttr(platform), class: "platform" }, layer("platforms"));
+  }
+  for (const crossing of layout.crossings) {
+    if (crossing.road.length) el("polyline", { points: pointsAttr(crossing.road), class: "road" }, layer("roads"));
+  }
+  for (const building of layout.buildings) {
+    const shape = el("polygon", { points: pointsAttr(building.outline), class: `building${building.lights ? " lit" : ""}` }, layer("buildings"));
+    // The name shows on hover; written on the map it would cover the track.
+    el("title", {}, shape).textContent = `${building.name}: ${building.lights} light(s)`;
+  }
+  for (const piece of layout.pieces) {
+    el("polyline", { points: pointsAttr(piece.points), class: "track" }, layer("track"));
+  }
+  for (const block of layout.blocks) {
+    const line = el("polyline", { points: pointsAttr(block.points), class: `block${block.role === "transfer" ? " transfer" : ""}` }, layer("blocks"));
+    el("title", {}, line).textContent = `Block ${block.id} (${block.district}${block.role ? ", " + block.role : ""})`;
+    elements.blocks.set(block.id, line);
+  }
+  for (const crossing of layout.crossings) {
+    const group = el("g", {}, layer("crossings"));
+    for (const at of crossing.at) {
+      const [x, y] = flip(at);
+      el("line", { x1: x - 60, y1: y - 40, x2: x - 60, y2: y + 40, class: "barrier" }, group);
+      el("line", { x1: x + 60, y1: y - 40, x2: x + 60, y2: y + 40, class: "barrier" }, group);
+      el("circle", { cx: x, cy: y, r: 16, class: "crossing" }, group);
+    }
+    el("title", {}, group).textContent = `Level crossing ${crossing.name}`;
+    elements.crossings.set(crossing.id, group);
+  }
+  for (const turnout of layout.turnouts) {
+    const [x, y] = flip(turnout.at);
+    const dot = el("circle", { cx: x, cy: y, r: 18, class: "turnout straight" }, layer("turnouts"));
+    el("title", {}, dot).textContent = `Turnout ${turnout.id}`;
+    text(turnout.name, [turnout.at[0], turnout.at[1] + 30], "turnout-label", layer("labels"));
+    elements.turnouts.set(turnout.id, dot);
+  }
+  // Station names below the front edge of their module.
+  for (const station of layout.stations) {
+    const module = layout.modules.find((m) => m.id === station.module);
+    const bottom = module ? Math.min(...module.outline.map((p) => p[1])) : station.at[1];
+    text(station.text, [station.at[0], bottom - 150], "station-label", layer("labels"));
+  }
+
+  // The whole layout, or only the modules named in the address: ?modules=timo-adorf
+  // (for a screen next to one station).
+  const wanted = new URLSearchParams(location.search).get("modules");
+  const shown = wanted ? layout.modules.filter((m) => wanted.split(",").includes(m.id)) : [];
+  let [minX, minY, maxX, maxY] = layout.bounds;
+  if (shown.length) {
+    const points = shown.flatMap((m) => m.outline);
+    [minX, minY, maxX, maxY] = [Math.min(...points.map((p) => p[0])), Math.min(...points.map((p) => p[1])), Math.max(...points.map((p) => p[0])), Math.max(...points.map((p) => p[1]))];
+  }
+  const margin = 150;
+  fit = { x: minX - margin, y: -maxY - margin - 100, w: maxX - minX + 2 * margin, h: maxY - minY + 2 * margin + 250 };
+  view = { ...fit };
+  applyView();
+}
+
+function applyView() {
+  svg.setAttribute("viewBox", `${view.x} ${view.y} ${view.w} ${view.h}`);
+}
+
+function formatTime(seconds) {
+  const s = Math.floor(seconds);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+function update(state) {
+  document.getElementById("time").textContent = formatTime(state.time_s);
+  const occupied = new Set(state.occupied);
+  for (const [id, line] of elements.blocks) line.classList.toggle("occupied", occupied.has(id));
+  for (const [id, dot] of elements.turnouts) {
+    const straight = state.turnouts[id] !== false;
+    dot.classList.toggle("straight", straight);
+    dot.classList.toggle("diverging", !straight);
+  }
+  const closed = new Set(state.crossings_closed);
+  for (const [id, group] of elements.crossings) {
+    group.classList.toggle("closed-barrier", closed.has(id));
+    for (const dot of group.querySelectorAll("circle")) dot.classList.toggle("closed", closed.has(id));
+  }
+
+  const trains = layer("trains");
+  trains.replaceChildren();
+  const rows = [];
+  state.trains.forEach((train, index) => {
+    const colour = TRAIN_COLOURS[index % TRAIN_COLOURS.length];
+    if (train.points.length) {
+      el("polyline", { points: pointsAttr(train.points), class: "train", stroke: colour }, trains);
+      const [x, y] = flip(train.points[0]);
+      el("circle", { cx: x, cy: y, r: 20, fill: colour, class: "train-head" }, trains);
+      const label = el("text", { x, y: y - 40, class: "train-label", fill: colour, "text-anchor": "middle" }, trains);
+      label.textContent = train.name;
+    }
+    rows.push(`<tr><td style="color:${colour}">${escapeHtml(train.name)}</td><td>${train.address}</td><td>${escapeHtml(train.district)}</td><td>${escapeHtml(train.state)}</td></tr>`);
+  });
+  document.querySelector("#trains tbody").innerHTML = rows.join("");
+
+  const log = document.getElementById("log");
+  log.innerHTML = (state.log || []).slice().reverse().map((line) => `<li>${escapeHtml(line)}</li>`).join("");
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+}
+
+// Zoom with the wheel around the pointer, move by dragging, fit on double-click.
+svg.addEventListener("wheel", (event) => {
+  event.preventDefault();
+  const box = svg.getBoundingClientRect();
+  const fx = (event.clientX - box.left) / box.width;
+  const fy = (event.clientY - box.top) / box.height;
+  const factor = event.deltaY > 0 ? 1.15 : 1 / 1.15;
+  const w = view.w * factor;
+  const h = view.h * factor;
+  view = { x: view.x + (view.w - w) * fx, y: view.y + (view.h - h) * fy, w, h };
+  applyView();
+}, { passive: false });
+
+let drag = null;
+svg.addEventListener("pointerdown", (event) => {
+  drag = { x: event.clientX, y: event.clientY, view: { ...view } };
+  svg.setPointerCapture(event.pointerId);
+  svg.classList.add("dragging");
+});
+svg.addEventListener("pointermove", (event) => {
+  if (!drag) return;
+  const box = svg.getBoundingClientRect();
+  const scale = Math.max(view.w / box.width, view.h / box.height);
+  view = { ...drag.view, x: drag.view.x - (event.clientX - drag.x) * scale, y: drag.view.y - (event.clientY - drag.y) * scale };
+  applyView();
+});
+const endDrag = () => { drag = null; svg.classList.remove("dragging"); };
+svg.addEventListener("pointerup", endDrag);
+svg.addEventListener("pointercancel", endDrag);
+svg.addEventListener("dblclick", () => { view = { ...fit }; applyView(); });
+
+async function start() {
+  const response = await fetch("api/layout");
+  drawLayout(await response.json());
+  const status = document.getElementById("connection");
+  const source = new EventSource("events");
+  source.onopen = () => { status.textContent = "live"; status.classList.add("live"); };
+  source.onerror = () => { status.textContent = "reconnecting…"; status.classList.remove("live"); };
+  source.onmessage = (event) => update(JSON.parse(event.data));
+}
+
+start();

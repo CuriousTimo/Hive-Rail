@@ -103,6 +103,7 @@ The roadmap follows the [wiki design specification](https://github.com/CuriousTi
 	- [ ] **7.2** Add operator controls after the safety model is implemented.
 	- [ ] **7.3** Add ESP32 accessory controls and displays after validating the gateway approach.
 	- [ ] **7.4** Add other non-safety-critical displays and timetable features.
+	- [ ] **7.6** Web view of the layout on every node: the modules placed by joining their ends and drawn from their geometry (SVG), live blocks, turnouts, level crossings, building lights and trains; `?modules=` for a screen next to one station. Running on the layout simulator (`--web-sim`); still to come: the node's real data from the mesh, a symbol library with the owners' own SVGs, and a schematic track diagram in the SpDrS60 style for the dispatcher.
 	- [x] **7.5** Add a dispatcher screen for the Zugleiter: every district, the fast clock and the layout's loco register with a sync check per node, and the events of every district marked with its name and RocNet address; `--show-locos` prints the register once.
 - [ ] **Phase 8: FRED throttles** (started; the [node board](https://github.com/CuriousTimo/Hive-Rail/wiki/Hive-Rail-Node-Board) makes Hive-Rail the only slot master on each module LocoNet)
 	- [x] **8.1** Share one **loco register** across the mesh, by loco address. Locos on a throttle bus get a layout-wide **throttle number** from one allocator (the lowest online node), so a FRED plugged in again on another module gets its loco back. LocoNet connections with their own slot master (Rocrail's slot server, a central) keep their own slots and are translated by address; tested with three nodes and Rocrail.
@@ -302,6 +303,18 @@ cargo run -- --transfer-loco 4444 --to MacBook --session bench --speed 40 --ligh
 The dispatcher shows every district (heartbeat, power, locos), the fast clock, the allocator and clock master (★), and the **loco register of the whole layout**: loco, throttle number (for locos on a throttle bus), status, speed, direction, F0 to F4, the node whose LocoNet drives it, and its version. Every node puts a checksum of its copy of the register in its heartbeat; the dispatcher shows per node whether it is in sync, and `LOCO REGISTER DIFFERS` if a copy stays different for more than 2 s. Below them, **the events of every district**, each marked with the district and its RocNet address (`15:20:48 MacBook (101)  Took loco 4444 on … slot master: slot 2, in use`): the same `EVENT` lines as on each node's own screen, published on `hive/<session>/node/<id>/event`. The dispatcher only watches: it sends no heartbeat, hands out no throttle numbers and is never the clock master. The node dashboard also marks the allocator with ★ and shows the register sync in its status line.
 
 JMRI's LocoNet slot monitor works on connections where the node is the slot master (`--loconet-tcp-slots node`): the node answers slot reads from the throttle numbers, free slots included.
+
+## Web view of the layout
+
+A node serves a web page with the layout drawn from its module files, live: occupied blocks, turnout positions, level crossings, building lights and the trains with their names, plus an event log. Most nodes run headless under the layout, so the page is opened from any laptop, tablet or phone on the network; a node with a screen can show it in a browser's kiosk mode (for example `chromium --kiosk http://localhost:8080/?modules=timo-adorf`). For now it runs the layout simulator behind it:
+
+```sh
+cargo run -- --check-layout examples/layout/bench-double-track.json      # check a layout and its modules
+cargo run -- --simulate-layout examples/layout/bench-double-track.json   # the simulation as text
+cargo run -- --web-sim examples/layout/bench-double-track.json           # the same, live at http://localhost:8080
+```
+
+`--port` picks another port and `--speed 4` runs the simulation four times as fast. Scroll to zoom, drag to move, double-click to fit. `?modules=timo-adorf,timo-2e96-west` in the address shows only those modules, for a screen next to one station. The page is plain HTML, CSS and SVG built into the program (`web/`), with the live state as Server-Sent Events (`/events`) and the layout as JSON (`/api/layout`).
 
 ## Simulate four dual-track modules
 

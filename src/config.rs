@@ -31,6 +31,7 @@ const COMMANDS: &[&str] = &[
     "--validate-profile",
     "--check-layout",
     "--simulate-layout",
+    "--web-sim",
     "--help",
     "-h",
     "--mode=simulation",

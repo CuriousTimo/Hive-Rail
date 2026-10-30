@@ -1,0 +1,134 @@
+:root {
+  --bg: #11151a;
+  --panel: #181e25;
+  --line: #2a333d;
+  --text: #dde4ea;
+  --muted: #8a97a3;
+  --module: #1d252e;
+  --module-edge: #3a4652;
+  --track: #9aa6b1;
+  --block: #56636f;
+  --occupied: #ff4d4d;
+  --transfer: #4da3ff;
+  --platform: #3b4652;
+  --road: #4a4033;
+  --building: #2c3540;
+  --lit: #ffd34d;
+  --closed: #ff4d4d;
+  --straight: #52d68a;
+  --diverging: #ffb347;
+  --accent: #ffd34d;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #eef1f4;
+    --panel: #ffffff;
+    --line: #d4dbe2;
+    --text: #1d2730;
+    --muted: #5d6b78;
+    --module: #f7f9fb;
+    --module-edge: #b9c3cd;
+    --track: #4b5763;
+    --block: #8794a0;
+    --platform: #d5dce3;
+    --road: #c9b99c;
+    --building: #a9b4bf;
+    --accent: #b8860b;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+body { display: flex; flex-direction: column; }
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.brand { font-weight: 700; letter-spacing: 0.04em; }
+.meeting { color: var(--muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.clock { font-variant-numeric: tabular-nums; font-size: 18px; color: var(--accent); }
+.connection { font-size: 12px; color: var(--muted); }
+.connection.live { color: var(--straight); }
+
+main { flex: 1; display: flex; min-height: 0; }
+
+.map { flex: 1; position: relative; min-width: 0; }
+#map { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+#map.dragging { cursor: grabbing; }
+.hint { position: absolute; left: 12px; bottom: 8px; font-size: 12px; color: var(--muted); pointer-events: none; }
+
+aside {
+  width: 340px;
+  border-left: 1px solid var(--line);
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+aside section { padding: 12px 16px; border-bottom: 1px solid var(--line); }
+aside h2 { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 3px 4px; }
+th { font-weight: 600; color: var(--muted); font-size: 12px; }
+
+.legend { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.swatch { display: inline-block; width: 22px; height: 6px; margin-right: 8px; vertical-align: middle; border-radius: 3px; }
+.swatch.free { background: var(--block); }
+.swatch.occupied { background: var(--occupied); }
+.swatch.transfer { background: var(--transfer); }
+.swatch.closed { background: var(--closed); }
+.swatch.lit { background: var(--lit); }
+
+.log-section { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.log { margin: 0; padding: 0; list-style: none; overflow-y: auto; font: 12px/1.45 ui-monospace, "SF Mono", Menlo, monospace; color: var(--muted); }
+.log li:first-child { color: var(--text); }
+
+/* The map. Sizes are in millimetres of the layout. */
+.module { fill: var(--module); stroke: var(--module-edge); stroke-width: 3; }
+.module-label { fill: var(--muted); font-size: 46px; }
+.district-label { fill: var(--accent); font-size: 70px; font-weight: 700; }
+.platform { fill: var(--platform); }
+.road { fill: none; stroke: var(--road); stroke-width: 70; stroke-linecap: butt; }
+.building { fill: var(--building); stroke: var(--module-edge); stroke-width: 3; }
+.building.lit { fill: var(--lit); filter: drop-shadow(0 0 18px var(--lit)); }
+.building-label { fill: var(--text); font-size: 34px; }
+.track { fill: none; stroke: var(--track); stroke-width: 6; stroke-linecap: round; stroke-linejoin: round; }
+.block { fill: none; stroke: var(--block); stroke-width: 14; stroke-linecap: butt; opacity: 0.9; }
+.block.transfer { stroke: var(--transfer); }
+.block.occupied { stroke: var(--occupied); }
+.turnout { stroke: var(--bg); stroke-width: 4; }
+.turnout.straight { fill: var(--straight); }
+.turnout.diverging { fill: var(--diverging); }
+.turnout-label { fill: var(--muted); font-size: 30px; }
+.crossing { fill: var(--muted); }
+.crossing.closed { fill: var(--closed); animation: blink 0.9s steps(2, start) infinite; }
+.barrier { stroke: var(--muted); stroke-width: 8; }
+.closed-barrier .barrier { stroke: var(--closed); }
+.station-label { fill: var(--text); font-size: 64px; font-weight: 700; }
+.train { fill: none; stroke-width: 26; stroke-linecap: round; stroke-linejoin: round; opacity: 0.95; }
+.train-head { stroke: var(--bg); stroke-width: 4; }
+.train-label { font-size: 44px; font-weight: 700; paint-order: stroke; stroke: var(--bg); stroke-width: 10px; }
+
+@keyframes blink { to { visibility: hidden; } }
+
+@media (max-width: 800px) {
+  main { flex-direction: column; }
+  aside { width: auto; border-left: 0; border-top: 1px solid var(--line); max-height: 45%; }
+}

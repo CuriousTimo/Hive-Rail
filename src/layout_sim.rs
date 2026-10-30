@@ -162,9 +162,30 @@ impl<'a> LayoutSim<'a> {
         self.turnouts.get(&format!("{module}/{turnout}")).copied()
     }
 
-    /// The stretches of track a train covers, per piece, in mm from the piece's `from`
-    /// point.
-    fn covered(&self, train: &Train) -> Vec<(PieceId, f64, f64)> {
+    /// The blocks occupied now (`module/block`).
+    pub fn occupied(&self) -> &BTreeSet<String> {
+        &self.occupied
+    }
+
+    /// The level crossings closed now (`module/crossing`).
+    pub fn closed_crossings(&self) -> impl Iterator<Item = &String> {
+        self.crossing_trains
+            .iter()
+            .filter(|(_, trains)| !trains.is_empty())
+            .map(|(key, _)| key)
+    }
+
+    /// The stretches of track a train covers, head first, per piece, in mm from the
+    /// piece's `from` point.
+    pub fn covered(&self, train: &Train) -> Vec<(PieceId, f64, f64)> {
+        self.covered_with_heading(train)
+            .into_iter()
+            .map(|(piece, _, a, b)| (piece, a, b))
+            .collect()
+    }
+
+    /// As `covered`, with the heading the train runs along each piece.
+    pub fn covered_with_heading(&self, train: &Train) -> Vec<(PieceId, Heading, f64, f64)> {
         let mut spans = Vec::new();
         let mut remaining = train.length_mm;
         let mut place = (
@@ -180,7 +201,7 @@ impl<'a> LayoutSim<'a> {
                 Heading::Forward => (start, place.2),
                 Heading::Backward => (length - place.2, length - start),
             };
-            spans.push((place.0.clone(), a, b));
+            spans.push((place.0.clone(), place.1, a, b));
             remaining -= place.2 - start;
             if remaining <= 0.0 {
                 break;

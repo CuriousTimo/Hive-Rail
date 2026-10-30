@@ -4,6 +4,7 @@ mod dccex;
 mod dispatcher;
 mod layout;
 mod layout_sim;
+mod layout_view;
 mod lbclient;
 mod lbserver;
 mod lnserial;
@@ -18,6 +19,7 @@ mod simulation;
 mod topology;
 mod turnouts;
 mod ui;
+mod web;
 
 use std::{env, path::Path, process::ExitCode};
 
@@ -52,6 +54,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Some("--transfer-loco") => dispatcher::transfer_loco(args.collect()).await,
         Some("--check-layout") => check_layout(args.collect()),
         Some("--simulate-layout") => simulate_layout(args.collect()),
+        Some("--web-sim") => web::run_sim(args.collect()).await,
         Some("--validate-profile") => {
             let path = args.next().ok_or("expected a profile path")?;
             let profile = profile::load(Path::new(&path))?;
@@ -199,6 +202,7 @@ fn print_help() {
          cargo run -- --validate-profile <path>\n\
          cargo run -- --check-layout <layout.json> [--modules <dir>]\n\
          cargo run -- --simulate-layout <layout.json> [--seconds N]\n\
+         cargo run -- --web-sim <layout.json> [--port 8080] [--speed 1]   (web view: http://localhost:8080)\n\
          cargo run -- --config <file.toml> [more options]\n\
          cargo run -- --help\n\n\
          --config reads the options from a TOML file: each key is a flag without its dashes, a [table] a flag\n\
