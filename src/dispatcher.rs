@@ -44,6 +44,8 @@ struct Args {
     listen: Option<String>,
     connect: Option<String>,
     plain: bool,
+    /// Serve lite nodes, as a node with `--lite-server` does.
+    lite_server: bool,
 }
 
 fn parse_args(args: Vec<String>) -> Result<Args, Box<dyn Error + Send + Sync>> {
@@ -52,6 +54,7 @@ fn parse_args(args: Vec<String>) -> Result<Args, Box<dyn Error + Send + Sync>> {
     let mut listen = None;
     let mut connect = None;
     let mut plain = false;
+    let mut lite_server = false;
     let mut args = args.into_iter();
     while let Some(flag) = args.next() {
         let mut value = || {
@@ -64,6 +67,7 @@ fn parse_args(args: Vec<String>) -> Result<Args, Box<dyn Error + Send + Sync>> {
             "--listen" => listen = Some(value()?),
             "--connect" => connect = Some(value()?),
             "--plain" => plain = true,
+            "--lite-server" => lite_server = true,
             _ => return Err(format!("unknown dispatcher option: {flag}").into()),
         }
     }
@@ -73,6 +77,7 @@ fn parse_args(args: Vec<String>) -> Result<Args, Box<dyn Error + Send + Sync>> {
         listen,
         connect,
         plain,
+        lite_server,
     })
 }
 
@@ -330,6 +335,7 @@ impl Mesh {
         let session = zenoh::open(zenoh_config(
             args.listen.as_deref(),
             args.connect.as_deref(),
+            args.lite_server,
         )?)
         .await?;
         let s = &args.session;

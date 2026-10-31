@@ -3,6 +3,7 @@ mod config;
 mod dccex;
 mod dispatcher;
 mod layout;
+mod layout_share;
 mod layout_sim;
 mod layout_view;
 mod lbclient;
@@ -196,6 +197,8 @@ fn print_help() {
          cargo run -- --mode node --session <name> --id <id> --loconet-tcp [port]\n\
          cargo run -- --mode node --session <name> --id <id> --dccex <serial port | host:2560>\n\
          cargo run -- --mode node --session <name> --id <id> --plain\n\
+         cargo run -- --mode node --session <name> --id <id> --layout <layout.json>   (share each district's part with lite nodes)\n\
+         cargo run -- --mode node --session <name> --id <id> --lite-server   (serve lite nodes: a Zenoh router they find by scouting)\n\
          cargo run -- --mode dispatcher --session <name> [--plain]\n\
          cargo run -- --show-locos --session <name>\n\
          cargo run -- --transfer-loco <address> --to <node> --session <name> [--speed 0-126] [--forward|--reverse] [--lights|--no-lights]\n\

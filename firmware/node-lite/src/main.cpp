@@ -70,6 +70,24 @@ static Node nodes[MAX_NODES];
 static int node_count = 0;
 static portMUX_TYPE nodes_lock = portMUX_INITIALIZER_UNLOCKED;
 
+// The district's part of the layout, from a full node started with --layout.
+struct LayoutBlock {
+    char id[40];
+    char role[10];
+    int address;
+};
+static const int MAX_LAYOUT_BLOCKS = 16;
+static struct {
+    bool known;
+    char checksum[20];
+    char modules[64];
+    char borders[48];
+    int sensors, signals, turnouts, crossings, block_count;
+    LayoutBlock blocks[MAX_LAYOUT_BLOCKS];
+} district_layout = {};
+static portMUX_TYPE layout_lock = portMUX_INITIALIZER_UNLOCKED;
+static volatile bool layout_arrived = false;
+
 // The Zenoh ID of the node this client is connected to, and that node's name.
 static char via_zid[33] = "";
 static char via[24] = "";
@@ -339,6 +357,30 @@ static void show(const char *status) {
                  (unsigned long)(up % 60));
         d.setTextColor(TFT_CYAN, TFT_BLACK);
         d.printf("%.26s", last_event);
+    } else if (page == 2) {
+        // The district's part of the layout, from the mesh.
+        portENTER_CRITICAL(&layout_lock);
+        auto copy = district_layout;
+        portEXIT_CRITICAL(&layout_lock);
+        if (!copy.known) {
+            d.setTextColor(TFT_ORANGE, TFT_BLACK);
+            d.println("Layout: asking the mesh ...");
+            d.setTextColor(TFT_WHITE, TFT_BLACK);
+            d.println("(a full node with --layout");
+            d.println(" answers)");
+        } else {
+            d.setTextColor(TFT_GREEN, TFT_BLACK);
+            d.printf("Layout %s\n", copy.checksum);
+            d.setTextColor(TFT_WHITE, TFT_BLACK);
+            d.printf("%.26s\n", copy.modules);
+            d.printf("%d blocks %d sensors %d sig\n", copy.block_count, copy.sensors, copy.signals);
+            d.printf("borders: %.18s\n", copy.borders);
+            for (int i = 0; i < copy.block_count && i < 2; i++) {
+                const char *name = strchr(copy.blocks[i].id, '/');
+                d.printf("%-10.10s %-8.8s %d\n", name ? name + 1 : copy.blocks[i].id, copy.blocks[i].role,
+                         copy.blocks[i].address);
+            }
+        }
     } else {
         uint32_t now = millis();
         portENTER_CRITICAL(&nodes_lock);
@@ -374,6 +416,162 @@ static void halt(const char *why) {
     while (true) {
         delay(1000);
     }
+}
+
+// Lite servers (full nodes started with --lite-server) run Zenoh as routers: the lite node finds
+// them by scouting for routers. Only if none answers, the addresses in HIVE_LOCATORS
+// ("tcp/a:7447,tcp/b:7448") or HIVE_LOCATOR are tried in turn.
+#ifndef HIVE_LOCATORS
+#define HIVE_LOCATORS HIVE_LOCATOR
+#endif
+static const char *SCOUTED = "scouting";
+static bool zenoh_up = false;
+static char connected_locator[48] = "";
+// zenoh-pico does not always report a session as closed when its node is gone; failing
+// heartbeats do: after this many in a row (2 s) the lite node moves to the next full node.
+static const int MAX_FAILED_HEARTBEATS = 8;
+static int failed_heartbeats = 0;
+
+
+static void on_layout(z_loaned_reply_t *reply, void *) {
+    if (!z_reply_is_ok(reply)) {
+        return;
+    }
+    const z_loaned_sample_t *sample = z_reply_ok(reply);
+    z_owned_string_t text;
+    z_bytes_to_string(z_sample_payload(sample), &text);
+    JsonDocument doc;
+    DeserializationError error =
+        deserializeJson(doc, z_string_data(z_string_loan(&text)), z_string_len(z_string_loan(&text)));
+    z_string_drop(z_string_move(&text));
+    if (error) {
+        return;
+    }
+    // Parsed outside the lock, copied in under it.
+    static LayoutBlock blocks[MAX_LAYOUT_BLOCKS];
+    int count = 0;
+    for (JsonObject b : doc["blocks"].as<JsonArray>()) {
+        if (count == MAX_LAYOUT_BLOCKS) {
+            break;
+        }
+        strlcpy(blocks[count].id, b["id"] | "", sizeof(blocks[count].id));
+        strlcpy(blocks[count].role, b["role"] | "", sizeof(blocks[count].role));
+        blocks[count].address = b["address"] | -1;
+        count++;
+    }
+    char modules[64] = "", borders[48] = "";
+    for (JsonVariant m : doc["modules"].as<JsonArray>()) {
+        if (modules[0]) {
+            strlcat(modules, " ", sizeof(modules));
+        }
+        strlcat(modules, m.as<const char *>(), sizeof(modules));
+    }
+    for (JsonObject b : doc["borders"].as<JsonArray>()) {
+        if (borders[0]) {
+            strlcat(borders, " ", sizeof(borders));
+        }
+        strlcat(borders, b["to"] | "?", sizeof(borders));
+    }
+    portENTER_CRITICAL(&layout_lock);
+    district_layout.known = true;
+    strlcpy(district_layout.checksum, doc["layout_checksum"] | "", sizeof(district_layout.checksum));
+    strlcpy(district_layout.modules, modules, sizeof(district_layout.modules));
+    strlcpy(district_layout.borders, borders, sizeof(district_layout.borders));
+    district_layout.sensors = doc["sensors"].size();
+    district_layout.signals = doc["signals"].size();
+    district_layout.turnouts = doc["turnouts"].size();
+    district_layout.crossings = doc["crossings"].size();
+    district_layout.block_count = count;
+    memcpy(district_layout.blocks, blocks, sizeof(LayoutBlock) * count);
+    portEXIT_CRITICAL(&layout_lock);
+    layout_arrived = true;
+}
+
+// Asks the mesh for this district's part of the layout; a full node with --layout answers.
+static void fetch_layout() {
+    char key[96];
+    snprintf(key, sizeof(key), "hive/%s/layout/district/%s", HIVE_SESSION, HIVE_NODE_ID);
+    z_view_keyexpr_t ke;
+    z_view_keyexpr_from_str_unchecked(&ke, key);
+    z_owned_closure_reply_t callback;
+    z_closure_reply(&callback, on_layout, NULL, NULL);
+    z_get_options_t options;
+    z_get_options_default(&options);
+    options.timeout_ms = 3000;
+    z_get(z_session_loan(&session), z_view_keyexpr_loan(&ke), "", z_closure_reply_move(&callback), &options);
+}
+
+static bool declare(int result) {
+    return result >= 0;
+}
+
+// Opens the session through a lite server found by scouting, else through the first address in
+// HIVE_LOCATORS that answers, and declares everything.
+static bool open_zenoh() {
+    char locators[160];
+    strlcpy(locators, HIVE_LOCATORS, sizeof(locators));
+    const char *candidates[8] = {SCOUTED};
+    int count = 1;
+    for (char *locator = strtok(locators, ","); locator && count < 8; locator = strtok(NULL, ",")) {
+        candidates[count++] = locator;
+    }
+    for (int c = 0; c < count; c++) {
+        const char *locator = candidates[c];
+        char text[64];
+        snprintf(text, sizeof(text), locator == SCOUTED ? "Zenoh: looking for lite servers" : "Zenoh %s ...",
+                 locator);
+        show(text);
+        z_owned_config_t config;
+        z_config_default(&config);
+        zp_config_insert(z_config_loan_mut(&config), Z_CONFIG_MODE_KEY, "client");
+        if (locator == SCOUTED) {
+            // Routers only (1): the lite servers. Ordinary nodes are peers and do not answer.
+            zp_config_insert(z_config_loan_mut(&config), Z_CONFIG_SCOUTING_WHAT_KEY, "1");
+            zp_config_insert(z_config_loan_mut(&config), Z_CONFIG_SCOUTING_TIMEOUT_KEY, "3000");
+        } else {
+            zp_config_insert(z_config_loan_mut(&config), Z_CONFIG_CONNECT_KEY, locator);
+        }
+        if (z_open(&session, z_config_move(&config), NULL) < 0) {
+            Serial.printf("Zenoh: no answer from %s\n", locator);
+            continue;
+        }
+        strlcpy(connected_locator, locator, sizeof(connected_locator));
+        session_open = true;
+        z_id_t id = z_info_zid(z_session_loan(&session));
+        zid_text(&id, own_zid);
+        Serial.printf("Zenoh client to %s, zid %s, free heap %u\n", locator, own_zid, ESP.getFreeHeap());
+
+        static char key_hb[96], key_peers[96], key_all[64], key_status[96], key_events[96];
+        snprintf(key_hb, sizeof(key_hb), "hive/%s/node/%s/hb", HIVE_SESSION, HIVE_NODE_ID);
+        snprintf(key_peers, sizeof(key_peers), "hive/%s/node/*/hb", HIVE_SESSION);
+        snprintf(key_all, sizeof(key_all), "hive/%s/rn/cs/all", HIVE_SESSION);
+        snprintf(key_status, sizeof(key_status), "hive/%s/rn/cs/node/%s", HIVE_SESSION, HIVE_NODE_ID);
+        snprintf(key_events, sizeof(key_events), "hive/%s/node/%s/event", HIVE_SESSION, HIVE_NODE_ID);
+        z_view_keyexpr_t ke_hb, ke_peers, ke_all, ke_status, ke_events;
+        z_view_keyexpr_from_str_unchecked(&ke_hb, key_hb);
+        z_view_keyexpr_from_str_unchecked(&ke_peers, key_peers);
+        z_view_keyexpr_from_str_unchecked(&ke_all, key_all);
+        z_view_keyexpr_from_str_unchecked(&ke_status, key_status);
+        z_view_keyexpr_from_str_unchecked(&ke_events, key_events);
+        z_owned_closure_sample_t peers_cb, stop_cb;
+        z_closure_sample(&peers_cb, on_heartbeat, NULL, NULL);
+        z_closure_sample(&stop_cb, on_global_stop, NULL, NULL);
+        const z_loaned_session_t *zs = z_session_loan(&session);
+        if (declare(z_declare_publisher(zs, &heartbeat, z_view_keyexpr_loan(&ke_hb), NULL)) &&
+            declare(z_declare_subscriber(zs, &peers, z_view_keyexpr_loan(&ke_peers), z_closure_sample_move(&peers_cb),
+                                         NULL)) &&
+            declare(z_declare_publisher(zs, &global_stop_out, z_view_keyexpr_loan(&ke_all), NULL)) &&
+            declare(z_declare_publisher(zs, &power_status, z_view_keyexpr_loan(&ke_status), NULL)) &&
+            declare(z_declare_publisher(zs, &events, z_view_keyexpr_loan(&ke_events), NULL)) &&
+            declare(z_declare_subscriber(zs, &global_stop, z_view_keyexpr_loan(&ke_all), z_closure_sample_move(&stop_cb),
+                                         NULL))) {
+            return true;
+        }
+        Serial.println("Zenoh: declarations failed");
+        z_session_drop(z_session_move(&session));
+        session_open = false;
+    }
+    return false;
 }
 
 void setup() {
@@ -433,62 +631,19 @@ void setup() {
     ArduinoOTA.begin();
 #endif
 
-    show("Zenoh ...");
-    z_owned_config_t config;
-    z_config_default(&config);
-    zp_config_insert(z_config_loan_mut(&config), Z_CONFIG_MODE_KEY, "client");
-    zp_config_insert(z_config_loan_mut(&config), Z_CONFIG_CONNECT_KEY, HIVE_LOCATOR);
-    if (z_open(&session, z_config_move(&config), NULL) < 0) {
-        halt("Zenoh: cannot open the session");
-    }
-    session_open = true;
-    z_id_t id = z_info_zid(z_session_loan(&session));
-    zid_text(&id, own_zid);
-    Serial.printf("Zenoh client to %s, zid %s, free heap %u\n", HIVE_LOCATOR, own_zid, ESP.getFreeHeap());
-
-    char key[96];
-    snprintf(key, sizeof(key), "hive/%s/node/%s/hb", HIVE_SESSION, HIVE_NODE_ID);
-    z_view_keyexpr_t ke;
-    z_view_keyexpr_from_str_unchecked(&ke, key);
-    if (z_declare_publisher(z_session_loan(&session), &heartbeat, z_view_keyexpr_loan(&ke), NULL) < 0) {
-        halt("Zenoh: no heartbeat publisher");
-    }
-
-    static char peers_key[96];
-    snprintf(peers_key, sizeof(peers_key), "hive/%s/node/*/hb", HIVE_SESSION);
-    z_owned_closure_sample_t callback;
-    z_closure_sample(&callback, on_heartbeat, NULL, NULL);
-    z_view_keyexpr_t peers_ke;
-    z_view_keyexpr_from_str_unchecked(&peers_ke, peers_key);
-    if (z_declare_subscriber(z_session_loan(&session), &peers, z_view_keyexpr_loan(&peers_ke),
-                             z_closure_sample_move(&callback), NULL) < 0) {
-        halt("Zenoh: no heartbeat subscriber");
-    }
-
-    // District power: the global stop both ways, this district's status, events.
-    static char key_all[64], key_status[96], key_events[96];
-    snprintf(key_all, sizeof(key_all), "hive/%s/rn/cs/all", HIVE_SESSION);
-    snprintf(key_status, sizeof(key_status), "hive/%s/rn/cs/node/%s", HIVE_SESSION, HIVE_NODE_ID);
-    snprintf(key_events, sizeof(key_events), "hive/%s/node/%s/event", HIVE_SESSION, HIVE_NODE_ID);
-    z_view_keyexpr_t ke_all, ke_status, ke_events;
-    z_view_keyexpr_from_str_unchecked(&ke_all, key_all);
-    z_view_keyexpr_from_str_unchecked(&ke_status, key_status);
-    z_view_keyexpr_from_str_unchecked(&ke_events, key_events);
-    z_owned_closure_sample_t stop_cb;
-    z_closure_sample(&stop_cb, on_global_stop, NULL, NULL);
-    if (z_declare_publisher(z_session_loan(&session), &global_stop_out, z_view_keyexpr_loan(&ke_all), NULL) < 0 ||
-        z_declare_publisher(z_session_loan(&session), &power_status, z_view_keyexpr_loan(&ke_status), NULL) < 0 ||
-        z_declare_publisher(z_session_loan(&session), &events, z_view_keyexpr_loan(&ke_events), NULL) < 0 ||
-        z_declare_subscriber(z_session_loan(&session), &global_stop, z_view_keyexpr_loan(&ke_all),
-                             z_closure_sample_move(&stop_cb), NULL) < 0) {
-        halt("Zenoh: no power keys");
-    }
+    zenoh_up = open_zenoh();
 #ifdef HIVE_SCREEN
     pinMode(RED_LED, OUTPUT);
     digitalWrite(RED_LED, HIGH);
 #endif
-    publish_power();
-    event("lite node started, district power OFF");
+    if (zenoh_up) {
+        publish_power();
+        char text[80];
+        snprintf(text, sizeof(text), "lite node started (found its server by %s), power OFF",
+                 strcmp(connected_locator, SCOUTED) == 0 ? "scouting" : connected_locator);
+        event(text);
+        fetch_layout();
+    }
     // If loop() ever hangs for more than a few seconds, the ESP32 restarts.
     enableLoopWDT();
 }
@@ -498,7 +653,58 @@ void loop() {
     static uint32_t next_screen = 0;
     static uint32_t next_via = 0;
     static uint32_t next_cpu = 0;
+    static uint32_t next_zenoh_check = 0;
+    static uint32_t next_layout = 0;
     uint32_t now = millis();
+    // The node carrying this one gone: reconnect, through whichever full node answers.
+    if (now >= next_zenoh_check) {
+        next_zenoh_check = now + 2000;
+        if (zenoh_up &&
+            (z_session_is_closed(z_session_loan(&session)) || failed_heartbeats >= MAX_FAILED_HEARTBEATS)) {
+            // The lite server is gone. Closing the dead session can hang in zenoh-pico, so the
+            // lite node restarts and scouts for another lite server on the way up (a few
+            // seconds). The district's power state starts OFF again, as after any restart.
+            Serial.printf("Zenoh: lite server at %s gone, restarting to find another\n", connected_locator);
+            show("Lite server gone: restarting");
+            delay(300);
+            ESP.restart();
+        }
+        if (!zenoh_up) {
+            // Opening may wait on a node that is gone: longer than the loop watchdog allows.
+            disableLoopWDT();
+            zenoh_up = open_zenoh();
+            enableLoopWDT();
+            next_zenoh_check = now + 5000;
+            if (zenoh_up) {
+                publish_power();
+                char text[80];
+                snprintf(text, sizeof(text), "reconnected through %s", connected_locator);
+                event(text);
+                next_layout = 0;
+            }
+        }
+    }
+    if (zenoh_up && !district_layout.known && now >= next_layout) {
+        next_layout = now + 10000;
+        fetch_layout();
+    }
+    if (layout_arrived) {
+        layout_arrived = false;
+        char text[80];
+        snprintf(text, sizeof(text), "layout %s: %d blocks, borders to %s", district_layout.checksum,
+                 district_layout.block_count, district_layout.borders);
+        event(text);
+    }
+    if (!zenoh_up) {
+#ifdef HIVE_SCREEN
+        if (now >= next_screen) {
+            next_screen = now + 500;
+            show(nullptr);
+        }
+#endif
+        delay(10);
+        return;
+    }
     if (now >= next_cpu) {
         next_cpu = now + 1000;
         measure_cpu();
@@ -536,7 +742,7 @@ void loop() {
     // Front button: a single press is the next page, a double press the global emergency stop.
     // A single press counts once the time for a second press has passed.
     if (M5.BtnA.wasSingleClicked()) {
-        page = (page + 1) % 2;
+        page = (page + 1) % 3;
         next_screen = 0;
     }
     if (M5.BtnA.wasDoubleClicked()) {
@@ -578,7 +784,10 @@ void loop() {
         z_owned_bytes_t payload;
         z_bytes_copy_from_str(&payload, json);
         if (z_publisher_put(z_publisher_loan(&heartbeat), z_bytes_move(&payload), NULL) < 0) {
-            Serial.println("heartbeat not sent");
+            failed_heartbeats++;
+            Serial.printf("heartbeat not sent (%d)\n", failed_heartbeats);
+        } else {
+            failed_heartbeats = 0;
         }
         if (seq % 40 == 0) {
             Serial.printf("-> heartbeat %lu via %s; %lu received; free heap %u, lowest %u; cpu %u%% / %u%%\n",

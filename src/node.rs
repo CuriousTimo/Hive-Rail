@@ -15,7 +15,7 @@ use chrono::Local;
 use serde::{Deserialize, Serialize};
 use serialport::FlowControl;
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{BTreeMap, HashMap, HashSet, VecDeque},
     error::Error,
     io::{self, BufRead, IsTerminal},
     net::{Ipv4Addr, SocketAddrV4},
@@ -71,6 +71,10 @@ struct NodeArgs {
     loconet_connect_slots: SlotOwner,
     dccex: Option<String>,
     plain: bool,
+    /// A layout file to share: each district's part, for lite nodes.
+    layout: Option<String>,
+    /// Serve lite nodes: Zenoh in router mode, found by their scouting.
+    lite_server: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -97,6 +101,9 @@ pub(crate) struct Heartbeat {
     /// The node a lite node reaches the mesh through.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) via: Option<String>,
+    /// A full node that serves lite nodes (`--lite-server`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) lite_server: bool,
 }
 
 /// A node asking the allocator for a throttle number, on `hive/{session}/locos/request`.
@@ -243,8 +250,15 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
     let session = zenoh::open(zenoh_config(
         options.listen.as_deref(),
         options.connect.as_deref(),
+        options.lite_server,
     )?)
     .await?;
+    if options.lite_server {
+        println!(
+            "lite server: lite nodes find this node by scouting (Zenoh router on {})",
+            options.listen.as_deref().unwrap_or(LITE_SERVER_ENDPOINT)
+        );
+    }
     let key = format!("hive/{}/node/{}/hb", options.session, options.id);
     let subscriber_key = format!("hive/{}/node/*/hb", options.session);
     let publisher = session.declare_publisher(key).await?;
@@ -304,6 +318,29 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
     let observer_subscriber = session
         .declare_subscriber(format!("hive/{}/observer/hello", options.session))
         .await?;
+    // With --layout: each district's part of the layout, for lite nodes that ask.
+    let layout_packages: BTreeMap<String, String> = match &options.layout {
+        Some(path) => {
+            let path = std::path::Path::new(path);
+            let layout =
+                crate::layout::load(path, path.parent().unwrap_or(std::path::Path::new(".")))?;
+            crate::layout_share::district_packages(&layout)
+                .into_iter()
+                .map(|(district, package)| Ok((district, serde_json::to_string(&package)?)))
+                .collect::<Result<_, serde_json::Error>>()?
+        }
+        None => BTreeMap::new(),
+    };
+    // Only a node with the layout answers; a querier gets no empty answers from the others.
+    let layout_queryable = if layout_packages.is_empty() {
+        None
+    } else {
+        Some(
+            session
+                .declare_queryable(format!("hive/{}/layout/district/*", options.session))
+                .await?,
+        )
+    };
     let command_station_subscriber = session
         .declare_subscriber(format!("hive/{}/rn/cs/**", options.session))
         .await?;
@@ -491,6 +528,7 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                     zid: Some(session.zid().to_string()),
                     lite: false,
                     via: None,
+                    lite_server: options.lite_server,
                 };
                 publisher.put(serde_json::to_vec(&message)?).await?;
                 track_register_mismatch(&peers, register.checksum(), &mut register_mismatch);
@@ -566,10 +604,11 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                         Some((true, _)) => {}
                         _ => {
                             log.event(format!(
-                                "Peer {} online (RocNet {}{}, seq {}, power {})",
+                                "Peer {} online (RocNet {}{}{}, seq {}, power {})",
                                 message.node,
                                 message.rocnet_id.map_or_else(|| "unknown".to_owned(), |id| id.to_string()),
                                 message.via.as_ref().map(|via| format!(", lite node via {via}")).unwrap_or_default(),
+                                if message.lite_server { ", lite server" } else { "" },
                                 message.seq,
                                 message.power
                             ));
@@ -906,6 +945,17 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                         }
                     }
                     Err(error) => log.line(format!("[mesh] <- ignored invalid loco update from {origin}: {error}")),
+                }
+            }
+            query = next_query(layout_queryable.as_ref()) => {
+                let query = query?;
+                let district = query.key_expr().as_str().rsplit('/').next().unwrap_or("").to_owned();
+                match layout_packages.get(&district) {
+                    Some(package) => {
+                        query.reply(query.key_expr().clone(), package.clone()).await?;
+                        log.event(format!("Layout for district {district} sent ({} bytes)", package.len()));
+                    }
+                    None => log.line(format!("[mesh] <- layout asked for unknown district {district}")),
                 }
             }
             sample = observer_subscriber.recv_async() => {
@@ -1278,17 +1328,41 @@ fn next_stdin_command(
 }
 
 /// Peer mode with multicast scouting on the LAN; endpoints are optional overrides.
+/// A lite server's Zenoh endpoint when `--listen` gives none.
+pub(crate) const LITE_SERVER_ENDPOINT: &str = "tcp/0.0.0.0:7447";
+
+/// The Zenoh configuration of a node or the dispatcher. A **lite server** runs Zenoh as a
+/// router: lite nodes (zenoh-pico clients) find routers by scouting and attach to one, while
+/// ordinary nodes stay peers and are not picked. Several lite servers give lite nodes a
+/// failover.
 pub(crate) fn zenoh_config(
     listen: Option<&str>,
     connect: Option<&str>,
+    lite_server: bool,
 ) -> Result<Config, Box<dyn Error + Send + Sync>> {
     let mut config = Config::default();
-    config.insert_json5("mode", "\"peer\"")?;
+    config.insert_json5(
+        "mode",
+        if lite_server {
+            "\"router\""
+        } else {
+            "\"peer\""
+        },
+    )?;
+    let listen = listen.or(lite_server.then_some(LITE_SERVER_ENDPOINT));
     config.insert_json5("scouting/multicast/enabled", "true")?;
     config.insert_json5(
         "scouting/multicast/address",
         &format!("\"{ZENOH_SCOUTING_ADDRESS}\""),
     )?;
+    if lite_server {
+        // A router does not connect to what it discovers by default; lite servers must,
+        // or two of them stay separate islands.
+        config.insert_json5(
+            "scouting/multicast/autoconnect",
+            r#"{ router: ["router", "peer"], peer: ["router", "peer"] }"#,
+        )?;
+    }
     if let Some(endpoint) = listen {
         config.insert_json5("listen/endpoints", &format!("[\"{endpoint}\"]"))?;
     }
@@ -1296,6 +1370,18 @@ pub(crate) fn zenoh_config(
         config.insert_json5("connect/endpoints", &format!("[\"{endpoint}\"]"))?;
     }
     Ok(config)
+}
+
+/// The next query for a district's layout; without a layout, never.
+async fn next_query(
+    queryable: Option<
+        &zenoh::query::Queryable<zenoh::handlers::FifoChannelHandler<zenoh::query::Query>>,
+    >,
+) -> Result<zenoh::query::Query, Box<dyn Error + Send + Sync>> {
+    match queryable {
+        Some(queryable) => Ok(queryable.recv_async().await?),
+        None => std::future::pending().await,
+    }
 }
 
 /// The layout-wide state, from this district and every online peer.
@@ -1537,6 +1623,8 @@ fn parse_args(args: Vec<String>) -> Result<NodeArgs, Box<dyn Error + Send + Sync
     let mut loconet_fast_clock = None;
     let mut dccex = None;
     let mut plain = false;
+    let mut layout_file = None;
+    let mut lite_server = false;
     let mut args = args.into_iter().peekable();
 
     while let Some(flag) = args.next() {
@@ -1549,6 +1637,8 @@ fn parse_args(args: Vec<String>) -> Result<NodeArgs, Box<dyn Error + Send + Sync
             "--connect" => connect = Some(next_value(&mut args, &flag)?),
             "--send-rocnet-hex" => send_rocnet_hex = Some(next_value(&mut args, &flag)?),
             "--dccex" => dccex = Some(next_value(&mut args, &flag)?),
+            "--layout" => layout_file = Some(next_value(&mut args, &flag)?),
+            "--lite-server" => lite_server = true,
             "--loconet-tcp-slots" | "--loconet-connect-slots" => {
                 let value = next_value(&mut args, &flag)?;
                 let owner = SlotOwner::parse(&value).ok_or_else(|| {
@@ -1677,6 +1767,8 @@ fn parse_args(args: Vec<String>) -> Result<NodeArgs, Box<dyn Error + Send + Sync
         loconet_udp_interface,
         dccex,
         plain,
+        layout: layout_file,
+        lite_server,
     })
 }
 

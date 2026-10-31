@@ -8,6 +8,10 @@
 // --listen tcp/0.0.0.0:7447 on the computer at this address.
 #define HIVE_LOCATOR "tcp/192.168.60.127:7447"
 
+// Optional: several full nodes, tried in turn; the lite node moves to the next when its
+// node goes away (failover). Without it, HIVE_LOCATOR alone.
+// #define HIVE_LOCATORS "tcp/192.168.60.127:7447,tcp/192.168.60.127:7448"
+
 // Password for firmware updates over Wi-Fi (ArduinoOTA).
 #define HIVE_OTA_PASS "choose-one"
 
