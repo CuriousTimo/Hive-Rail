@@ -367,9 +367,9 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
     let mut throttle_requests: HashMap<u16, Instant> = HashMap::new();
     // Peers whose loco register checksum differs from ours, and since when.
     let mut register_mismatch: HashMap<String, Instant> = HashMap::new();
-    // The last global emergency stop (who, when), and the layout power last reported.
+    // The last global emergency stop (who, when), and the global state last reported.
     let mut global_stop: Option<(String, String)> = None;
-    let mut layout_reported = String::new();
+    let mut global_reported = "normal".to_owned();
     let (dccex_driver, mut dccex_events) = match options.dccex.clone() {
         Some(target) => {
             let (driver, events) = dccex::start(target);
@@ -494,11 +494,11 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                 };
                 publisher.put(serde_json::to_vec(&message)?).await?;
                 track_register_mismatch(&peers, register.checksum(), &mut register_mismatch);
-                // The layout's power: an event when it changes, so the plain CLI sees it too.
-                let layout = layout_power_of(&options.id, power.station.state().label(), &peers, global_stop.as_ref());
-                if layout.label != layout_reported {
-                    log.event(format!("Layout power: {}", layout.label));
-                    layout_reported = layout.label;
+                // The global state: an event when it changes, so the plain CLI sees it too.
+                let global = global_state_of(power.station.state().label(), &peers, global_stop.as_ref());
+                if global.label != global_reported {
+                    log.event(format!("Global state: {}", global.label));
+                    global_reported = global.label;
                 }
                 // Once a second: the node board's screen, also its link heartbeat.
                 if let (Some(driver), Some(_)) = (outputs.dccex, board_protocol) {
@@ -1073,7 +1073,7 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                     let now = Instant::now();
                     let allocator = lowest_online_id(&peers, &options.id).to_owned();
                     let slot_sync = register_sync_label(&peers, &register_mismatch);
-                    let layout_power = layout_power_of(&options.id, power.station.state().label(), &peers, global_stop.as_ref());
+                    let global = global_state_of(power.station.state().label(), &peers, global_stop.as_ref());
                     let mut peers: Vec<PeerRow> = peers.iter().map(|(id, peer)| PeerRow {
                         id: id.clone(),
                         online: peer.online,
@@ -1107,7 +1107,7 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                         scouting: ZENOH_SCOUTING_ADDRESS.to_owned(),
                         heartbeat_interval: HEARTBEAT_INTERVAL,
                         last_event: log.last_event.clone(),
-                        layout_power,
+                        global,
                         peers,
                         cli_output: log.lines.iter().cloned().collect(),
                     })?;
@@ -1298,22 +1298,20 @@ pub(crate) fn zenoh_config(
     Ok(config)
 }
 
-/// The layout's power from this district and every online peer.
-fn layout_power_of(
-    own_id: &str,
+/// The layout-wide state, from this district and every online peer.
+fn global_state_of(
     own_power: &str,
     peers: &HashMap<String, PeerState>,
     global_stop: Option<&(String, String)>,
-) -> crate::power::LayoutPower {
-    let mut districts: Vec<(&str, &str)> = vec![(own_id, own_power)];
-    districts.extend(
+) -> crate::power::GlobalState {
+    let mut powers: Vec<&str> = vec![own_power];
+    powers.extend(
         peers
-            .iter()
-            .filter(|(_, peer)| peer.online)
-            .map(|(id, peer)| (id.as_str(), peer.power.as_str())),
+            .values()
+            .filter(|p| p.online)
+            .map(|p| p.power.as_str()),
     );
-    districts.sort();
-    crate::power::layout_power(&districts, global_stop)
+    crate::power::global_state(&powers, global_stop)
 }
 
 /// The online node with the lowest id is the clock master and the slot allocator.

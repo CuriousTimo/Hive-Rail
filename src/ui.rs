@@ -49,8 +49,8 @@ pub struct Dashboard {
     pub scouting: String,
     pub heartbeat_interval: Duration,
     pub last_event: String,
-    /// The layout's power at a glance, from this and every online district.
-    pub layout_power: crate::power::LayoutPower,
+    /// The layout-wide state: a global emergency stop, or normal.
+    pub global: crate::power::GlobalState,
     pub peers: Vec<PeerRow>,
     pub cli_output: Vec<String>,
 }
@@ -253,10 +253,10 @@ fn render(frame: &mut Frame<'_>, dashboard: &Dashboard, scroll_back: usize, sele
             Span::raw(&dashboard.last_request),
         ]),
         Line::from(vec![
-            Span::styled("LAYOUT ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::styled("GLOBAL ", Style::default().add_modifier(Modifier::BOLD)),
             Span::styled(
-                format!(" {} ", dashboard.layout_power.label),
-                layout_style(dashboard.layout_power.level),
+                format!(" {} ", dashboard.global.label),
+                global_style(&dashboard.global),
             ),
         ]),
     ])
@@ -472,21 +472,17 @@ fn loco_rows(locos: &[LocoInfo]) -> impl Iterator<Item = Row<'static>> + '_ {
     })
 }
 
-/// The colour of the layout power summary.
-pub(crate) fn layout_style(level: crate::power::LayoutLevel) -> Style {
-    use crate::power::LayoutLevel;
-    match level {
-        LayoutLevel::Running => Style::default()
-            .fg(Color::Green)
-            .add_modifier(Modifier::BOLD),
-        LayoutLevel::Partly => Style::default()
-            .fg(Color::Yellow)
-            .add_modifier(Modifier::BOLD),
-        LayoutLevel::Off => Style::default().fg(Color::Gray),
-        LayoutLevel::Stopped => Style::default()
+/// The colour of the global state.
+pub(crate) fn global_style(state: &crate::power::GlobalState) -> Style {
+    if state.stopped {
+        Style::default()
             .fg(Color::White)
             .bg(Color::Red)
-            .add_modifier(Modifier::BOLD),
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+            .fg(Color::Green)
+            .add_modifier(Modifier::BOLD)
     }
 }
 

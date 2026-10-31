@@ -11,7 +11,7 @@ use crate::{
     locos::{LocoRegister, RegisteredLoco},
     node::{zenoh_config, Heartbeat, HEARTBEAT_TIMEOUT, REGISTER_SYNC_GRACE},
     rocnet::{ClockAction, ClockUpdate, RocNetFrame},
-    ui::{format_age, layout_style, power_style, ClockChange, TerminalUi, UiCommand},
+    ui::{format_age, global_style, power_style, ClockChange, TerminalUi, UiCommand},
 };
 use chrono::Local;
 use ratatui::{
@@ -158,15 +158,15 @@ impl State {
         self.add_event(detail, format!("{label}  {text}"));
     }
 
-    /// The layout's power at a glance, from the online districts.
-    fn layout_power(&self) -> crate::power::LayoutPower {
-        let districts: Vec<(&str, &str)> = self
+    /// The layout-wide state: a global emergency stop, or normal.
+    fn global_state(&self) -> crate::power::GlobalState {
+        let powers: Vec<&str> = self
             .districts
-            .iter()
-            .filter(|(_, d)| d.online)
-            .map(|(id, d)| (id.as_str(), d.power.as_str()))
+            .values()
+            .filter(|d| d.online)
+            .map(|d| d.power.as_str())
             .collect();
-        crate::power::layout_power(&districts, self.global_stop.as_ref())
+        crate::power::global_state(&powers, self.global_stop.as_ref())
     }
 
     /// A global emergency stop or resume seen on the mesh.
@@ -939,13 +939,10 @@ fn render(frame: &mut Frame<'_>, state: &State) {
             Span::raw(format!("   {} loco(s) registered", entries.len())),
         ]),
         {
-            let layout = state.layout_power();
+            let global = state.global_state();
             Line::from(vec![
-                Span::styled(
-                    "LAYOUT POWER ",
-                    Style::default().add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(format!(" {} ", layout.label), layout_style(layout.level)),
+                Span::styled("GLOBAL ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::styled(format!(" {} ", global.label), global_style(&global)),
             ])
         },
     ])
