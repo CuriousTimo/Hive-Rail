@@ -1,0 +1,171 @@
+{
+  "schema_version": 2,
+  "module_id": "m5-2e96-out",
+  "friendly_name": "M5 border out (to Bdorf side)",
+  "owner": "M5StickC test district",
+  "scale": "H0",
+  "length_mm": 900,
+  "ends": [
+    {
+      "id": "A",
+      "profile": "2E96",
+      "tracks": [
+        "1",
+        "2"
+      ]
+    },
+    {
+      "id": "B",
+      "profile": "2E96",
+      "tracks": [
+        "2",
+        "1"
+      ]
+    }
+  ],
+  "track": [
+    {
+      "id": "1",
+      "from": "A.1",
+      "to": "B.1",
+      "length_mm": 900,
+      "direction": "A>B"
+    },
+    {
+      "id": "2",
+      "from": "A.2",
+      "to": "B.2",
+      "length_mm": 900,
+      "direction": "B>A"
+    }
+  ],
+  "blocks": [
+    {
+      "id": "edge_1",
+      "track": "1",
+      "cuts_mm": [
+        20,
+        880
+      ],
+      "detected_rail": "outer",
+      "occupancy": "occ_edge_1",
+      "role": "edge",
+      "for": "A>B"
+    },
+    {
+      "id": "t2",
+      "track": "2",
+      "cuts_mm": [
+        20,
+        880
+      ],
+      "detected_rail": "both",
+      "occupancy": "occ_t2",
+      "role": "transfer",
+      "for": "B>A"
+    }
+  ],
+  "devices": [
+    {
+      "id": "occ_edge_1",
+      "type": "occupancy",
+      "bus": "loconet",
+      "address": 206,
+      "block": "edge_1"
+    },
+    {
+      "id": "occ_t2",
+      "type": "occupancy",
+      "bus": "loconet",
+      "address": 207,
+      "block": "t2"
+    },
+    {
+      "id": "sig_1",
+      "type": "signal",
+      "role": "boundary",
+      "bus": "loconet",
+      "address": 133,
+      "track": "1",
+      "at_mm": 850,
+      "for": "A>B",
+      "aspects": ["red", "yellow", "green"]
+    },
+    {
+      "id": "ir_t2",
+      "type": "sensor",
+      "role": "transfer_entry",
+      "bus": "board",
+      "address": 18,
+      "track": "2",
+      "at_mm": 850,
+      "for": "B>A"
+    },
+    {
+      "id": "relay_t2",
+      "type": "relay",
+      "role": "transfer_relay",
+      "bus": "board",
+      "address": 28,
+      "block": "t2"
+    }
+  ],
+  "geometry": {
+    "outline": [
+      [
+        0,
+        0
+      ],
+      [
+        900,
+        0
+      ],
+      [
+        900,
+        546
+      ],
+      [
+        0,
+        546
+      ]
+    ],
+    "ends": {
+      "A": {
+        "at": [
+          0,
+          273
+        ],
+        "facing": 180
+      },
+      "B": {
+        "at": [
+          900,
+          273
+        ],
+        "facing": 0
+      }
+    },
+    "track": {
+      "1": [
+        [
+          0,
+          250
+        ],
+        [
+          900,
+          250
+        ]
+      ],
+      "2": [
+        [
+          0,
+          296
+        ],
+        [
+          900,
+          296
+        ]
+      ]
+    }
+  }
+}

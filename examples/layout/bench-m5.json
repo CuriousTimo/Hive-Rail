@@ -1,0 +1,85 @@
+{
+  "schema_version": 2,
+  "meeting": "Bench with three districts: MacBook (Adorf), M5StickC lite node in the middle, Windows (Bdorf)",
+  "modules": [
+    {
+      "module_id": "timo-adorf"
+    },
+    {
+      "module_id": "timo-2e96-west"
+    },
+    {
+      "module_id": "timo-2e96-border"
+    },
+    {
+      "module_id": "m5-2e96-in"
+    },
+    {
+      "module_id": "m5-2e96-out"
+    },
+    {
+      "module_id": "anna-2e96-border"
+    },
+    {
+      "module_id": "anna-2e96-east"
+    },
+    {
+      "module_id": "anna-bdorf"
+    }
+  ],
+  "connections": [
+    {
+      "a": "timo-adorf.B",
+      "b": "timo-2e96-west.A"
+    },
+    {
+      "a": "timo-2e96-west.B",
+      "b": "timo-2e96-border.A"
+    },
+    {
+      "a": "timo-2e96-border.B",
+      "b": "m5-2e96-in.A"
+    },
+    {
+      "a": "m5-2e96-in.B",
+      "b": "m5-2e96-out.A"
+    },
+    {
+      "a": "m5-2e96-out.B",
+      "b": "anna-2e96-border.A"
+    },
+    {
+      "a": "anna-2e96-border.B",
+      "b": "anna-2e96-east.A"
+    },
+    {
+      "a": "anna-2e96-east.B",
+      "b": "anna-bdorf.A"
+    }
+  ],
+  "districts": [
+    {
+      "node": "MacBook",
+      "modules": [
+        "timo-adorf",
+        "timo-2e96-west",
+        "timo-2e96-border"
+      ]
+    },
+    {
+      "node": "M5StickC",
+      "modules": [
+        "m5-2e96-in",
+        "m5-2e96-out"
+      ]
+    },
+    {
+      "node": "Windows",
+      "modules": [
+        "anna-2e96-border",
+        "anna-2e96-east",
+        "anna-bdorf"
+      ]
+    }
+  ]
+}
