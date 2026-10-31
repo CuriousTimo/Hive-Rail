@@ -87,6 +87,16 @@ pub(crate) struct Heartbeat {
     /// Checksum of the node's copy of the loco register (missing from older nodes).
     #[serde(default)]
     pub(crate) register: Option<u64>,
+    /// The node's Zenoh ID, so a lite node can tell which node it reaches the mesh through.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) zid: Option<String>,
+    /// A lite node (a microcontroller such as the Hive-Rail board's node chip): it runs its
+    /// district but never takes a shared role (throttle allocator, fast clock master).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) lite: bool,
+    /// The node a lite node reaches the mesh through.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) via: Option<String>,
 }
 
 /// A node asking the allocator for a throttle number, on `hive/{session}/locos/request`.
@@ -111,6 +121,8 @@ struct PeerState {
     rocnet_id: Option<u16>,
     locos: Vec<LocoInfo>,
     register: Option<u64>,
+    /// A lite node: never allocator or clock master.
+    lite: bool,
 }
 
 /// Where a power request came from, which decides where it still has to be echoed.
@@ -473,6 +485,9 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                     rocnet_id: Some(rocnet_id),
                     locos: register.locos(),
                     register: Some(register.checksum()),
+                    zid: Some(session.zid().to_string()),
+                    lite: false,
+                    via: None,
                 };
                 publisher.put(serde_json::to_vec(&message)?).await?;
                 track_register_mismatch(&peers, register.checksum(), &mut register_mismatch);
@@ -533,6 +548,7 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                         rocnet_id: message.rocnet_id,
                         locos: message.locos,
                         register: message.register,
+                        lite: message.lite,
                     });
                     match previous {
                         Some((true, previous_power)) if previous_power != message.power => {
@@ -541,9 +557,10 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                         Some((true, _)) => {}
                         _ => {
                             log.event(format!(
-                                "Peer {} online (RocNet {}, seq {}, power {})",
+                                "Peer {} online (RocNet {}{}, seq {}, power {})",
                                 message.node,
                                 message.rocnet_id.map_or_else(|| "unknown".to_owned(), |id| id.to_string()),
+                                message.via.as_ref().map(|via| format!(", lite node via {via}")).unwrap_or_default(),
                                 message.seq,
                                 message.power
                             ));
@@ -1255,7 +1272,8 @@ fn lowest_online(peers: &HashMap<String, PeerState>, node_id: &str) -> bool {
 fn lowest_online_id<'a>(peers: &'a HashMap<String, PeerState>, node_id: &'a str) -> &'a str {
     peers
         .iter()
-        .filter(|(_, peer)| peer.online)
+        // Lite nodes run their districts but take no shared role.
+        .filter(|(_, peer)| peer.online && !peer.lite)
         .map(|(id, _)| id.as_str())
         .fold(node_id, |lowest, id| lowest.min(id))
 }
@@ -1738,6 +1756,38 @@ mod tests {
     }
 
     #[test]
+    fn a_lite_node_never_takes_the_shared_roles() {
+        let peer = |lite| PeerState {
+            last_seen: Instant::now(),
+            online: true,
+            sequence: 1,
+            power: "OFF".to_owned(),
+            rocnet_id: Some(199),
+            locos: Vec::new(),
+            register: None,
+            lite,
+        };
+        // "ESP32-lite" sorts before "MacBook", but it is a lite node.
+        let peers = HashMap::from([("ESP32-lite".to_owned(), peer(true))]);
+        assert_eq!(super::lowest_online_id(&peers, "MacBook"), "MacBook");
+        let peers = HashMap::from([("ESP32-full".to_owned(), peer(false))]);
+        assert_eq!(super::lowest_online_id(&peers, "MacBook"), "ESP32-full");
+    }
+
+    #[test]
+    fn a_lite_heartbeat_reads_and_old_heartbeats_still_do() {
+        let lite: Heartbeat = serde_json::from_str(
+            r#"{"node":"ESP32-lite","seq":1,"power":"OFF","rocnet_id":199,"locos":[],"register":null,"lite":true,"via":"MacBook"}"#,
+        )
+        .unwrap();
+        assert!(lite.lite);
+        assert_eq!(lite.via.as_deref(), Some("MacBook"));
+        let old: Heartbeat =
+            serde_json::from_str(r#"{"node":"Windows","seq":1,"power":"ON"}"#).unwrap();
+        assert!(!old.lite && old.zid.is_none());
+    }
+
+    #[test]
     fn stale_peers_are_reported_once_and_remain_stale() {
         let mut peers = HashMap::from([(
             "node-b".to_owned(),
@@ -1749,6 +1799,7 @@ mod tests {
                 rocnet_id: Some(102),
                 locos: Vec::new(),
                 register: None,
+                lite: false,
             },
         )]);
 

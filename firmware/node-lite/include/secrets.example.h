@@ -8,5 +8,8 @@
 // --listen tcp/0.0.0.0:7447 on the computer at this address.
 #define HIVE_LOCATOR "tcp/192.168.60.127:7447"
 
+// Password for firmware updates over Wi-Fi (ArduinoOTA).
+#define HIVE_OTA_PASS "choose-one"
+
 #define HIVE_SESSION "bench"
-#define HIVE_NODE_ID "ESP32-lite"
+#define HIVE_NODE_ID "M5StickC"

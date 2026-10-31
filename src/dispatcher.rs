@@ -84,6 +84,9 @@ struct District {
     power: String,
     locos: usize,
     register: Option<u64>,
+    /// A lite node, and the node it reaches the mesh through.
+    lite: bool,
+    via: Option<String>,
     /// Since when this node's loco register checksum differs from the dispatcher's copy.
     differs_since: Option<Instant>,
 }
@@ -91,6 +94,7 @@ struct District {
 impl District {
     fn register_sync(&self, own: u64) -> &'static str {
         match (self.register, self.differs_since) {
+            (None, _) if self.lite => "lite: none",
             (None, _) => "-",
             (Some(checksum), _) if checksum == own => "in sync",
             (_, Some(since)) if since.elapsed() >= REGISTER_SYNC_GRACE => "DIFFERS",
@@ -155,7 +159,7 @@ impl State {
     fn allocator(&self) -> Option<&str> {
         self.districts
             .iter()
-            .find(|(_, district)| district.online)
+            .find(|(_, district)| district.online && !district.lite)
             .map(|(id, _)| id.as_str())
     }
 
@@ -184,6 +188,8 @@ impl State {
                 power: heartbeat.power.clone(),
                 locos: heartbeat.locos.len(),
                 register: heartbeat.register,
+                lite: heartbeat.lite,
+                via: heartbeat.via.clone(),
                 differs_since,
             },
         );
@@ -887,11 +893,23 @@ fn render(frame: &mut Frame<'_>, state: &State) {
                         ""
                     }
                 )),
-                Cell::from(
-                    district
+                Cell::from({
+                    let own = district
                         .rocnet_id
-                        .map_or_else(|| "-".to_owned(), |id| id.to_string()),
-                ),
+                        .map_or_else(|| "-".to_owned(), |id| id.to_string());
+                    // A lite node: the RocNet address of the node that carries it.
+                    match district.via.as_ref() {
+                        Some(via) => {
+                            let carrier = state
+                                .districts
+                                .get(via)
+                                .and_then(|d| d.rocnet_id)
+                                .map_or_else(|| via.clone(), |id| id.to_string());
+                            format!("{own} → {carrier}")
+                        }
+                        None => own,
+                    }
+                }),
                 Cell::from(Span::styled(
                     heartbeat,
                     Style::default().fg(color).add_modifier(Modifier::BOLD),
