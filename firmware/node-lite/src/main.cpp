@@ -3,8 +3,8 @@
 // "lite" with the node it reaches the mesh through ("via"), and follows the other nodes'
 // heartbeats. It also plays its district's command station with fake hardware: district power
 // on its buttons, a faked short, and the mesh-wide global emergency stop both ways.
-// On an M5StickC: side button B = power on/off (hold 2 s: short circuit), front button A = next
-// page (hold 2 s: GLOBAL emergency stop); the red LED shows the district power.
+// On an M5StickC: side button B = power on/off (double press: short circuit), front button A =
+// next page (double press: GLOBAL emergency stop); the red LED shows the district power.
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
@@ -342,9 +342,6 @@ void setup() {
     M5.Display.setRotation(3);
     M5.Display.setTextSize(1);
     M5.Display.setBrightness(96);
-    // Holding a button 2 s counts as "hold" (global stop, faked short).
-    M5.BtnA.setHoldThresh(2000);
-    M5.BtnB.setHoldThresh(2000);
 #endif
     // CPU load baseline: one second with nothing running yet.
     esp_register_freertos_idle_hook_for_cpu(idle_hook_0, 0);
@@ -470,21 +467,22 @@ void loop() {
     }
 #ifdef HIVE_SCREEN
     M5.update();
-    // Front button: a press is the next page, holding it 2 s the global emergency stop.
-    if (M5.BtnA.wasReleased() && !M5.BtnA.wasReleasedAfterHold()) {
+    // Front button: a single press is the next page, a double press the global emergency stop.
+    // A single press counts once the time for a second press has passed.
+    if (M5.BtnA.wasSingleClicked()) {
         page = (page + 1) % 2;
         next_screen = 0;
     }
-    if (M5.BtnA.wasHold()) {
+    if (M5.BtnA.wasDoubleClicked()) {
         send_global_stop();
         next_screen = 0;
     }
-    // Side button: district power on and off (the board's go and stop), holding it a short.
-    if (M5.BtnB.wasReleased() && !M5.BtnB.wasReleasedAfterHold()) {
+    // Side button: district power on and off (the board's go and stop); a double press a short.
+    if (M5.BtnB.wasSingleClicked()) {
         set_power(power == POWER_ON ? POWER_OFF : POWER_ON, "button");
         next_screen = 0;
     }
-    if (M5.BtnB.wasHold()) {
+    if (M5.BtnB.wasDoubleClicked()) {
         set_power(POWER_SHORT, "faked short");
         next_screen = 0;
     }
