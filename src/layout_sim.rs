@@ -50,15 +50,15 @@ fn passing_tracks(layout: &Layout, passing: bool) -> BTreeSet<PieceId> {
 const OVERTAKE_WITHIN_MM: f64 = 5000.0;
 
 /// Each station's platform tracks, by station name, for plans that name a station.
-fn stations(layout: &Layout) -> BTreeMap<String, Vec<PieceId>> {
-    let mut stations: BTreeMap<String, Vec<PieceId>> = BTreeMap::new();
+fn stations(layout: &Layout) -> BTreeMap<String, Vec<(PieceId, String)>> {
+    let mut stations: BTreeMap<String, Vec<(PieceId, String)>> = BTreeMap::new();
     for (module_id, (module, _)) in &layout.modules {
         for station in &module.stations {
             let platforms = station
                 .tracks
                 .iter()
                 .filter(|track| track.platform)
-                .map(|track| PieceId::new(module_id, &track.track));
+                .map(|track| (PieceId::new(module_id, &track.track), track.name.clone()));
             stations
                 .entry(station.name.clone())
                 .or_default()
@@ -344,8 +344,10 @@ pub struct LayoutSim<'a> {
     /// The fast clock's rate: a stop of one fast minute lasts 60 / rate real seconds. The web
     /// simulator follows the mesh's clock; without one, 4.
     pub clock_rate: f64,
-    /// Each station's platform tracks, for plans that name a station.
-    stations: BTreeMap<String, Vec<PieceId>>,
+    /// Each station's platform tracks with their numbers, for plans that name a station.
+    stations: BTreeMap<String, Vec<(PieceId, String)>>,
+    /// When each platform track was last arrived at, so trains share the platforms.
+    platform_used: BTreeMap<PieceId, f64>,
     /// Passing sidings, and the through tracks beside them: a slower train with a faster
     /// one close behind takes the siding and waits there until the faster one has passed.
     passing: BTreeSet<PieceId>,
@@ -382,6 +384,7 @@ impl<'a> LayoutSim<'a> {
             trains: Vec::new(),
             clock_rate: 4.0,
             stations: stations(layout),
+            platform_used: BTreeMap::new(),
             passing: passing_tracks(layout, true),
             through: passing_tracks(layout, false),
             yielding: BTreeMap::new(),
@@ -525,9 +528,36 @@ impl<'a> LayoutSim<'a> {
             .map(|block| block.piece.clone())
     }
 
-    /// The piece the train's next trip ends on. A block is that block's piece; a station
-    /// is one of its platform tracks: the first that no other train stands on, has
-    /// reserved or is heading for, else the first (the train then waits for it).
+    /// For a train heading for a station: whether its reservation has reached the station's
+    /// module yet. `None` when its next stop is not a station.
+    fn approaching_station(&self, index: usize) -> Option<bool> {
+        let train = &self.trains[index];
+        let platforms = self.stations.get(train.plan.get(train.next_stop)?)?;
+        let end = train.route.last().map_or(&train.head.piece, |(p, _)| p);
+        Some(
+            platforms
+                .iter()
+                .any(|(piece, _)| piece.module == end.module),
+        )
+    }
+
+    /// Where a train heading for a station runs before it picks a platform: the station's
+    /// first platform (the way there is the same for every platform).
+    fn station_entry(&self, train: &Train) -> Option<PieceId> {
+        let stop = train.plan.get(train.next_stop)?;
+        self.stations
+            .get(stop)?
+            .first()
+            .map(|(piece, _)| piece.clone())
+    }
+
+    /// The piece the train's next trip ends on. A block is that block's piece. A station is
+    /// the free platform track (no other train stands on it, has reserved it or is heading
+    /// for it) with the lowest cost: a penalty for every piece of the way in and the way out
+    /// again (towards the train's following stop) that another train holds or covers now,
+    /// so a train does not cross one departing or arriving; a little for the length of
+    /// both; less for a track that has stood empty longer. With every track taken, the
+    /// first; the train then waits.
     fn pick_target(&self, index: usize) -> Option<PieceId> {
         let train = &self.trains[index];
         let stop = train.plan.get(train.next_stop)?;
@@ -535,19 +565,81 @@ impl<'a> LayoutSim<'a> {
             return Some(block.piece.clone());
         }
         let platforms = self.stations.get(stop)?;
-        let taken = |piece: &PieceId| {
-            self.reserved.get(piece).is_some_and(|by| *by != train.name)
-                || self.trains.iter().enumerate().any(|(i, other)| {
-                    i != index
-                        && (other.target.as_ref() == Some(piece)
-                            || self.covered(other).iter().any(|(p, _, _)| p == piece))
-                })
-        };
-        platforms
+        let held: BTreeSet<PieceId> = self
+            .reserved
             .iter()
-            .find(|piece| !taken(piece))
-            .or_else(|| platforms.first())
+            .filter(|(_, by)| **by != train.name)
+            .map(|(piece, _)| piece.clone())
+            .chain(
+                self.trains
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| *i != index)
+                    .flat_map(|(_, other)| self.covered(other).into_iter().map(|(p, _, _)| p)),
+            )
+            .collect();
+        let targeted = |piece: &PieceId| {
+            self.trains
+                .iter()
+                .enumerate()
+                .any(|(i, other)| i != index && other.target.as_ref() == Some(piece))
+        };
+        let start = train
+            .route
+            .last()
             .cloned()
+            .unwrap_or((train.head.piece.clone(), train.head.heading));
+        // Where it goes after this stop: a platform of the following station, or a block.
+        let after = train
+            .plan
+            .get((train.next_stop + 1) % train.plan.len().max(1));
+        let onward = after.and_then(|next| {
+            self.topology
+                .blocks
+                .get(next)
+                .map(|b| b.piece.clone())
+                .or_else(|| {
+                    self.stations
+                        .get(next)
+                        .and_then(|p| p.first())
+                        .map(|(p, _)| p.clone())
+                })
+        });
+        let mut best: Option<(f64, &PieceId)> = None;
+        for (piece, _) in platforms {
+            if held.contains(piece) || targeted(piece) {
+                continue;
+            }
+            let Some(way_in) = self.find_way(&start, piece, None) else {
+                continue;
+            };
+            let arrive_heading = way_in.last().map_or(Heading::Forward, |(_, h)| *h);
+            let way_out = onward
+                .as_ref()
+                .and_then(|goal| {
+                    self.find_way(&(piece.clone(), arrive_heading.reversed()), goal, None)
+                })
+                .unwrap_or_default();
+            let conflicts = way_in
+                .iter()
+                .chain(way_out.iter())
+                .filter(|(p, _)| p != piece && held.contains(p))
+                .count();
+            // Conflicts with moving trains weigh most; the length of the way in and out a
+            // little; a track that has stood empty for a while (up to 10 minutes) is
+            // preferred, so trains share the platforms instead of always taking the nearest.
+            let idle_min = self
+                .platform_used
+                .get(piece)
+                .map_or(10.0, |used| ((self.time_s - used) / 60.0).min(10.0));
+            let cost = 4.0 * conflicts as f64 + 0.25 * (way_in.len() + way_out.len()) as f64
+                - 0.3 * idle_min;
+            if best.is_none_or(|(c, _)| cost < c) {
+                best = Some((cost, piece));
+            }
+        }
+        best.map(|(_, piece)| piece.clone())
+            .or_else(|| platforms.first().map(|(piece, _)| piece.clone()))
     }
 
     /// Where a train running along a piece in `heading` stops when the way beyond is not
@@ -583,7 +675,9 @@ impl<'a> LayoutSim<'a> {
             ) {
                 return None;
             }
-            let goal = self.destination(other)?;
+            let goal = self
+                .destination(other)
+                .or_else(|| self.station_entry(other))?;
             let way =
                 self.find_way(&(other.head.piece.clone(), other.head.heading), &goal, None)?;
             // Passing this train: over its head piece, or (when it stands in a passing
@@ -659,11 +753,20 @@ impl<'a> LayoutSim<'a> {
     /// pieces no other train covers or has reserved, with every turnout on it set. False
     /// when the section is taken (the train waits at the signal) or the way is complete.
     fn reserve(&mut self, index: usize, events: &mut Vec<(f64, SimEvent)>) -> bool {
+        // A station's platform is picked as the train comes in: once its reservation has
+        // reached the station's module (its entry signal). Until then it runs towards the
+        // station's first platform, the way in being the same for all.
         if self.trains[index].target.is_none() {
-            self.trains[index].target = self.pick_target(index);
+            let approach = self.approaching_station(index);
+            if approach.is_none_or(|near| near) {
+                self.trains[index].target = self.pick_target(index);
+            }
         }
         let train = &self.trains[index];
-        let Some(goal) = self.destination(train) else {
+        let Some(goal) = self
+            .destination(train)
+            .or_else(|| self.station_entry(train))
+        else {
             return false;
         };
         let start = train
@@ -1002,7 +1105,21 @@ impl<'a> LayoutSim<'a> {
                     train.state = TrainState::Dwelling {
                         until_s: self.time_s + stop_time(train) * 60.0 / self.clock_rate.max(1.0),
                     };
-                    let block = train.plan[train.next_stop].clone();
+                    // The stop, with the track for a station: "Adorf track 2".
+                    let stop = train.plan[train.next_stop].clone();
+                    let track = self.stations.get(&stop).and_then(|tracks| {
+                        tracks
+                            .iter()
+                            .find(|(piece, _)| *piece == train.head.piece)
+                            .map(|(_, name)| name.clone())
+                    });
+                    let block = match track {
+                        Some(name) => format!("{stop} track {name}"),
+                        None => stop,
+                    };
+                    let arrived_on = train.head.piece.clone();
+                    self.platform_used.insert(arrived_on, self.time_s);
+                    let train = &mut self.trains[index];
                     train.route.clear();
                     let name = train.name.clone();
                     self.update_reserved();
@@ -1458,10 +1575,9 @@ mod tests {
             from: "MacBook".into(),
             to: "Windows".into()
         }));
-        assert!(ic_events.contains(&&SimEvent::Arrived {
-            train: "IC 2001".into(),
-            block: "Bdorf".into()
-        }));
+        assert!(ic_events.iter().any(
+            |e| matches!(e, SimEvent::Arrived { train, block } if train == "IC 2001" && block.starts_with("Bdorf track"))
+        ));
         for name in ["Feldweg", "Dorfstraße"] {
             assert!(events.iter().any(
                 |(_, e)| matches!(e, SimEvent::Crossing { name: n, closed: true, .. } if n == name)
@@ -1485,7 +1601,7 @@ mod tests {
             for stop in ["Adorf", "Bdorf"] {
                 let count = events
                     .iter()
-                    .filter(|(_, e)| matches!(e, SimEvent::Arrived { train: t, block } if t == train && block == stop))
+                    .filter(|(_, e)| matches!(e, SimEvent::Arrived { train: t, block } if t == train && block.starts_with(stop)))
                     .count();
                 assert!(count >= 1, "{train} never reached {stop}");
             }
