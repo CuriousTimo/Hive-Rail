@@ -162,10 +162,12 @@ function drawLayout(layout) {
     text(station.text, [station.at[0], bottom - 150], "station-label", layer("labels"));
   }
 
-  // The whole layout, or only the modules named in the address: ?modules=timo-adorf
-  // (for a screen next to one station).
-  const wanted = new URLSearchParams(location.search).get("modules");
-  const shown = wanted ? layout.modules.filter((m) => wanted.split(",").includes(m.id)) : [];
+  // The whole layout, or only the modules named in the address: ?modules=timo-adorf (for a
+  // screen next to one station), or every module of a district: ?districts=M5StickC.
+  const params = new URLSearchParams(location.search);
+  const list = (name) => (params.get(name) || "").split(",").filter(Boolean);
+  const [wantedModules, wantedDistricts] = [list("modules"), list("districts")];
+  const shown = layout.modules.filter((m) => wantedModules.includes(m.id) || wantedDistricts.includes(m.district));
   let [minX, minY, maxX, maxY] = layout.bounds;
   if (shown.length) {
     const points = shown.flatMap((m) => m.outline);

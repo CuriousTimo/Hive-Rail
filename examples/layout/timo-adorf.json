@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
   "module_id": "timo-adorf",
-  "friendly_name": "Adorf, west terminus with crossover and passing siding",
+  "friendly_name": "Adorf, west terminus: three platform tracks, each reachable from both main tracks",
   "owner": "Timo",
   "scale": "H0",
   "length_mm": 1800,
@@ -9,93 +9,72 @@
     {
       "id": "A",
       "profile": "2E96",
-      "tracks": [
-        "1",
-        "2"
-      ]
+      "tracks": ["1", "2"]
     },
     {
       "id": "B",
       "profile": "2E96",
-      "tracks": [
-        "2",
-        "1"
-      ]
+      "tracks": ["2", "1"]
     }
   ],
   "track": [
     {
-      "id": "1a",
-      "from": "A.1",
-      "to": "W1.trunk",
-      "length_mm": 200,
-      "direction": "A>B"
-    },
-    {
-      "id": "1",
-      "from": "W1.straight",
-      "to": "W2.straight",
-      "length_mm": 1100,
-      "direction": "A>B"
-    },
-    {
-      "id": "s1",
-      "from": "W1.diverging",
-      "to": "W2.diverging",
-      "length_mm": 1120,
-      "direction": "A>B"
-    },
-    {
-      "id": "1c",
-      "from": "W2.trunk",
-      "to": "X1.trunk",
-      "length_mm": 300,
-      "direction": "A>B"
-    },
-    {
-      "id": "1b",
-      "from": "X1.straight",
+      "id": "m1",
+      "from": "M.straight",
       "to": "B.1",
       "length_mm": 200,
       "direction": "A>B"
     },
     {
-      "id": "2b",
+      "id": "m2",
       "from": "B.2",
-      "to": "X2.trunk",
-      "length_mm": 100,
+      "to": "M.diverging",
+      "length_mm": 210,
       "direction": "B>A"
+    },
+    {
+      "id": "t",
+      "from": "M.trunk",
+      "to": "L0.trunk",
+      "length_mm": 70
+    },
+    {
+      "id": "t1",
+      "from": "L0.straight",
+      "to": "L1.trunk",
+      "length_mm": 80
+    },
+    {
+      "id": "3",
+      "from": "L0.diverging",
+      "to": "end",
+      "length_mm": 1392
+    },
+    {
+      "id": "1",
+      "from": "L1.straight",
+      "to": "A.1",
+      "length_mm": 1450
     },
     {
       "id": "2",
-      "from": "X2.straight",
+      "from": "L1.diverging",
       "to": "A.2",
-      "length_mm": 1700,
-      "direction": "B>A"
-    },
-    {
-      "id": "x",
-      "from": "X2.diverging",
-      "to": "X1.diverging",
-      "length_mm": 120
+      "length_mm": 1462
     }
   ],
   "turnouts": [
     {
-      "id": "W1",
-      "device": "point_w1"
+      "id": "M",
+      "device": "point_m"
     },
     {
-      "id": "W2",
-      "device": "point_w2"
+      "id": "L0",
+      "device": "point_l0"
     },
     {
-      "id": "X1",
-      "device": "point_x1"
-    },
-    {
-      "id": "X2",
-      "device": "point_x2"
+      "id": "L1",
+      "device": "point_l1"
     }
   ],
   "stations": [
@@ -106,19 +85,19 @@
         {
           "name": "1",
           "track": "1",
-          "usable_mm": 1000,
+          "usable_mm": 1350,
           "platform": true
-        },
-        {
-          "name": "3",
-          "track": "s1",
-          "usable_mm": 950,
-          "platform": false
         },
         {
           "name": "2",
           "track": "2",
-          "usable_mm": 1400,
+          "usable_mm": 1300,
+          "platform": true
+        },
+        {
+          "name": "3",
+          "track": "3",
+          "usable_mm": 1250,
           "platform": true
         }
       ]
@@ -128,58 +107,43 @@
     {
       "id": "adorf_1",
       "track": "1",
-      "cuts_mm": [
-        20,
-        1080
-      ],
+      "cuts_mm": [60, 1430],
       "detected_rail": "outer",
       "occupancy": "occ_1"
     },
     {
-      "id": "adorf_3",
-      "track": "s1",
-      "cuts_mm": [
-        60,
-        1060
-      ],
-      "detected_rail": "outer",
-      "occupancy": "occ_3"
-    },
-    {
       "id": "adorf_2",
       "track": "2",
-      "cuts_mm": [
-        100,
-        1600
-      ],
+      "cuts_mm": [100, 1440],
       "detected_rail": "outer",
       "occupancy": "occ_2"
+    },
+    {
+      "id": "adorf_3",
+      "track": "3",
+      "cuts_mm": [100, 1370],
+      "detected_rail": "outer",
+      "occupancy": "occ_3"
     }
   ],
   "devices": [
     {
-      "id": "point_w1",
-      "type": "turnout",
-      "bus": "loconet",
-      "address": 21
-    },
-    {
-      "id": "point_w2",
-      "type": "turnout",
-      "bus": "loconet",
-      "address": 22
-    },
-    {
-      "id": "point_x1",
+      "id": "point_m",
       "type": "turnout",
       "bus": "loconet",
       "address": 11
     },
     {
-      "id": "point_x2",
+      "id": "point_l0",
       "type": "turnout",
       "bus": "loconet",
       "address": 12
+    },
+    {
+      "id": "point_l1",
+      "type": "turnout",
+      "bus": "loconet",
+      "address": 21
     },
     {
       "id": "occ_1",
@@ -226,7 +190,17 @@
       "bus": "loconet",
       "address": 121,
       "track": "1",
-      "at_mm": 1080,
+      "at_mm": 50,
+      "for": "A>B",
+      "aspects": ["red", "green"]
+    },
+    {
+      "id": "sig_a2",
+      "type": "signal",
+      "bus": "loconet",
+      "address": 122,
+      "track": "2",
+      "at_mm": 150,
       "for": "A>B",
       "aspects": ["red", "green"]
     },
@@ -235,8 +209,8 @@
       "type": "signal",
       "bus": "loconet",
       "address": 123,
-      "track": "s1",
-      "at_mm": 940,
+      "track": "3",
+      "at_mm": 150,
       "for": "A>B",
       "aspects": ["red", "green"]
     },
@@ -245,245 +219,107 @@
       "type": "signal",
       "bus": "loconet",
       "address": 125,
-      "track": "2b",
-      "at_mm": 70,
+      "track": "m2",
+      "at_mm": 60,
       "for": "B>A",
       "aspects": ["red", "yellow", "green"]
     }
   ],
-  "geometry": {
-    "outline": [
-      [
-        0,
-        0
-      ],
-      [
-        1800,
-        0
-      ],
-      [
-        1800,
-        546
-      ],
-      [
-        0,
-        546
-      ]
-    ],
-    "ends": {
-      "A": {
-        "at": [
-          0,
-          273
-        ],
-        "facing": 180
-      },
-      "B": {
-        "at": [
-          1800,
-          273
-        ],
-        "facing": 0
-      }
-    },
-    "points": {
-      "W1": [
-        200,
-        250
-      ],
-      "W2": [
-        1300,
-        250
-      ],
-      "X1": [
-        1600,
-        250
-      ],
-      "X2": [
-        1700,
-        296
-      ]
-    },
-    "track": {
-      "1a": [
-        [
-          0,
-          250
-        ],
-        [
-          200,
-          250
-        ]
-      ],
-      "1": [
-        [
-          200,
-          250
-        ],
-        [
-          1300,
-          250
-        ]
-      ],
-      "s1": [
-        [
-          200,
-          250
-        ],
-        [
-          350,
-          204
-        ],
-        [
-          1150,
-          204
-        ],
-        [
-          1300,
-          250
-        ]
-      ],
-      "1c": [
-        [
-          1300,
-          250
-        ],
-        [
-          1600,
-          250
-        ]
-      ],
-      "1b": [
-        [
-          1600,
-          250
-        ],
-        [
-          1800,
-          250
-        ]
-      ],
-      "2b": [
-        [
-          1800,
-          296
-        ],
-        [
-          1700,
-          296
-        ]
-      ],
-      "2": [
-        [
-          1700,
-          296
-        ],
-        [
-          0,
-          296
-        ]
-      ],
-      "x": [
-        [
-          1700,
-          296
-        ],
-        [
-          1600,
-          250
-        ]
-      ]
-    },
-    "platforms": {
-      "Adorf 1/3": [
-        [
-          350,
-          215
-        ],
-        [
-          1150,
-          240
-        ]
-      ],
-      "Adorf 2": [
-        [
-          200,
-          306
-        ],
-        [
-          1500,
-          331
-        ]
-      ]
-    },
-    "buildings": {
-      "station": [
-        [
-          600,
-          380
-        ],
-        [
-          1100,
-          380
-        ],
-        [
-          1100,
-          480
-        ],
-        [
-          600,
-          480
-        ]
-      ],
-      "goods_shed": [
-        [
-          500,
-          60
-        ],
-        [
-          900,
-          60
-        ],
-        [
-          900,
-          150
-        ],
-        [
-          500,
-          150
-        ]
-      ]
-    },
-    "devices": {
-      "light_station_hall": [
-        850,
-        430
-      ],
-      "light_station_platform": [
-        850,
-        345
-      ],
-      "light_goods_shed": [
-        700,
-        105
-      ]
-    }
-  },
   "buildings": [
     {
       "id": "station",
       "name": "Bahnhof Adorf",
-      "lights": [
-        "light_station_hall",
-        "light_station_platform"
-      ]
+      "lights": ["light_station_hall", "light_station_platform"]
     },
     {
       "id": "goods_shed",
-      "name": "Güterschuppen",
-      "lights": [
-        "light_goods_shed"
-      ]
+      "name": "G\u00fcterschuppen",
+      "lights": ["light_goods_shed"]
     }
-  ]
+  ],
+  "geometry": {
+    "outline": [
+      [0, 0],
+      [1800, 0],
+      [1800, 546],
+      [0, 546]
+    ],
+    "ends": {
+      "A": {
+        "at": [0, 273],
+        "facing": 180
+      },
+      "B": {
+        "at": [1800, 273],
+        "facing": 0
+      }
+    },
+    "points": {
+      "M": [1600, 250],
+      "L0": [1530, 250],
+      "L1": [1450, 250]
+    },
+    "track": {
+      "m1": [
+        [1600, 250],
+        [1800, 250]
+      ],
+      "m2": [
+        [1800, 296],
+        [1700, 296],
+        [1600, 250]
+      ],
+      "t": [
+        [1600, 250],
+        [1530, 250]
+      ],
+      "t1": [
+        [1530, 250],
+        [1450, 250]
+      ],
+      "3": [
+        [1530, 250],
+        [1450, 204],
+        [150, 204]
+      ],
+      "1": [
+        [1450, 250],
+        [0, 250]
+      ],
+      "2": [
+        [1450, 250],
+        [1370, 296],
+        [0, 296]
+      ]
+    },
+    "platforms": {
+      "Adorf 1/3": [
+        [300, 215],
+        [1350, 240]
+      ],
+      "Adorf 2": [
+        [200, 306],
+        [1300, 331]
+      ]
+    },
+    "buildings": {
+      "station": [
+        [600, 380],
+        [1100, 380],
+        [1100, 480],
+        [600, 480]
+      ],
+      "goods_shed": [
+        [500, 60],
+        [900, 60],
+        [900, 150],
+        [500, 150]
+      ]
+    },
+    "devices": {
+      "light_station_hall": [850, 430],
+      "light_station_platform": [850, 345],
+      "light_goods_shed": [700, 105]
+    }
+  }
 }

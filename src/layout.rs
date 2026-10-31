@@ -147,6 +147,9 @@ pub struct StationTrack {
     pub usable_mm: u32,
     #[serde(default)]
     pub platform: bool,
+    /// A passing siding: a slower train waits there to let a faster one by.
+    #[serde(default)]
+    pub passing: bool,
 }
 
 /// A stretch of track for occupancy and train positions, bounded by two rail cuts.
@@ -1221,20 +1224,20 @@ mod tests {
         let layout = example();
         let (module, _) = &layout.modules["timo-adorf"];
         let mut broken = module.clone();
-        // The siding no longer joins W2's diverging leg.
-        let siding = broken
+        // Platform track 2 no longer leaves L1's diverging leg.
+        let platform = broken
             .track
             .iter_mut()
-            .find(|piece| piece.id == "s1")
+            .find(|piece| piece.id == "2")
             .unwrap();
-        siding.to = "end".into();
+        platform.from = "end".into();
         let mut report = Report::default();
         broken.check(&mut report);
         assert!(
             report
                 .errors
                 .iter()
-                .any(|e| e.contains("W2.diverging is not connected")),
+                .any(|e| e.contains("L1.diverging is not connected")),
             "{:#?}",
             report.errors
         );

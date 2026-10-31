@@ -17,6 +17,58 @@ use std::collections::{BTreeMap, BTreeSet};
 /// How far before the end of its destination piece a train stops, in mm.
 const STOP_MARGIN_MM: f64 = 40.0;
 
+/// How long a train stands at a stop, in fast clock minutes: its usual stop time, varied
+/// from half to one and a half times, differently at each stop but the same in every run.
+fn stop_time(train: &Train) -> f64 {
+    let mut hash: u32 = 2_166_136_261;
+    for byte in train.name.bytes().chain(train.stops_made.to_le_bytes()) {
+        hash = (hash ^ u32::from(byte)).wrapping_mul(16_777_619);
+    }
+    train.dwell_min * (0.5 + f64::from(hash % 1000) / 1000.0)
+}
+
+/// The passing sidings (`passing`), or the through tracks of stations that have passing
+/// sidings (the other tracks that are not platforms).
+fn passing_tracks(layout: &Layout, passing: bool) -> BTreeSet<PieceId> {
+    let mut tracks = BTreeSet::new();
+    for (module_id, (module, _)) in &layout.modules {
+        for station in &module.stations {
+            if !station.tracks.iter().any(|t| t.passing) {
+                continue;
+            }
+            for track in &station.tracks {
+                if track.passing == passing && !track.platform {
+                    tracks.insert(PieceId::new(module_id, &track.track));
+                }
+            }
+        }
+    }
+    tracks
+}
+
+/// How far behind a faster train must be for a slower one to step aside for it.
+const OVERTAKE_WITHIN_MM: f64 = 5000.0;
+
+/// Each station's platform tracks, by station name, for plans that name a station.
+fn stations(layout: &Layout) -> BTreeMap<String, Vec<PieceId>> {
+    let mut stations: BTreeMap<String, Vec<PieceId>> = BTreeMap::new();
+    for (module_id, (module, _)) in &layout.modules {
+        for station in &module.stations {
+            let platforms = station
+                .tracks
+                .iter()
+                .filter(|track| track.platform)
+                .map(|track| PieceId::new(module_id, &track.track));
+            stations
+                .entry(station.name.clone())
+                .or_default()
+                .extend(platforms);
+        }
+    }
+    stations.retain(|_, platforms| !platforms.is_empty());
+    stations
+}
+
 /// How far before a signal at stop a train halts.
 const SIGNAL_MARGIN_MM: f64 = 30.0;
 
@@ -204,10 +256,17 @@ pub struct Train {
     /// The route reserved to the next destination: every piece and heading from the head
     /// on. Empty until it could be reserved.
     pub route: Vec<(PieceId, Heading)>,
-    /// Destination blocks (`module/block`), visited in turn.
+    /// Destinations, visited in turn: a block (`module/block`), or a station by name
+    /// (`Bdorf`), where the router picks a free platform track.
     pub plan: Vec<String>,
     next_stop: usize,
-    pub dwell_s: f64,
+    /// The piece this trip ends on: the plan's block, or the platform track picked at the
+    /// station; chosen when the trip starts.
+    pub target: Option<PieceId>,
+    /// The usual stop at a destination, in fast clock minutes; each stop varies around it.
+    pub dwell_min: f64,
+    /// Stops made, so each stop's time varies but repeats run after run.
+    stops_made: u32,
 }
 
 /// What happened in the simulation, with the time in seconds.
@@ -249,6 +308,8 @@ pub enum SimEvent {
         aspect: String,
         address: u16,
     },
+    /// A slower train waits in a passing siding to let a faster one by.
+    Yield { train: String, to: String },
     /// A train stopped because its district lost power, or went on when it came back.
     Power {
         train: String,
@@ -280,6 +341,17 @@ pub struct LayoutSim<'a> {
     /// Turnout positions by `module/turnout`: closed is straight.
     pub turnouts: BTreeMap<String, bool>,
     occupied: BTreeSet<String>,
+    /// The fast clock's rate: a stop of one fast minute lasts 60 / rate real seconds. The web
+    /// simulator follows the mesh's clock; without one, 4.
+    pub clock_rate: f64,
+    /// Each station's platform tracks, for plans that name a station.
+    stations: BTreeMap<String, Vec<PieceId>>,
+    /// Passing sidings, and the through tracks beside them: a slower train with a faster
+    /// one close behind takes the siding and waits there until the faster one has passed.
+    passing: BTreeSet<PieceId>,
+    through: BTreeSet<PieceId>,
+    /// The trains waiting in a passing siding now, and for which train.
+    pub yielding: BTreeMap<String, String>,
     /// Each district's power as its node reports it (ON, OFF, STOP, SHORT). A district with
     /// no report counts as powered, so the simulator runs on its own.
     pub district_power: BTreeMap<String, String>,
@@ -308,6 +380,11 @@ impl<'a> LayoutSim<'a> {
             layout,
             topology,
             trains: Vec::new(),
+            clock_rate: 4.0,
+            stations: stations(layout),
+            passing: passing_tracks(layout, true),
+            through: passing_tracks(layout, false),
+            yielding: BTreeMap::new(),
             turnouts,
             occupied: BTreeSet::new(),
             crossing_trains: BTreeMap::new(),
@@ -322,6 +399,7 @@ impl<'a> LayoutSim<'a> {
     }
 
     /// Puts a train with its head on `head`; its tail lies behind it on the same piece.
+    /// Returns it, for a different speed or stop time.
     pub fn add_train(
         &mut self,
         name: &str,
@@ -329,7 +407,7 @@ impl<'a> LayoutSim<'a> {
         length_mm: f64,
         head: Place,
         plan: &[&str],
-    ) {
+    ) -> &mut Train {
         self.trains.push(Train {
             name: name.to_owned(),
             address,
@@ -341,8 +419,11 @@ impl<'a> LayoutSim<'a> {
             route: Vec::new(),
             plan: plan.iter().map(|stop| (*stop).to_owned()).collect(),
             next_stop: 0,
-            dwell_s: 10.0,
+            target: None,
+            dwell_min: 2.0,
+            stops_made: 0,
         });
+        self.trains.last_mut().expect("just added")
     }
 
     fn module(&self, id: &str) -> Option<&ModuleFile> {
@@ -434,11 +515,39 @@ impl<'a> LayoutSim<'a> {
 
     /// The piece a train's destination block lies on.
     fn destination(&self, train: &Train) -> Option<PieceId> {
+        if let Some(target) = &train.target {
+            return Some(target.clone());
+        }
         let stop = train.plan.get(train.next_stop)?;
         self.topology
             .blocks
             .get(stop)
             .map(|block| block.piece.clone())
+    }
+
+    /// The piece the train's next trip ends on. A block is that block's piece; a station
+    /// is one of its platform tracks: the first that no other train stands on, has
+    /// reserved or is heading for, else the first (the train then waits for it).
+    fn pick_target(&self, index: usize) -> Option<PieceId> {
+        let train = &self.trains[index];
+        let stop = train.plan.get(train.next_stop)?;
+        if let Some(block) = self.topology.blocks.get(stop) {
+            return Some(block.piece.clone());
+        }
+        let platforms = self.stations.get(stop)?;
+        let taken = |piece: &PieceId| {
+            self.reserved.get(piece).is_some_and(|by| *by != train.name)
+                || self.trains.iter().enumerate().any(|(i, other)| {
+                    i != index
+                        && (other.target.as_ref() == Some(piece)
+                            || self.covered(other).iter().any(|(p, _, _)| p == piece))
+                })
+        };
+        platforms
+            .iter()
+            .find(|piece| !taken(piece))
+            .or_else(|| platforms.first())
+            .cloned()
     }
 
     /// Where a train running along a piece in `heading` stops when the way beyond is not
@@ -456,6 +565,47 @@ impl<'a> LayoutSim<'a> {
                 };
                 (along - SIGNAL_MARGIN_MM).clamp(0.0, length)
             })
+    }
+
+    /// A faster train close behind on the same way: one whose way to its destination
+    /// runs over this train's head piece (or the through track beside its passing siding),
+    /// in the same direction, within `OVERTAKE_WITHIN_MM`.
+    fn faster_follower(&self, index: usize) -> Option<String> {
+        let train = &self.trains[index];
+        let here = (train.head.piece.clone(), train.head.heading);
+        self.trains.iter().enumerate().find_map(|(i, other)| {
+            if i == index || other.speed_mm_s <= train.speed_mm_s {
+                return None;
+            }
+            if matches!(
+                other.state,
+                TrainState::Dwelling { .. } | TrainState::NoPower
+            ) {
+                return None;
+            }
+            let goal = self.destination(other)?;
+            let way =
+                self.find_way(&(other.head.piece.clone(), other.head.heading), &goal, None)?;
+            // Passing this train: over its head piece, or (when it stands in a passing
+            // siding) over the through track beside it, in the same module and direction.
+            let beside = |(piece, heading): &(PieceId, Heading)| {
+                *heading == here.1
+                    && (*piece == here.0
+                        || (self.passing.contains(&here.0)
+                            && piece.module == here.0.module
+                            && self.through.contains(piece)))
+            };
+            let at = way.iter().position(beside)?;
+            if at == 0 {
+                return None;
+            }
+            let distance = self.piece_length(&other.head.piece) - other.head.along_mm
+                + way[1..at]
+                    .iter()
+                    .map(|(p, _)| self.piece_length(p))
+                    .sum::<f64>();
+            (distance <= OVERTAKE_WITHIN_MM).then(|| other.name.clone())
+        })
     }
 
     /// Whether a signal stands at the exit of this piece for trains running in `heading`.
@@ -509,6 +659,9 @@ impl<'a> LayoutSim<'a> {
     /// pieces no other train covers or has reserved, with every turnout on it set. False
     /// when the section is taken (the train waits at the signal) or the way is complete.
     fn reserve(&mut self, index: usize, events: &mut Vec<(f64, SimEvent)>) -> bool {
+        if self.trains[index].target.is_none() {
+            self.trains[index].target = self.pick_target(index);
+        }
         let train = &self.trains[index];
         let Some(goal) = self.destination(train) else {
             return false;
@@ -541,10 +694,42 @@ impl<'a> LayoutSim<'a> {
                 blocked.extend(self.covered(other).into_iter().map(|(p, _, _)| p));
             }
         }
+        // A faster train close behind: wait in a passing siding until it has passed, and
+        // on the way, prefer the siding over the through track.
+        let follower = self.faster_follower(index);
+        let name = self.trains[index].name.clone();
+        // Its reservation ends in a passing siding (at the siding's exit signal): with a
+        // faster train behind, it reserves no further and waits there.
+        if self.passing.contains(&start.0) {
+            match &follower {
+                Some(faster) => {
+                    if self.yielding.get(&name) != Some(faster) {
+                        self.yielding.insert(name.clone(), faster.clone());
+                        events.push((
+                            self.time_s,
+                            SimEvent::Yield {
+                                train: name,
+                                to: faster.clone(),
+                            },
+                        ));
+                    }
+                    return false;
+                }
+                None => {
+                    self.yielding.remove(&name);
+                }
+            }
+        }
+        let mut avoid_through = blocked.clone();
+        if follower.is_some() {
+            avoid_through.extend(self.through.iter().cloned());
+        }
+        let train = &self.trains[index];
         // A free way if there is one (a passing siding instead of a taken track), else
         // the shortest, to wait for.
         let Some(way) = self
-            .find_way(&start, &goal, Some(&blocked))
+            .find_way(&start, &goal, Some(&avoid_through))
+            .or_else(|| self.find_way(&start, &goal, Some(&blocked)))
             .or_else(|| self.find_way(&start, &goal, None))
         else {
             return false;
@@ -815,7 +1000,7 @@ impl<'a> LayoutSim<'a> {
                     let train = &mut self.trains[index];
                     train.head.along_mm = stop_at.max(train.head.along_mm);
                     train.state = TrainState::Dwelling {
-                        until_s: self.time_s + train.dwell_s,
+                        until_s: self.time_s + stop_time(train) * 60.0 / self.clock_rate.max(1.0),
                     };
                     let block = train.plan[train.next_stop].clone();
                     train.route.clear();
@@ -859,6 +1044,18 @@ impl<'a> LayoutSim<'a> {
             let to = self.topology.piece(&next).map(|p| p.district.clone());
             let train = &mut self.trains[index];
             train.route.remove(0);
+            // The piece left behind is no longer reserved (while the train still covers it,
+            // the covered check keeps others off it).
+            let left = train.head.piece.clone();
+            if self
+                .reserved
+                .get(&left)
+                .is_some_and(|by| *by == self.trains[index].name)
+                && !self.trains[index].route.iter().any(|(p, _)| *p == left)
+            {
+                self.reserved.remove(&left);
+            }
+            let train = &mut self.trains[index];
             train
                 .trail
                 .push((train.head.piece.clone(), train.head.heading));
@@ -1049,6 +1246,8 @@ impl<'a> LayoutSim<'a> {
         };
         train.trail = trail;
         train.next_stop = (train.next_stop + 1) % train.plan.len().max(1);
+        train.target = None;
+        train.stops_made += 1;
         train.state = TrainState::Running;
         let to = train.plan.get(train.next_stop).cloned().unwrap_or_default();
         events.push((
@@ -1117,6 +1316,9 @@ impl std::fmt::Display for SimEvent {
                 f,
                 "{district}: signal {signal} shows {aspect} (LocoNet {address})"
             ),
+            SimEvent::Yield { train, to } => {
+                write!(f, "{train} waits in the passing siding to let {to} by")
+            }
             SimEvent::Power {
                 train,
                 district,
@@ -1148,28 +1350,49 @@ impl std::fmt::Display for SimEvent {
 
 /// The example run: two trains on the double-track example, shuttling between the termini.
 pub fn example_trains(sim: &mut LayoutSim<'_>) {
-    sim.add_train(
+    // Two trains start at each terminus and shuttle to the other; each picks a free
+    // platform track. Different speeds and stop times (fast clock minutes) make them meet,
+    // wait and overtake: the slower ones let faster ones by in Cdorf's passing sidings.
+    let at = |module: &str, track: &str, along_mm: f64| Place {
+        piece: PieceId::new(module, track),
+        // Platform tracks are drawn from the throat; leaving the terminus runs backward.
+        heading: Heading::Backward,
+        along_mm,
+    };
+    let ic = sim.add_train(
         "IC 2001",
         3,
         600.0,
-        Place {
-            piece: PieceId::new("timo-adorf", "1"),
-            heading: Heading::Forward,
-            along_mm: 900.0,
-        },
-        &["anna-bdorf/bdorf_2", "timo-adorf/adorf_1"],
+        at("timo-adorf", "1", 900.0),
+        &["Bdorf", "Adorf"],
     );
-    sim.add_train(
+    ic.dwell_min = 1.0;
+    let ng = sim.add_train(
         "Ng 4711",
         4711,
         500.0,
-        Place {
-            piece: PieceId::new("anna-bdorf", "s2"),
-            heading: Heading::Forward,
-            along_mm: 900.0,
-        },
-        &["timo-adorf/adorf_3", "anna-bdorf/bdorf_4"],
+        at("anna-bdorf", "4", 900.0),
+        &["Adorf", "Bdorf"],
     );
+    ng.dwell_min = 3.0;
+    let gm = sim.add_train(
+        "Gm 6203",
+        6203,
+        700.0,
+        at("timo-adorf", "2", 1000.0),
+        &["Bdorf", "Adorf"],
+    );
+    gm.speed_mm_s = 90.0;
+    gm.dwell_min = 5.0;
+    let rb = sim.add_train(
+        "RB 7701",
+        7701,
+        400.0,
+        at("anna-bdorf", "1", 1000.0),
+        &["Adorf", "Bdorf"],
+    );
+    rb.speed_mm_s = 120.0;
+    rb.dwell_min = 2.0;
 }
 
 #[cfg(test)]
@@ -1209,7 +1432,7 @@ mod tests {
         }));
         assert!(ic_events.contains(&&SimEvent::Arrived {
             train: "IC 2001".into(),
-            block: "anna-bdorf/bdorf_2".into()
+            block: "Bdorf".into()
         }));
         for name in ["Feldweg", "Dorfstraße"] {
             assert!(events.iter().any(
@@ -1219,20 +1442,17 @@ mod tests {
                 |(_, e)| matches!(e, SimEvent::Crossing { name: n, closed: false, .. } if n == name)
             ));
         }
-        // At Bdorf the crossover took it over to track 2.
-        assert!(events.iter().any(|(_, e)| matches!(e, SimEvent::Turnout { turnout, closed: false, .. } if turnout == "anna-bdorf/X3")));
+        // At Bdorf the throat's turnouts were set for its platform.
+        assert!(events.iter().any(|(_, e)| matches!(e, SimEvent::Turnout { turnout, .. } if turnout.starts_with("anna-bdorf/L"))));
     }
 
     /// Both trains complete round trips: every destination is reached more than once, and
     /// both cross the border both ways.
     #[test]
-    fn both_trains_shuttle_and_cross_the_border_both_ways() {
-        let events = run(900.0);
-        for (train, stops) in [
-            ("IC 2001", ["anna-bdorf/bdorf_2", "timo-adorf/adorf_1"]),
-            ("Ng 4711", ["timo-adorf/adorf_3", "anna-bdorf/bdorf_4"]),
-        ] {
-            for stop in stops {
+    fn every_train_shuttles_and_crosses_the_border_both_ways() {
+        let events = run(1200.0);
+        for train in ["IC 2001", "Ng 4711", "Gm 6203", "RB 7701"] {
+            for stop in ["Adorf", "Bdorf"] {
                 let count = events
                     .iter()
                     .filter(|(_, e)| matches!(e, SimEvent::Arrived { train: t, block } if t == train && block == stop))
@@ -1261,7 +1481,7 @@ mod tests {
             1,
             300.0,
             Place {
-                piece: PieceId::new("timo-adorf", "1b"),
+                piece: PieceId::new("timo-adorf", "m1"),
                 heading: Heading::Forward,
                 along_mm: 50.0,
             },
@@ -1507,5 +1727,61 @@ mod tests {
             .iter()
             .any(|(_, e)| matches!(e, SimEvent::Power { powered: true, .. })));
         assert_ne!(sim.trains[0].state, TrainState::NoPower);
+    }
+
+    /// An hour on the three-district bench with Cdorf's passing sidings: all four trains keep
+    /// going (no deadlock), never touch, the sidings get used, and slower trains wait in them
+    /// to let faster ones by.
+    #[test]
+    fn four_trains_run_an_hour_on_the_bench_with_sidings() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/layout");
+        let layout = crate::layout::load(&dir.join("bench-m5.json"), &dir).unwrap();
+        let topology = Topology::build(&layout);
+        let mut sim = LayoutSim::new(&layout, &topology);
+        example_trains(&mut sim);
+        let mut arrivals: BTreeMap<String, usize> = BTreeMap::new();
+        let mut sidings = 0;
+        let mut yields = 0;
+        for _ in 0..36_000 {
+            for (_, event) in sim.step(0.1) {
+                match event {
+                    SimEvent::Arrived { train, .. } => *arrivals.entry(train).or_default() += 1,
+                    SimEvent::Yield { .. } => yields += 1,
+                    SimEvent::Block {
+                        block,
+                        occupied: true,
+                        ..
+                    } if block.starts_with("timo-cdorf")
+                        && (block.ends_with("_3") || block.ends_with("_4")) =>
+                    {
+                        sidings += 1
+                    }
+                    _ => {}
+                }
+            }
+            let covered: Vec<BTreeSet<PieceId>> = sim
+                .trains
+                .iter()
+                .map(|t| sim.covered(t).into_iter().map(|(p, _, _)| p).collect())
+                .collect();
+            for i in 0..covered.len() {
+                for j in i + 1..covered.len() {
+                    assert!(
+                        covered[i].is_disjoint(&covered[j]),
+                        "trains collide at {:.1} s",
+                        sim.time_s
+                    );
+                }
+            }
+        }
+        for train in ["IC 2001", "Ng 4711", "Gm 6203", "RB 7701"] {
+            let count = arrivals.get(train).copied().unwrap_or(0);
+            assert!(
+                count >= 6,
+                "{train} arrived only {count} times in an hour: {arrivals:?}"
+            );
+        }
+        assert!(sidings > 0, "no train used a passing siding");
+        assert!(yields > 0, "no slower train let a faster one by");
     }
 }

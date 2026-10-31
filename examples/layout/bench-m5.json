@@ -1,12 +1,18 @@
 {
   "schema_version": 2,
-  "meeting": "Bench with three districts: MacBook (Adorf), M5StickC lite node in the middle, Windows (Bdorf)",
+  "meeting": "Bench with three districts: MacBook (Adorf, Cdorf passing station), M5StickC lite node in the middle, Windows (Bdorf)",
   "modules": [
     {
       "module_id": "timo-adorf"
     },
     {
       "module_id": "timo-2e96-west"
+    },
+    {
+      "module_id": "timo-cdorf-west"
+    },
+    {
+      "module_id": "timo-cdorf-east"
     },
     {
       "module_id": "timo-2e96-border"
@@ -34,6 +40,14 @@
     },
     {
       "a": "timo-2e96-west.B",
+      "b": "timo-cdorf-west.A"
+    },
+    {
+      "a": "timo-cdorf-west.B",
+      "b": "timo-cdorf-east.A"
+    },
+    {
+      "a": "timo-cdorf-east.B",
       "b": "timo-2e96-border.A"
     },
     {
@@ -63,6 +77,8 @@
       "modules": [
         "timo-adorf",
         "timo-2e96-west",
+        "timo-cdorf-west",
+        "timo-cdorf-east",
         "timo-2e96-border"
       ]
     },

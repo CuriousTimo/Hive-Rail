@@ -109,8 +109,12 @@ pub async fn run_sim(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Syn
             _ = tick.tick() => {
                 if let Some(publisher) = mesh.as_mut() {
                     publisher.drain();
-                    // Each district's power, from its node's heartbeats.
+                    // Each district's power, from its node's heartbeats; stops last fast minutes
+                    // at the mesh clock's rate.
                     sim.district_power = publisher.district_power();
+                    if publisher.clock.known() {
+                        sim.clock_rate = f64::from(publisher.clock.rate());
+                    }
                 }
                 for (time, event) in sim.step(step * speed) {
                     if let Some(publisher) = mesh.as_mut() {
@@ -220,6 +224,7 @@ async fn publish_event(
         | SimEvent::Turnout { district, .. } => (district.clone(), true),
         SimEvent::Signal { district, .. } => (district.clone(), true),
         SimEvent::Power { district, .. } => (district.clone(), false),
+        SimEvent::Yield { train, .. } => (train_district(train), false),
         SimEvent::Feed { block, district } => {
             let _ = block;
             (district.clone(), false)

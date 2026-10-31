@@ -1,0 +1,260 @@
+{
+  "schema_version": 2,
+  "module_id": "timo-cdorf-east",
+  "friendly_name": "Cdorf east: passing station, sidings run on from Cdorf west",
+  "owner": "Timo",
+  "scale": "H0",
+  "length_mm": 1200,
+  "ends": [
+    {
+      "id": "A",
+      "profile": "CDORF4",
+      "tracks": ["3", "1", "2", "4"]
+    },
+    {
+      "id": "B",
+      "profile": "2E96",
+      "tracks": ["2", "1"]
+    }
+  ],
+  "track": [
+    {
+      "id": "1",
+      "from": "A.1",
+      "to": "C3.straight",
+      "length_mm": 900,
+      "direction": "A>B"
+    },
+    {
+      "id": "3",
+      "from": "A.3",
+      "to": "C3.diverging",
+      "length_mm": 912,
+      "direction": "A>B"
+    },
+    {
+      "id": "1b",
+      "from": "C3.trunk",
+      "to": "B.1",
+      "length_mm": 300,
+      "direction": "A>B"
+    },
+    {
+      "id": "2b",
+      "from": "B.2",
+      "to": "C4.trunk",
+      "length_mm": 300,
+      "direction": "B>A"
+    },
+    {
+      "id": "2",
+      "from": "C4.straight",
+      "to": "A.2",
+      "length_mm": 900,
+      "direction": "B>A"
+    },
+    {
+      "id": "4",
+      "from": "C4.diverging",
+      "to": "A.4",
+      "length_mm": 912,
+      "direction": "B>A"
+    }
+  ],
+  "turnouts": [
+    {
+      "id": "C3",
+      "device": "point_c3"
+    },
+    {
+      "id": "C4",
+      "device": "point_c4"
+    }
+  ],
+  "stations": [
+    {
+      "name": "Cdorf",
+      "code": "Cd",
+      "tracks": [
+        {
+          "name": "1",
+          "track": "1",
+          "usable_mm": 800,
+          "platform": false
+        },
+        {
+          "name": "3",
+          "track": "3",
+          "usable_mm": 800,
+          "platform": false,
+          "passing": true
+        },
+        {
+          "name": "2",
+          "track": "2",
+          "usable_mm": 800,
+          "platform": false
+        },
+        {
+          "name": "4",
+          "track": "4",
+          "usable_mm": 800,
+          "platform": false,
+          "passing": true
+        }
+      ]
+    }
+  ],
+  "blocks": [
+    {
+      "id": "ce_1",
+      "track": "1",
+      "cuts_mm": [20, 880],
+      "detected_rail": "outer",
+      "occupancy": "occ_1"
+    },
+    {
+      "id": "ce_3",
+      "track": "3",
+      "cuts_mm": [20, 810],
+      "detected_rail": "outer",
+      "occupancy": "occ_3"
+    },
+    {
+      "id": "ce_2",
+      "track": "2",
+      "cuts_mm": [20, 880],
+      "detected_rail": "outer",
+      "occupancy": "occ_2"
+    },
+    {
+      "id": "ce_4",
+      "track": "4",
+      "cuts_mm": [100, 890],
+      "detected_rail": "outer",
+      "occupancy": "occ_4"
+    }
+  ],
+  "devices": [
+    {
+      "id": "point_c3",
+      "type": "turnout",
+      "bus": "loconet",
+      "address": 33
+    },
+    {
+      "id": "point_c4",
+      "type": "turnout",
+      "bus": "loconet",
+      "address": 34
+    },
+    {
+      "id": "occ_1",
+      "type": "occupancy",
+      "bus": "loconet",
+      "address": 225,
+      "block": "ce_1"
+    },
+    {
+      "id": "occ_3",
+      "type": "occupancy",
+      "bus": "loconet",
+      "address": 226,
+      "block": "ce_3"
+    },
+    {
+      "id": "occ_2",
+      "type": "occupancy",
+      "bus": "loconet",
+      "address": 227,
+      "block": "ce_2"
+    },
+    {
+      "id": "occ_4",
+      "type": "occupancy",
+      "bus": "loconet",
+      "address": 228,
+      "block": "ce_4"
+    },
+    {
+      "id": "sig_c1",
+      "type": "signal",
+      "bus": "loconet",
+      "address": 139,
+      "track": "1",
+      "at_mm": 860,
+      "for": "A>B",
+      "aspects": ["red", "green"]
+    },
+    {
+      "id": "sig_c3",
+      "type": "signal",
+      "bus": "loconet",
+      "address": 140,
+      "track": "3",
+      "at_mm": 780,
+      "for": "A>B",
+      "aspects": ["red", "green"]
+    },
+    {
+      "id": "sig_ce2",
+      "type": "signal",
+      "bus": "loconet",
+      "address": 135,
+      "track": "2b",
+      "at_mm": 260,
+      "for": "B>A",
+      "aspects": ["red", "yellow", "green"]
+    }
+  ],
+  "geometry": {
+    "outline": [
+      [0, 0],
+      [1200, 0],
+      [1200, 546],
+      [0, 546]
+    ],
+    "ends": {
+      "A": {
+        "at": [0, 273],
+        "facing": 180
+      },
+      "B": {
+        "at": [1200, 273],
+        "facing": 0
+      }
+    },
+    "points": {
+      "C3": [900, 250],
+      "C4": [900, 296]
+    },
+    "track": {
+      "1": [
+        [0, 250],
+        [900, 250]
+      ],
+      "3": [
+        [0, 204],
+        [820, 204],
+        [900, 250]
+      ],
+      "1b": [
+        [900, 250],
+        [1200, 250]
+      ],
+      "2b": [
+        [1200, 296],
+        [900, 296]
+      ],
+      "2": [
+        [900, 296],
+        [0, 296]
+      ],
+      "4": [
+        [900, 296],
+        [820, 342],
+        [0, 342]
+      ]
+    }
+  }
+}
