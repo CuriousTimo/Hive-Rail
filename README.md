@@ -330,6 +330,8 @@ cargo run -- --web-sim examples/layout/bench-double-track.json           # the s
 
 `--port` picks another port and `--speed 4` runs the simulation four times as fast. Scroll to zoom, drag to move, double-click to fit; click a district or module name to zoom there. `?modules=timo-adorf,timo-2e96-west` in the address shows only those modules, for a screen next to one station, and `?districts=M5StickC` every module of a district. The side panel (trains, legend, events) can be hidden with the button in the header.
 
+`scripts/bench-m5.sh` starts the whole bench on one computer: the MacBook and Windows nodes (both lite servers, so the M5StickC Node-Lite joins when it is on the Wi-Fi), the simulator on the mesh and the web view, with every district powered on and the fast clock running; `--ib-switch` adds an IB-Switch on a GCA101 as an occupancy display. The top of the script lists the keys to send to the nodes (district power, shorts, global stop and go, the clock). Ctrl+C stops everything.
+
 What the simulator does, with `examples/layout/bench-m5.json` and its six trains of five types (IC, RE, RB, Dg, Ng):
 
 - **Routes and signals.** Each train reserves its way one signal section at a time, at most two ahead; a signal shows green, yellow (the next one is red, as a German Ks signal) or red. A section only needs to be free up to the next signal, so a train takes a free track behind one entry signal.
