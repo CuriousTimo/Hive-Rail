@@ -28,6 +28,7 @@ const SWITCHES: &[&str] = &["--identify", "--plain", "--loconet-tcp", "--loconet
 const COMMANDS: &[&str] = &[
     "--show-locos",
     "--transfer-loco",
+    "--sim-hw",
     "--validate-profile",
     "--check-layout",
     "--simulate-layout",

@@ -53,6 +53,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         },
         Some("--show-locos") => dispatcher::show_locos(args.collect()).await,
         Some("--transfer-loco") => dispatcher::transfer_loco(args.collect()).await,
+        Some("--sim-hw") => dispatcher::sim_hw(args.collect()).await,
         Some("--check-layout") => check_layout(args.collect()),
         Some("--simulate-layout") => simulate_layout(args.collect()),
         Some("--web-sim") => web::run_sim(args.collect()).await,
@@ -201,6 +202,7 @@ fn print_help() {
          cargo run -- --mode node --session <name> --id <id> --lite-server   (serve lite nodes: a Zenoh router they find by scouting)\n\
          cargo run -- --mode dispatcher --session <name> [--plain]\n\
          cargo run -- --show-locos --session <name>\n\
+         cargo run -- --sim-hw <district> <power_on|power_off|short|global_stop|global_go> --session <name>   (fake hardware of a lite node)\n\
          cargo run -- --transfer-loco <address> --to <node> --session <name> [--speed 0-126] [--forward|--reverse] [--lights|--no-lights]\n\
          cargo run -- --validate-profile <path>\n\
          cargo run -- --check-layout <layout.json> [--modules <dir>]\n\

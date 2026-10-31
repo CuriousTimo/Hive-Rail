@@ -651,6 +651,34 @@ fn print_register(args: &Args, state: &State) {
     }
 }
 
+/// `--sim-hw <district> <action> --session <name>`: one action of a district's fake hardware,
+/// as the simulator gives it to a lite node on `hive/<session>/sim/<district>/hw`: `power_on`,
+/// `power_off`, `short`, `global_stop` or `global_go`, the same as its buttons.
+pub async fn sim_hw(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let mut args = args.into_iter();
+    let district = args.next().ok_or("expected a district after --sim-hw")?;
+    let action = args.next().ok_or("expected an action after the district")?;
+    if !["power_on", "power_off", "short", "global_stop", "global_go"].contains(&action.as_str()) {
+        return Err(format!("unknown action {action}; expected power_on, power_off, short, global_stop or global_go").into());
+    }
+    let mut rest = vec!["--id".to_owned(), "sim-hw".to_owned(), "--plain".to_owned()];
+    rest.extend(args);
+    let options = parse_args(rest)?;
+    let session = zenoh::open(zenoh_config(None, None, false)?).await?;
+    // Give scouting a moment to find the mesh before sending.
+    time::sleep(Duration::from_millis(1500)).await;
+    session
+        .put(
+            format!("hive/{}/sim/{district}/hw", options.session),
+            action.clone(),
+        )
+        .attachment("sim-hw")
+        .await?;
+    time::sleep(Duration::from_millis(300)).await;
+    println!("{district}: {action}");
+    Ok(())
+}
+
 /// `--transfer-loco <address> --to <node>`: a test tool that puts a loco into a district,
 /// as a handoff will. The loco gets that node as its district in the register; the node
 /// then takes it on its command station's slot master. `--speed`, `--forward`/`--reverse`

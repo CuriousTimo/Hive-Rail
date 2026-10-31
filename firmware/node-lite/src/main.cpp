@@ -34,6 +34,7 @@ static z_owned_session_t session;
 static z_owned_publisher_t heartbeat;
 static z_owned_subscriber_t peers;
 static z_owned_subscriber_t global_stop;
+static z_owned_subscriber_t sim_hw;
 static z_owned_publisher_t global_stop_out;
 static z_owned_publisher_t power_status;
 static z_owned_publisher_t events;
@@ -47,6 +48,10 @@ static char last_event[80] = "";
 // A global stop or go received from the mesh, applied by loop() (set in the receive task).
 static volatile bool stop_from_mesh = false;
 static volatile bool go_from_mesh = false;
+// An action injected by the simulator as this district's fake hardware
+// (hive/<s>/sim/<id>/hw): power_on, power_off, short, global_stop, global_go. 0 = none.
+enum SimAction { SIM_NONE, SIM_POWER_ON, SIM_POWER_OFF, SIM_SHORT, SIM_GLOBAL_STOP, SIM_GLOBAL_GO };
+static volatile SimAction sim_action = SIM_NONE;
 static char stop_origin[24] = "";
 // A firmware update arrived: loop() restarts the ESP32 (not the update code itself, which once
 // left the M5StickC hanging on "restarting").
@@ -501,6 +506,25 @@ static void fetch_layout() {
     z_get(z_session_loan(&session), z_view_keyexpr_loan(&ke), "", z_closure_reply_move(&callback), &options);
 }
 
+static void on_sim_hw(z_loaned_sample_t *sample, void *) {
+    z_owned_string_t text;
+    z_bytes_to_string(z_sample_payload(sample), &text);
+    char action[24] = "";
+    size_t n = z_string_len(z_string_loan(&text));
+    if (n >= sizeof(action)) {
+        n = sizeof(action) - 1;
+    }
+    memcpy(action, z_string_data(z_string_loan(&text)), n);
+    action[n] = 0;
+    z_string_drop(z_string_move(&text));
+    sim_action = strcmp(action, "power_on") == 0      ? SIM_POWER_ON
+                 : strcmp(action, "power_off") == 0   ? SIM_POWER_OFF
+                 : strcmp(action, "short") == 0       ? SIM_SHORT
+                 : strcmp(action, "global_stop") == 0 ? SIM_GLOBAL_STOP
+                 : strcmp(action, "global_go") == 0   ? SIM_GLOBAL_GO
+                                                      : SIM_NONE;
+}
+
 static bool declare(int result) {
     return result >= 0;
 }
@@ -541,7 +565,12 @@ static bool open_zenoh() {
         zid_text(&id, own_zid);
         Serial.printf("Zenoh client to %s, zid %s, free heap %u\n", locator, own_zid, ESP.getFreeHeap());
 
-        static char key_hb[96], key_peers[96], key_all[64], key_status[96], key_events[96];
+        static char key_hb[96], key_peers[96], key_all[64], key_status[96], key_events[96], key_hw[96];
+        snprintf(key_hw, sizeof(key_hw), "hive/%s/sim/%s/hw", HIVE_SESSION, HIVE_NODE_ID);
+        z_view_keyexpr_t ke_hw;
+        z_view_keyexpr_from_str_unchecked(&ke_hw, key_hw);
+        z_owned_closure_sample_t hw_cb;
+        z_closure_sample(&hw_cb, on_sim_hw, NULL, NULL);
         snprintf(key_hb, sizeof(key_hb), "hive/%s/node/%s/hb", HIVE_SESSION, HIVE_NODE_ID);
         snprintf(key_peers, sizeof(key_peers), "hive/%s/node/*/hb", HIVE_SESSION);
         snprintf(key_all, sizeof(key_all), "hive/%s/rn/cs/all", HIVE_SESSION);
@@ -564,6 +593,8 @@ static bool open_zenoh() {
             declare(z_declare_publisher(zs, &power_status, z_view_keyexpr_loan(&ke_status), NULL)) &&
             declare(z_declare_publisher(zs, &events, z_view_keyexpr_loan(&ke_events), NULL)) &&
             declare(z_declare_subscriber(zs, &global_stop, z_view_keyexpr_loan(&ke_all), z_closure_sample_move(&stop_cb),
+                                         NULL)) &&
+            declare(z_declare_subscriber(zs, &sim_hw, z_view_keyexpr_loan(&ke_hw), z_closure_sample_move(&hw_cb),
                                          NULL))) {
             return true;
         }
@@ -725,6 +756,20 @@ void loop() {
         snprintf(text, sizeof(text), "District emergency stop requested by %s", stop_origin[0] ? stop_origin : "?");
         event(text);
         emergency_stop(why);
+        next_screen = 0;
+    }
+    // The simulator's fake hardware: the same as the buttons.
+    if (sim_action != SIM_NONE) {
+        SimAction action = sim_action;
+        sim_action = SIM_NONE;
+        switch (action) {
+        case SIM_POWER_ON: set_power(POWER_ON, "sim: power on"); break;
+        case SIM_POWER_OFF: set_power(POWER_OFF, "sim: power off"); break;
+        case SIM_SHORT: set_power(POWER_SHORT, "sim: short"); break;
+        case SIM_GLOBAL_STOP: send_global_stop(); break;
+        case SIM_GLOBAL_GO: send_global_go(); break;
+        default: break;
+        }
         next_screen = 0;
     }
     if (go_from_mesh) {
