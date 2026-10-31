@@ -91,6 +91,8 @@ pub async fn run_sim(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Syn
     // Each train's direction as published: it changes when the train reverses.
     let mut forward: std::collections::HashMap<String, bool> =
         sim.trains.iter().map(|t| (t.name.clone(), true)).collect();
+    // What the loco register was last told of each train: district, speed step, direction.
+    let mut published = std::collections::HashMap::new();
 
     let (publish, state) = watch::channel(String::new());
     let shared = Arc::new(Shared { layout_json, state });
@@ -118,14 +120,25 @@ pub async fn run_sim(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Syn
                 }
                 for (time, event) in sim.step(step * speed) {
                     if let Some(publisher) = mesh.as_mut() {
-                        publish_train(publisher, &sim, topology, &mut forward, &event).await?;
+                        // A train reverses at each stop: its direction changes.
+                        if let layout_sim::SimEvent::Departed { train, .. } = &event {
+                            if let Some(direction) = forward.get_mut(train) {
+                                *direction = !*direction;
+                            }
+                        }
                         publish_event(publisher, layout, &sim, topology, &event).await?;
+                        if let layout_sim::SimEvent::Block { district, occupied, address: Some(address), .. } = &event {
+                            publisher.sim_sensor(district, *address, *occupied).await?;
+                        }
                     }
                     let line = format!("{:>7.1} s  {event}", time);
                     if log.len() == LOG_LINES {
                         log.pop_front();
                     }
                     log.push_back(line);
+                }
+                if let Some(publisher) = mesh.as_mut() {
+                    publish_trains(publisher, &sim, topology, &forward, &mut published).await?;
                 }
                 let snapshot = view.snapshot(&sim, topology);
                 let mut json = serde_json::to_value(&snapshot)?;
@@ -167,41 +180,35 @@ fn running_step(train: &layout_sim::Train) -> u8 {
     (train.speed_mm_s * 0.6).round().clamp(1.0, 126.0) as u8
 }
 
-/// Tells the mesh what a simulator event means for the loco register: a train in another
-/// district, stopped, or running the other way.
-async fn publish_train(
+/// Keeps the loco register up to date with the trains: each train's district, speed step
+/// (0 while it stands: at a stop, at a red signal, without power) and direction, put on
+/// the mesh whenever one of them changes.
+async fn publish_trains(
     publisher: &mut crate::dispatcher::LocoPublisher,
     sim: &LayoutSim<'_>,
     topology: &Topology,
-    forward: &mut std::collections::HashMap<String, bool>,
-    event: &layout_sim::SimEvent,
+    forward: &std::collections::HashMap<String, bool>,
+    published: &mut std::collections::HashMap<String, (String, u8, bool)>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    use layout_sim::SimEvent;
-    let (name, running) = match event {
-        SimEvent::Border { train, .. } => (train, true),
-        SimEvent::Arrived { train, .. } => (train, false),
-        // No track power: the loco stands; with power back it runs again.
-        SimEvent::Power { train, powered, .. } => (train, *powered),
-        SimEvent::Departed { train, .. } => {
-            if let Some(direction) = forward.get_mut(train) {
-                *direction = !*direction;
-            }
-            (train, true)
+    for train in &sim.trains {
+        let district = topology
+            .piece(&train.head.piece)
+            .map(|p| p.district.clone())
+            .unwrap_or_default();
+        let step = match train.state {
+            layout_sim::TrainState::Running => running_step(train),
+            _ => 0,
+        };
+        let direction = forward.get(&train.name).copied().unwrap_or(true);
+        let now = (district, step, direction);
+        if published.get(&train.name) != Some(&now) {
+            publisher
+                .put(train.address, &now.0, now.1, now.2, true)
+                .await?;
+            published.insert(train.name.clone(), now);
         }
-        _ => return Ok(()),
-    };
-    let Some(train) = sim.trains.iter().find(|t| &t.name == name) else {
-        return Ok(());
-    };
-    let step = if running { running_step(train) } else { 0 };
-    let district = topology
-        .piece(&train.head.piece)
-        .map(|p| p.district.clone())
-        .unwrap_or_default();
-    let direction = forward.get(name).copied().unwrap_or(true);
-    publisher
-        .put(train.address, &district, step, direction, true)
-        .await
+    }
+    Ok(())
 }
 
 /// Sends a simulator event to the dispatcher, as the district it happens in reports it:

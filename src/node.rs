@@ -75,6 +75,9 @@ struct NodeArgs {
     layout: Option<String>,
     /// Serve lite nodes: Zenoh in router mode, found by their scouting.
     lite_server: bool,
+    /// `--show-sensors`: turnouts of a panel (an IB-Switch) that show sensors: turnout and
+    /// sensor, green while the sensor is free, red while occupied.
+    show_sensors: Vec<(u16, u16)>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -318,6 +321,11 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
     let observer_subscriber = session
         .declare_subscriber(format!("hive/{}/observer/hello", options.session))
         .await?;
+    // The simulator's occupancy detectors in this district, as real ones would report on
+    // its LocoNet: {"address": 204, "occupied": true}.
+    let sim_sensor_subscriber = session
+        .declare_subscriber(format!("hive/{}/sim/{}/sensor", options.session, options.id))
+        .await?;
     // With --layout: each district's part of the layout, for lite nodes that ask.
     let layout_packages: BTreeMap<String, String> = match &options.layout {
         Some(path) => {
@@ -400,6 +408,11 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
         LocoNetEdge::new(options.loconet_connect_slots).with_throttle_id(throttle_id);
     // Turnout positions, answered on a side whose command station the node is.
     let mut turnouts = Turnouts::default();
+    // Panel turnouts that show sensors start green (free), so a panel asking at start-up
+    // lights up before the first report.
+    for (turnout, _) in &options.show_sensors {
+        turnouts.receive(&LocoNetMessage::switch_request(*turnout, true, false), false, false);
+    }
     // Loco addresses this node asked the allocator a throttle number for, and since when.
     let mut throttle_requests: HashMap<u16, Instant> = HashMap::new();
     // Peers whose loco register checksum differs from ours, and since when.
@@ -956,6 +969,28 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                         log.event(format!("Layout for district {district} sent ({} bytes)", package.len()));
                     }
                     None => log.line(format!("[mesh] <- layout asked for unknown district {district}")),
+                }
+            }
+            sample = sim_sensor_subscriber.recv_async() => {
+                let sample = sample?;
+                #[derive(Deserialize)]
+                struct SimSensor { address: u16, occupied: bool }
+                let Ok(sensor) = serde_json::from_slice::<SimSensor>(sample.payload().to_bytes().as_ref()) else {
+                    continue;
+                };
+                // On both LocoNet sides, as a detector on the bus would report it; and the
+                // panel turnouts that show it.
+                let mut messages = vec![LocoNetMessage::input_report(sensor.address, sensor.occupied)];
+                for (turnout, _) in options.show_sensors.iter().filter(|(_, s)| *s == sensor.address) {
+                    let free = !sensor.occupied;
+                    messages.push(LocoNetMessage::switch_request(*turnout, free, true));
+                    messages.push(LocoNetMessage::switch_request(*turnout, free, false));
+                }
+                for message in messages {
+                    // Remembered as the command station would, for a panel that asks.
+                    turnouts.receive(&message, false, false);
+                    send_to_side(&loconet_ports, LocoNetSide::Clients, vec![message.clone()], &mut log);
+                    send_to_side(&loconet_ports, LocoNetSide::Bus, vec![message], &mut log);
                 }
             }
             sample = observer_subscriber.recv_async() => {
@@ -1625,6 +1660,7 @@ fn parse_args(args: Vec<String>) -> Result<NodeArgs, Box<dyn Error + Send + Sync
     let mut plain = false;
     let mut layout_file = None;
     let mut lite_server = false;
+    let mut show_sensors = Vec::new();
     let mut args = args.into_iter().peekable();
 
     while let Some(flag) = args.next() {
@@ -1639,6 +1675,17 @@ fn parse_args(args: Vec<String>) -> Result<NodeArgs, Box<dyn Error + Send + Sync
             "--dccex" => dccex = Some(next_value(&mut args, &flag)?),
             "--layout" => layout_file = Some(next_value(&mut args, &flag)?),
             "--lite-server" => lite_server = true,
+            "--show-sensors" => {
+                let value = next_value(&mut args, &flag)?;
+                for pair in value.split(',').filter(|p| !p.is_empty()) {
+                    let parsed = pair.split_once('=').and_then(|(turnout, sensor)| {
+                        Some((turnout.trim().parse::<u16>().ok()?, sensor.trim().parse::<u16>().ok()?))
+                    });
+                    show_sensors.push(parsed.ok_or_else(|| {
+                        format!("invalid {flag} '{pair}'; expected turnout=sensor, such as 111=204")
+                    })?);
+                }
+            }
             "--loconet-tcp-slots" | "--loconet-connect-slots" => {
                 let value = next_value(&mut args, &flag)?;
                 let owner = SlotOwner::parse(&value).ok_or_else(|| {
@@ -1769,6 +1816,7 @@ fn parse_args(args: Vec<String>) -> Result<NodeArgs, Box<dyn Error + Send + Sync
         plain,
         layout: layout_file,
         lite_server,
+        show_sensors,
     })
 }
 

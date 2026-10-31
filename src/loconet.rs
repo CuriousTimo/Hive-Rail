@@ -267,6 +267,29 @@ impl LocoNetMessage {
         })
     }
 
+    /// `OPC_SW_REQ`: switch a turnout (1 to 2048) closed or thrown, output on or off.
+    pub fn switch_request(turnout: u16, closed: bool, on: bool) -> Self {
+        let wire = turnout.saturating_sub(1);
+        let mut sw2 = ((wire >> 7) & 0x0F) as u8;
+        if closed {
+            sw2 |= 0x20;
+        }
+        if on {
+            sw2 |= 0x10;
+        }
+        Self::with_checksum(&[OPC_SW_REQ, (wire & 0x7F) as u8, sw2])
+    }
+
+    /// `OPC_INPUT_REP`: a sensor (1 to 4096) reports high (occupied) or low.
+    pub fn input_report(sensor: u16, high: bool) -> Self {
+        let wire = sensor.saturating_sub(1);
+        let mut in2 = 0x40 | ((wire >> 8) & 0x0F) as u8 | (((wire & 1) as u8) << 5);
+        if high {
+            in2 |= 0x10;
+        }
+        Self::with_checksum(&[OPC_INPUT_REP, ((wire >> 1) & 0x7F) as u8, in2])
+    }
+
     fn with_checksum(body: &[u8]) -> Self {
         let checksum = body.iter().fold(0xFF, |sum, byte| sum ^ byte);
         let mut bytes = body.to_vec();
@@ -449,6 +472,26 @@ fn eleven_bit_address(low: u8, high: u8) -> u16 {
 
 #[cfg(test)]
 mod tests {
+
+    /// Turnout and sensor numbers survive the trip through the wire format, as the
+    /// IB-Switch's turnout 137 and the sensors of the bench layout.
+    #[test]
+    fn switch_requests_and_sensor_reports_round_trip() {
+        assert_eq!(LocoNetMessage::switch_request(111, true, true).to_hex(), "B0 6E 30 11");
+        let thrown = LocoNetMessage::switch_request(137, false, false);
+        assert!(thrown.describe().contains("switch 137 thrown off"), "{}", thrown.describe());
+        for sensor in [1, 2, 204, 227, 4096] {
+            for high in [true, false] {
+                let report = LocoNetMessage::input_report(sensor, high);
+                let level = if high { "high" } else { "low" };
+                assert!(
+                    report.describe().contains(&format!("sensor {sensor} {level}")),
+                    "{}",
+                    report.describe()
+                );
+            }
+        }
+    }
     use super::{LocoNetError, LocoNetMessage, StreamDecoder};
 
     #[test]

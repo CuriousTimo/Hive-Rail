@@ -87,7 +87,6 @@ struct District {
     online: bool,
     rocnet_id: Option<u16>,
     power: String,
-    locos: usize,
     register: Option<u64>,
     /// A lite node, and the node it reaches the mesh through.
     lite: bool,
@@ -164,6 +163,17 @@ impl State {
     }
 
     /// The layout-wide state: a global emergency stop, or normal.
+    /// The locos in a district, from the loco register: in use, with that district. (A
+    /// node's heartbeat lists only the locos driven through its own LocoNet, which leaves
+    /// out locos driven elsewhere, such as by the simulator or another node's throttle.)
+    fn locos_in(&self, district: &str) -> usize {
+        self.register
+            .snapshot()
+            .iter()
+            .filter(|loco| loco.in_use() && loco.district.as_deref() == Some(district))
+            .count()
+    }
+
     fn global_state(&self) -> crate::power::GlobalState {
         let powers: Vec<&str> = self
             .districts
@@ -220,7 +230,6 @@ impl State {
                 online: true,
                 rocnet_id: heartbeat.rocnet_id,
                 power: heartbeat.power.clone(),
-                locos: heartbeat.locos.len(),
                 register: heartbeat.register,
                 lite: heartbeat.lite,
                 via: heartbeat.via.clone(),
@@ -756,6 +765,26 @@ impl LocoPublisher {
         Ok(())
     }
 
+    /// A simulated occupancy detector in a district changed: its node reports it on its
+    /// LocoNet, as it would a real one.
+    pub async fn sim_sensor(
+        &self,
+        district: &str,
+        address: u16,
+        occupied: bool,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+        let payload = serde_json::json!({ "address": address, "occupied": occupied }).to_string();
+        self.mesh
+            ._session
+            .put(
+                format!("hive/{}/sim/{district}/sensor", self.session),
+                payload,
+            )
+            .allowed_destination(zenoh::sample::Locality::Remote)
+            .await?;
+        Ok(())
+    }
+
     /// Empties what the mesh delivered that this program does not show: heartbeats and
     /// node events. Unread, their queues fill and the mesh waits for room. Loco updates
     /// from the nodes are kept, so the versions published here stay the newest.
@@ -1056,7 +1085,7 @@ fn render(frame: &mut Frame<'_>, state: &State) {
                     district.power.clone(),
                     power_style(&district.power),
                 )),
-                Cell::from(district.locos.to_string()),
+                Cell::from(state.locos_in(id).to_string()),
                 Cell::from(Span::styled(sync, sync_style)),
             ])
         }),
