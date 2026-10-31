@@ -98,6 +98,8 @@ The roadmap follows the [wiki design specification](https://github.com/CuriousTi
 	- [ ] **6.3** Bench-test on an isolated layout section before any wider trial.
 	- [ ] **6.4** Add local RocNet adapters for compatible module equipment.
 	- [ ] **6.5** Build the [Hive-Rail node board](https://github.com/CuriousTimo/Hive-Rail/wiki/Hive-Rail-Node-Board): an ESP32 with DCC-EX, LocoNet-B and LocoNet-T, transfer relays and sensor, stop and go buttons and status LEDs, linked to Hive-Rail on a Pi or PC; prototype on the 2021 ESP32 LocoNet Command Station board. Step 1 is done: stock DCC-EX with the board definition, a Hive-Rail add-on with its own OLED screen (fast clock, district power, mesh, slots, last loco, link status), the status LEDs and the stop and go buttons (`firmware/node-board/`, built with `firmware/node-board/build.sh`).
+	- [ ] **6.6** Design board v2 ([node board §4](https://github.com/CuriousTimo/Hive-Rail/wiki/Hive-Rail-Node-Board#4-board-v2-two-esp32s)): two ESP32s, one with stock DCC-EX (ESP32-WROOM-32E, 2× DRV8874), one for the lite node (LocoNet, XpressNet, optional W5500 Ethernet, relays, LEDs, OLED). The board is a full command station at home and a district's node at meetings.
+	- [ ] **6.7** Prove the lite node: zenoh-pico on the node chip sends a heartbeat that the dispatcher shows as a district; then the lite node firmware (LocoNet, loco register, district power, transfer zone).
 - [ ] **Phase 7: Peripherals**
 	- [x] **7.1** Add a terminal dashboard for node, neighbor heartbeat state, district power and fast clock.
 	- [ ] **7.2** Add operator controls after the safety model is implemented.
@@ -115,6 +117,8 @@ The roadmap follows the [wiki design specification](https://github.com/CuriousTi
 	- [ ] **8.4** Route a throttle's speed and functions to the district that holds the loco (needs 4.6 and 5.1).
 	- [ ] **8.5** Measure the slot response time with a real FRED through the node board and the network.
 	- [ ] **8.6** Walk-around test with real FREDs and Fredis.
+	- [ ] **8.10** Roco's Z21 LAN protocol in the node, for the Z21 app and the wlanMAUS (software only).
+	- [ ] **8.11** multiMAUS on a cable: the node as XpressNet master on the board's RS-485 port, commands by loco address into the loco register.
 
 Phase 0 measurements are gates, not paperwork: timing assumptions and hardware behavior must be verified before safety or handoff features are treated as ready for a live layout.
 
