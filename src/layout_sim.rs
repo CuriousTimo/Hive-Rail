@@ -1049,15 +1049,19 @@ impl<'a> LayoutSim<'a> {
                 }
             }
         }
-        let mut avoid_through = blocked.clone();
+        // First choice: straight on along the through track, or with a faster train
+        // behind, into the passing siding to let it by.
+        let mut preferred = blocked.clone();
         if follower.is_some() {
-            avoid_through.extend(self.through.iter().cloned());
+            preferred.extend(self.through.iter().cloned());
+        } else {
+            preferred.extend(self.passing.iter().cloned());
         }
         let train = &self.trains[index];
         // A free section if there is one (a passing siding instead of a taken track), else
         // the shortest way, to wait for.
         let Some(way) = self
-            .find_section(&start, &goal, &avoid_through)
+            .find_section(&start, &goal, &preferred)
             .or_else(|| self.find_section(&start, &goal, &blocked))
             .or_else(|| self.find_way(&start, &goal, None))
         else {
