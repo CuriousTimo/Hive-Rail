@@ -110,8 +110,127 @@ impl SimulatedCommandStation {
     }
 }
 
+/// The layout's power at a glance, from every online district's power: what the
+/// dispatcher's header and a node's screen show. Each district still runs on its own; this
+/// is only the summary.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LayoutPower {
+    pub label: String,
+    pub level: LayoutLevel,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LayoutLevel {
+    /// Every district on.
+    Running,
+    /// Some on, some off or unknown.
+    Partly,
+    /// Every district off.
+    Off,
+    /// A district in emergency stop or short.
+    Stopped,
+}
+
+/// `districts`: each online district's name and power label (ON, OFF, STOP, SHORT,
+/// UNKNOWN). `global_stop`: who sent the last global emergency stop and when; it is shown
+/// while any district is still in emergency stop.
+pub fn layout_power(
+    districts: &[(&str, &str)],
+    global_stop: Option<&(String, String)>,
+) -> LayoutPower {
+    let named = |power: &str| {
+        districts
+            .iter()
+            .filter(|(_, p)| *p == power)
+            .map(|(name, _)| *name)
+            .collect::<Vec<_>>()
+    };
+    let (stopped, shorted, off) = (named("STOP"), named("SHORT"), named("OFF"));
+    let on = districts.iter().filter(|(_, p)| *p == "ON").count();
+    if !stopped.is_empty() || !shorted.is_empty() {
+        let mut parts = Vec::new();
+        if !shorted.is_empty() {
+            parts.push(format!("SHORT in {}", shorted.join(", ")));
+        }
+        if !stopped.is_empty() {
+            parts.push(format!("STOP in {}", stopped.join(", ")));
+        }
+        let label = match global_stop {
+            Some((origin, time)) if !stopped.is_empty() => {
+                format!("GLOBAL STOP by {origin} at {time}: {}", parts.join("; "))
+            }
+            _ => parts.join("; "),
+        };
+        return LayoutPower {
+            label,
+            level: LayoutLevel::Stopped,
+        };
+    }
+    if districts.is_empty() {
+        return LayoutPower {
+            label: "no districts".to_owned(),
+            level: LayoutLevel::Off,
+        };
+    }
+    if on == districts.len() {
+        return LayoutPower {
+            label: format!("ALL ON ({on})"),
+            level: LayoutLevel::Running,
+        };
+    }
+    if off.len() == districts.len() {
+        return LayoutPower {
+            label: format!("ALL OFF ({})", off.len()),
+            level: LayoutLevel::Off,
+        };
+    }
+    let mut parts = vec![format!("{on} ON")];
+    if !off.is_empty() {
+        parts.push(format!("OFF: {}", off.join(", ")));
+    }
+    let unknown = named("UNKNOWN");
+    if !unknown.is_empty() {
+        parts.push(format!("UNKNOWN: {}", unknown.join(", ")));
+    }
+    LayoutPower {
+        label: parts.join(", "),
+        level: LayoutLevel::Partly,
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn layout_power_sums_up_the_districts() {
+        use super::{layout_power, LayoutLevel};
+        let stop = ("M5StickC".to_owned(), "12:31:34".to_owned());
+        let all_on = layout_power(&[("MacBook", "ON"), ("Windows", "ON")], None);
+        assert_eq!(
+            (all_on.label.as_str(), all_on.level),
+            ("ALL ON (2)", LayoutLevel::Running)
+        );
+        let partly = layout_power(&[("MacBook", "OFF"), ("Windows", "ON")], Some(&stop));
+        assert_eq!(partly.label, "1 ON, OFF: MacBook");
+        assert_eq!(partly.level, LayoutLevel::Partly);
+        let stopped = layout_power(
+            &[
+                ("MacBook", "OFF"),
+                ("Windows", "STOP"),
+                ("M5StickC", "SHORT"),
+            ],
+            Some(&stop),
+        );
+        assert_eq!(
+            stopped.label,
+            "GLOBAL STOP by M5StickC at 12:31:34: SHORT in M5StickC; STOP in Windows"
+        );
+        assert_eq!(stopped.level, LayoutLevel::Stopped);
+        // A short alone is not a global stop.
+        let short = layout_power(&[("Windows", "SHORT")], Some(&stop));
+        assert_eq!(short.label, "SHORT in Windows");
+        assert_eq!(layout_power(&[("A", "OFF")], None).label, "ALL OFF (1)");
+    }
+
     use super::{PowerRequest, PowerState, SimulatedCommandStation};
 
     #[test]

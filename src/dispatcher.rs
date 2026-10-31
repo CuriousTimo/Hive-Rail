@@ -11,7 +11,7 @@ use crate::{
     locos::{LocoRegister, RegisteredLoco},
     node::{zenoh_config, Heartbeat, HEARTBEAT_TIMEOUT, REGISTER_SYNC_GRACE},
     rocnet::{ClockAction, ClockUpdate, RocNetFrame},
-    ui::{format_age, power_style, ClockChange, TerminalUi, UiCommand},
+    ui::{format_age, layout_style, power_style, ClockChange, TerminalUi, UiCommand},
 };
 use chrono::Local;
 use ratatui::{
@@ -113,6 +113,8 @@ struct State {
     echo: bool,
     /// Show the details too (the `d` key).
     details: bool,
+    /// The last global emergency stop: who sent it, and when.
+    global_stop: Option<(String, String)>,
 }
 
 impl State {
@@ -154,6 +156,26 @@ impl State {
             None => node.to_owned(),
         };
         self.add_event(detail, format!("{label}  {text}"));
+    }
+
+    /// The layout's power at a glance, from the online districts.
+    fn layout_power(&self) -> crate::power::LayoutPower {
+        let districts: Vec<(&str, &str)> = self
+            .districts
+            .iter()
+            .filter(|(_, d)| d.online)
+            .map(|(id, d)| (id.as_str(), d.power.as_str()))
+            .collect();
+        crate::power::layout_power(&districts, self.global_stop.as_ref())
+    }
+
+    /// A global emergency stop seen on the mesh.
+    fn global_stop_frame(&mut self, frame: &RocNetFrame, origin: &str) {
+        if frame.power_request_kind() == Some(crate::power::PowerRequest::Halt) {
+            let time = Local::now().format("%H:%M:%S").to_string();
+            self.event(format!("GLOBAL EMERGENCY STOP by {origin}"));
+            self.global_stop = Some((origin.to_owned(), time));
+        }
     }
 
     fn allocator(&self) -> Option<&str> {
@@ -285,6 +307,8 @@ struct Mesh {
     clock: Subscriber<FifoChannelHandler<Sample>>,
     /// The nodes' events (`hive/<session>/node/<id>/event`).
     events: Subscriber<FifoChannelHandler<Sample>>,
+    /// Global emergency stops (`hive/<session>/rn/cs/all`).
+    stops: Subscriber<FifoChannelHandler<Sample>>,
     hello: zenoh::pubsub::Publisher<'static>,
     updates: zenoh::pubsub::Publisher<'static>,
     /// Clock sets from the dispatcher's keys, as a node's dashboard sends them.
@@ -312,6 +336,9 @@ impl Mesh {
                 .await?,
             events: session
                 .declare_subscriber(format!("hive/{s}/node/*/event"))
+                .await?,
+            stops: session
+                .declare_subscriber(format!("hive/{s}/rn/cs/all"))
                 .await?,
             hello: session
                 .declare_publisher(format!("hive/{s}/observer/hello"))
@@ -384,6 +411,7 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
         events: VecDeque::new(),
         echo: tui.is_none(),
         details: false,
+        global_stop: None,
     };
     state.event(format!(
         "dispatcher {} watching session {}",
@@ -423,6 +451,13 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                 let origin = origin(&sample);
                 if let Ok(frame) = RocNetFrame::from_bytes(sample.payload().to_bytes().as_ref()) {
                     state.clock_frame(&frame, &origin);
+                }
+            }
+            sample = mesh.stops.recv_async() => {
+                let sample = sample?;
+                let origin = origin(&sample);
+                if let Ok(frame) = RocNetFrame::from_bytes(sample.payload().to_bytes().as_ref()) {
+                    state.global_stop_frame(&frame, &origin);
                 }
             }
             _ = tick.tick() => {
@@ -488,6 +523,7 @@ async fn gather(
         events: VecDeque::new(),
         echo: false,
         details: false,
+        global_stop: None,
     };
     let deadline = Instant::now() + want.map_or(SHOW_LOCOS_TIMEOUT, |_| WANTED_NODE_TIMEOUT);
     let mut settle_until: Option<Instant> = None;
@@ -651,6 +687,7 @@ impl LocoPublisher {
     pub fn drain(&mut self) {
         while let Ok(Some(_)) = self.mesh.heartbeats.try_recv() {}
         while let Ok(Some(_)) = self.mesh.events.try_recv() {}
+        while let Ok(Some(_)) = self.mesh.stops.try_recv() {}
         while let Ok(Some(sample)) = self.mesh.locos.try_recv() {
             let Ok(locos) =
                 serde_json::from_slice::<Vec<RegisteredLoco>>(sample.payload().to_bytes().as_ref())
@@ -814,7 +851,7 @@ fn render(frame: &mut Frame<'_>, state: &State) {
     let areas = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(4),
+            Constraint::Length(5),
             Constraint::Length(state.districts.len().clamp(1, 12) as u16 + 3),
             Constraint::Min(6),
             // The events of every district: a dozen lines.
@@ -862,6 +899,16 @@ fn render(frame: &mut Frame<'_>, state: &State) {
             sync,
             Span::raw(format!("   {} loco(s) registered", entries.len())),
         ]),
+        {
+            let layout = state.layout_power();
+            Line::from(vec![
+                Span::styled(
+                    "LAYOUT POWER ",
+                    Style::default().add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(format!(" {} ", layout.label), layout_style(layout.level)),
+            ])
+        },
     ])
     .block(
         Block::default()

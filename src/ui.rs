@@ -49,6 +49,8 @@ pub struct Dashboard {
     pub scouting: String,
     pub heartbeat_interval: Duration,
     pub last_event: String,
+    /// The layout's power at a glance, from this and every online district.
+    pub layout_power: crate::power::LayoutPower,
     pub peers: Vec<PeerRow>,
     pub cli_output: Vec<String>,
 }
@@ -204,7 +206,7 @@ fn render(frame: &mut Frame<'_>, dashboard: &Dashboard, scroll_back: usize, sele
     let areas = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(4),
+            Constraint::Length(5),
             Constraint::Min(5),
             Constraint::Length(8),
             Constraint::Length(5),
@@ -246,6 +248,13 @@ fn render(frame: &mut Frame<'_>, dashboard: &Dashboard, scroll_back: usize, sele
                 Style::default().add_modifier(Modifier::BOLD),
             ),
             Span::raw(&dashboard.last_request),
+        ]),
+        Line::from(vec![
+            Span::styled("LAYOUT ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::styled(
+                format!(" {} ", dashboard.layout_power.label),
+                layout_style(dashboard.layout_power.level),
+            ),
         ]),
     ])
     .block(
@@ -458,6 +467,24 @@ fn loco_rows(locos: &[LocoInfo]) -> impl Iterator<Item = Row<'static>> + '_ {
             )),
         ])
     })
+}
+
+/// The colour of the layout power summary.
+pub(crate) fn layout_style(level: crate::power::LayoutLevel) -> Style {
+    use crate::power::LayoutLevel;
+    match level {
+        LayoutLevel::Running => Style::default()
+            .fg(Color::Green)
+            .add_modifier(Modifier::BOLD),
+        LayoutLevel::Partly => Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD),
+        LayoutLevel::Off => Style::default().fg(Color::Gray),
+        LayoutLevel::Stopped => Style::default()
+            .fg(Color::White)
+            .bg(Color::Red)
+            .add_modifier(Modifier::BOLD),
+    }
 }
 
 pub(crate) fn power_style(label: &str) -> Style {

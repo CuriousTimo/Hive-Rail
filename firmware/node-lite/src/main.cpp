@@ -42,7 +42,7 @@ enum Power { POWER_OFF, POWER_ON, POWER_STOP, POWER_SHORT };
 static const char *POWER_LABEL[] = {"OFF", "ON", "STOP", "SHORT"};
 static volatile Power power = POWER_OFF;
 static volatile bool power_changed = false;
-static char last_event[40] = "";
+static char last_event[80] = "";
 // A global stop received from the mesh, applied by loop() (set in the receive task).
 static volatile bool stop_from_mesh = false;
 static char stop_origin[24] = "";
@@ -195,7 +195,7 @@ static void put_with_origin(const z_loaned_publisher_t *publisher, const uint8_t
 static void event(const char *text) {
     strlcpy(last_event, text, sizeof(last_event));
     Serial.println(text);
-    char json[160];
+    char json[200];
     snprintf(json, sizeof(json), "{\"detail\":false,\"text\":\"%s\"}", text);
     z_owned_bytes_t payload;
     z_bytes_copy_from_str(&payload, json);
@@ -217,17 +217,26 @@ static void set_power(Power next, const char *why) {
     }
     power = next;
     publish_power();
-    char text[40];
+    char text[80];
     snprintf(text, sizeof(text), "district power %s (%s)", POWER_LABEL[next], why);
     event(text);
 }
 
-// The layout-wide emergency stop: every district goes to STOP.
+// An emergency stop stops a district that is ON; OFF stays OFF and SHORT stays SHORT, as in the
+// Rust nodes (power.rs).
+static void emergency_stop(const char *why) {
+    if (power == POWER_ON) {
+        set_power(POWER_STOP, why);
+    }
+}
+
+// The layout-wide emergency stop: every district that is ON goes to STOP.
 static void send_global_stop() {
     uint8_t frame[] = {0, 0, 0, (uint8_t)(ROCNET_ID >> 8), (uint8_t)ROCNET_ID, RN_CS_GROUP,
                        (uint8_t)(RN_REQUEST << 5 | RN_CS_HALT), 0};
     put_with_origin(z_publisher_loan(&global_stop_out), frame, sizeof(frame));
-    set_power(POWER_STOP, "GLOBAL STOP sent");
+    event("GLOBAL EMERGENCY STOP sent to every district");
+    emergency_stop("own global stop");
 }
 
 static void on_global_stop(z_loaned_sample_t *sample, void *) {
@@ -475,9 +484,12 @@ void loop() {
 #endif
     if (stop_from_mesh) {
         stop_from_mesh = false;
-        char why[32];
-        snprintf(why, sizeof(why), "GLOBAL STOP from %s", stop_origin[0] ? stop_origin : "?");
-        set_power(POWER_STOP, why);
+        char why[48];
+        snprintf(why, sizeof(why), "global stop from %s", stop_origin[0] ? stop_origin : "?");
+        char text[80];
+        snprintf(text, sizeof(text), "District emergency stop requested by %s", stop_origin[0] ? stop_origin : "?");
+        event(text);
+        emergency_stop(why);
         next_screen = 0;
     }
 #ifdef HIVE_SCREEN
