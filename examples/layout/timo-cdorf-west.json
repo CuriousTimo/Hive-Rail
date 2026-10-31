@@ -78,13 +78,7 @@
       "tracks": [
         {
           "name": "1",
-          "track": "1",
-          "usable_mm": 800,
-          "platform": false
-        },
-        {
-          "name": "3",
-          "track": "3",
+          "track": "4",
           "usable_mm": 800,
           "platform": false,
           "passing": true
@@ -96,8 +90,14 @@
           "platform": false
         },
         {
+          "name": "3",
+          "track": "1",
+          "usable_mm": 800,
+          "platform": false
+        },
+        {
           "name": "4",
-          "track": "4",
+          "track": "3",
           "usable_mm": 800,
           "platform": false,
           "passing": true

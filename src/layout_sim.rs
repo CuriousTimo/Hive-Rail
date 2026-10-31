@@ -1350,49 +1350,77 @@ impl std::fmt::Display for SimEvent {
 
 /// The example run: two trains on the double-track example, shuttling between the termini.
 pub fn example_trains(sim: &mut LayoutSim<'_>) {
-    // Two trains start at each terminus and shuttle to the other; each picks a free
-    // platform track. Different speeds and stop times (fast clock minutes) make them meet,
-    // wait and overtake: the slower ones let faster ones by in Cdorf's passing sidings.
+    // Three trains start at each terminus and shuttle to the other; each picks a free
+    // platform track. Train types differ in speed and stop time (fast clock minutes): a
+    // slower train with a faster one close behind lets it by in Cdorf's passing sidings.
     let at = |module: &str, track: &str, along_mm: f64| Place {
         piece: PieceId::new(module, track),
         // Platform tracks are drawn from the throat; leaving the terminus runs backward.
         heading: Heading::Backward,
         along_mm,
     };
-    let ic = sim.add_train(
-        "IC 2001",
-        3,
-        600.0,
-        at("timo-adorf", "1", 900.0),
-        &["Bdorf", "Adorf"],
-    );
-    ic.dwell_min = 1.0;
-    let ng = sim.add_train(
-        "Ng 4711",
-        4711,
-        500.0,
-        at("anna-bdorf", "4", 900.0),
-        &["Adorf", "Bdorf"],
-    );
-    ng.dwell_min = 3.0;
-    let gm = sim.add_train(
-        "Gm 6203",
-        6203,
-        700.0,
-        at("timo-adorf", "2", 1000.0),
-        &["Bdorf", "Adorf"],
-    );
-    gm.speed_mm_s = 90.0;
-    gm.dwell_min = 5.0;
-    let rb = sim.add_train(
-        "RB 7701",
-        7701,
-        400.0,
-        at("anna-bdorf", "1", 1000.0),
-        &["Adorf", "Bdorf"],
-    );
-    rb.speed_mm_s = 120.0;
-    rb.dwell_min = 2.0;
+    // Name, loco, length, start, plan, speed (mm/s), usual stop (fast minutes).
+    let trains = [
+        (
+            "IC 2001",
+            3,
+            600.0,
+            at("timo-adorf", "1", 900.0),
+            ["Bdorf", "Adorf"],
+            150.0,
+            1.0,
+        ),
+        (
+            "RB 7701",
+            7701,
+            350.0,
+            at("timo-adorf", "2", 900.0),
+            ["Bdorf", "Adorf"],
+            110.0,
+            2.0,
+        ),
+        (
+            "Ng 6203",
+            6203,
+            500.0,
+            at("timo-adorf", "3", 800.0),
+            ["Bdorf", "Adorf"],
+            75.0,
+            6.0,
+        ),
+        (
+            "RE 4401",
+            4401,
+            500.0,
+            at("anna-bdorf", "1", 900.0),
+            ["Adorf", "Bdorf"],
+            130.0,
+            1.5,
+        ),
+        (
+            "Dg 5501",
+            5501,
+            700.0,
+            at("anna-bdorf", "2", 1000.0),
+            ["Adorf", "Bdorf"],
+            95.0,
+            4.0,
+        ),
+        (
+            "RB 7702",
+            7702,
+            350.0,
+            at("anna-bdorf", "3", 800.0),
+            ["Adorf", "Bdorf"],
+            110.0,
+            2.0,
+        ),
+    ];
+    for (name, address, length, place, plan, speed, stop) in trains {
+        let train = sim.add_train(name, address, length, place, &plan);
+        train.speed_mm_s = speed;
+        train.dwell_min = stop;
+    }
 }
 
 #[cfg(test)]
@@ -1443,15 +1471,17 @@ mod tests {
             ));
         }
         // At Bdorf the throat's turnouts were set for its platform.
-        assert!(events.iter().any(|(_, e)| matches!(e, SimEvent::Turnout { turnout, .. } if turnout.starts_with("anna-bdorf/L"))));
+        assert!(events.iter().any(|(_, e)| matches!(e, SimEvent::Turnout { turnout, .. } if turnout.starts_with("anna-bdorf/"))));
     }
 
     /// Both trains complete round trips: every destination is reached more than once, and
     /// both cross the border both ways.
     #[test]
     fn every_train_shuttles_and_crosses_the_border_both_ways() {
-        let events = run(1200.0);
-        for train in ["IC 2001", "Ng 4711", "Gm 6203", "RB 7701"] {
+        let events = run(1500.0);
+        for train in [
+            "IC 2001", "RB 7701", "Ng 6203", "RE 4401", "Dg 5501", "RB 7702",
+        ] {
             for stop in ["Adorf", "Bdorf"] {
                 let count = events
                     .iter()
@@ -1481,7 +1511,7 @@ mod tests {
             1,
             300.0,
             Place {
-                piece: PieceId::new("timo-adorf", "m1"),
+                piece: PieceId::new("timo-adorf", "out"),
                 heading: Heading::Forward,
                 along_mm: 50.0,
             },
@@ -1729,11 +1759,11 @@ mod tests {
         assert_ne!(sim.trains[0].state, TrainState::NoPower);
     }
 
-    /// An hour on the three-district bench with Cdorf's passing sidings: all four trains keep
+    /// An hour on the three-district bench with Cdorf's passing sidings: all six trains keep
     /// going (no deadlock), never touch, the sidings get used, and slower trains wait in them
     /// to let faster ones by.
     #[test]
-    fn four_trains_run_an_hour_on_the_bench_with_sidings() {
+    fn six_trains_run_an_hour_on_the_bench_with_sidings() {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/layout");
         let layout = crate::layout::load(&dir.join("bench-m5.json"), &dir).unwrap();
         let topology = Topology::build(&layout);
@@ -1774,10 +1804,10 @@ mod tests {
                 }
             }
         }
-        for train in ["IC 2001", "Ng 4711", "Gm 6203", "RB 7701"] {
+        for train in sim.trains.iter().map(|t| t.name.as_str()) {
             let count = arrivals.get(train).copied().unwrap_or(0);
             assert!(
-                count >= 6,
+                count >= 4,
                 "{train} arrived only {count} times in an hour: {arrivals:?}"
             );
         }

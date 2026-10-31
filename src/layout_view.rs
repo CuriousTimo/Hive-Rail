@@ -47,6 +47,8 @@ pub struct LayoutView {
     pub buildings: Vec<BuildingView>,
     pub platforms: Vec<Vec<Point>>,
     pub stations: Vec<LabelView>,
+    /// Station track numbers, drawn on the map next to their track.
+    pub track_numbers: Vec<LabelView>,
     /// The drawing's extent: min x, min y, max x, max y.
     pub bounds: [f64; 4],
 }
@@ -350,6 +352,7 @@ impl ViewBuilder {
             buildings: Vec::new(),
             platforms: Vec::new(),
             stations: Vec::new(),
+            track_numbers: Vec::new(),
             bounds: [f64::MAX, f64::MAX, f64::MIN, f64::MIN],
         };
         for listed in &layout.file.modules {
@@ -417,6 +420,20 @@ impl ViewBuilder {
                     at: placement.apply(at),
                     module: id.clone(),
                 });
+                // Each track's number near the far end of its piece (the buffer end of a
+                // terminus platform), on the track itself.
+                for track in &station.tracks {
+                    let piece = PieceId::new(id, &track.track);
+                    let length = self.pieces.get(&piece).map_or(0.0, |(_, l)| *l);
+                    let along = (length - 150.0).max(length / 2.0);
+                    if let Some(at) = self.span(&piece, along, along).first() {
+                        view.track_numbers.push(LabelView {
+                            text: track.name.clone(),
+                            at: *at,
+                            module: id.clone(),
+                        });
+                    }
+                }
             }
             for turnout in &module.turnouts {
                 if let Some(at) = geometry.points.get(&turnout.id) {

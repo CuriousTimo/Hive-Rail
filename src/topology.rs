@@ -434,36 +434,51 @@ mod tests {
         PieceId::new(module, piece)
     }
 
-    /// The turn-back at Adorf: a train arriving westbound on track 2 crosses over to
-    /// platform 1 (X2 diverging, then X1 diverging to trunk), and after reversing there
-    /// leaves eastbound on track 1 towards the border.
+    /// The turn-back at Adorf: a train arriving on the inbound main reaches every platform
+    /// (track 1 straight on, 2 and 3 through the double slip), and from every platform leaves
+    /// on the outbound main (track 1 through the crossover) towards the border.
     #[test]
     fn a_train_turns_back_at_adorf() {
         let topology = example();
-        // Arriving westbound on m2, through the throat to any platform; platform tracks are
-        // drawn from the throat, so arriving is Forward along them.
-        let arriving = topology.reachable(&piece("timo-adorf", "m2"), Heading::Forward);
+        // Arriving on the inbound main, through W1 or the double slip to every platform;
+        // platform tracks are drawn from the throat, so arriving is Forward along them.
+        let arriving = topology.reachable(&piece("timo-adorf", "in"), Heading::Forward);
         for platform in ["1", "2", "3"] {
             assert!(arriving.contains(&(piece("timo-adorf", platform), Heading::Forward)));
         }
-        let leaving = topology.reachable(&piece("timo-adorf", "1"), Heading::Backward);
-        assert!(leaving.contains(&(piece("timo-2e96-west", "1"), Heading::Forward)));
-        assert!(leaving.contains(&(piece("anna-2e96-border", "1"), Heading::Forward)));
-        assert!(leaving.contains(&(piece("anna-bdorf", "1"), Heading::Forward)));
+        // From every platform out onto the outbound main, track 1 through the crossover.
+        for platform in ["1", "2", "3"] {
+            let leaving = topology.reachable(&piece("timo-adorf", platform), Heading::Backward);
+            assert!(
+                leaving.contains(&(piece("timo-2e96-west", "1"), Heading::Forward)),
+                "{platform}"
+            );
+            assert!(
+                leaving.contains(&(piece("anna-bdorf", "1"), Heading::Forward)),
+                "{platform}"
+            );
+        }
     }
 
-    /// The turn-back at Bdorf: eastbound on track 1 over to platform 2, and back west on
-    /// track 2 across the border into MacBook's district.
+    /// The same at Bdorf, the mirror of Adorf.
     #[test]
     fn a_train_turns_back_at_bdorf() {
         let topology = example();
-        let arriving = topology.reachable(&piece("anna-bdorf", "m1"), Heading::Forward);
-        for platform in ["1", "2", "4"] {
+        let arriving = topology.reachable(&piece("anna-bdorf", "in"), Heading::Forward);
+        for platform in ["1", "2", "3"] {
             assert!(arriving.contains(&(piece("anna-bdorf", platform), Heading::Forward)));
         }
-        let leaving = topology.reachable(&piece("anna-bdorf", "2"), Heading::Backward);
-        assert!(leaving.contains(&(piece("timo-2e96-border", "2"), Heading::Backward)));
-        assert!(leaving.contains(&(piece("timo-adorf", "2"), Heading::Forward)));
+        for platform in ["1", "2", "3"] {
+            let leaving = topology.reachable(&piece("anna-bdorf", platform), Heading::Backward);
+            assert!(
+                leaving.contains(&(piece("timo-2e96-border", "2"), Heading::Backward)),
+                "{platform}"
+            );
+            assert!(
+                leaving.contains(&(piece("timo-adorf", "2"), Heading::Forward)),
+                "{platform}"
+            );
+        }
     }
 
     /// Through a turnout only trunk to leg and back: from the straight leg a train cannot
@@ -471,19 +486,19 @@ mod tests {
     #[test]
     fn turnouts_are_passed_trunk_to_leg_only() {
         let topology = example();
-        // Arriving on m2 into M's diverging leg: out by the trunk only.
-        let next = topology.next(&piece("timo-adorf", "m2"), Heading::Forward, |_, _| None);
-        assert_eq!(next, [(piece("timo-adorf", "t"), Heading::Forward)]);
-        // Into L0 by the trunk: straight or diverging, or only one when set.
-        let both = topology.next(&piece("timo-adorf", "t"), Heading::Forward, |_, _| None);
+        // Arriving on the inbound main into C1's straight leg: out by the trunk only.
+        let next = topology.next(&piece("timo-adorf", "in"), Heading::Forward, |_, _| None);
+        assert_eq!(next, [(piece("timo-adorf", "a1"), Heading::Forward)]);
+        // Into W1 by the trunk: straight (track 1) or diverging (to the slip), or one when set.
+        let both = topology.next(&piece("timo-adorf", "a1"), Heading::Forward, |_, _| None);
         assert_eq!(both.len(), 2);
-        let set = topology.next(&piece("timo-adorf", "t"), Heading::Forward, |_, id| {
-            (id == "L0").then_some(false)
+        let set = topology.next(&piece("timo-adorf", "a1"), Heading::Forward, |_, id| {
+            (id == "W1").then_some(false)
         });
-        assert_eq!(set, [(piece("timo-adorf", "3"), Heading::Forward)]);
-        // Trailing through L0's straight leg against its position is not possible.
-        let blocked = topology.next(&piece("timo-adorf", "t1"), Heading::Backward, |_, id| {
-            (id == "L0").then_some(false)
+        assert_eq!(set, [(piece("timo-adorf", "d1"), Heading::Forward)]);
+        // Trailing through W1's straight leg against its position is not possible.
+        let blocked = topology.next(&piece("timo-adorf", "1"), Heading::Backward, |_, id| {
+            (id == "W1").then_some(false)
         });
         assert!(blocked.is_empty());
     }
@@ -518,9 +533,9 @@ mod tests {
         assert_eq!(macbook.block.as_deref(), Some("timo-adorf/adorf_1"));
         let windows = topology.device("Windows", "LocoNet sensor", 203).unwrap();
         assert_eq!(windows.block.as_deref(), Some("anna-2e96-east/line_1"));
-        // LocoNet switch 21 is Adorf's point L1, and switch 111 the crossing's lights.
+        // LocoNet switch 21 is Adorf's point W1, and switch 111 the crossing's lights.
         let point = topology.device("MacBook", "LocoNet switch", 21).unwrap();
-        assert_eq!(point.id, "point_l1");
+        assert_eq!(point.id, "point_w1");
         assert_eq!(
             topology
                 .device("MacBook", "LocoNet switch", 111)

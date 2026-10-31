@@ -1224,7 +1224,7 @@ mod tests {
         let layout = example();
         let (module, _) = &layout.modules["timo-adorf"];
         let mut broken = module.clone();
-        // Platform track 2 no longer leaves L1's diverging leg.
+        // Platform track 2 no longer leaves the double slip's straight leg.
         let platform = broken
             .track
             .iter_mut()
@@ -1237,7 +1237,7 @@ mod tests {
             report
                 .errors
                 .iter()
-                .any(|e| e.contains("L1.diverging is not connected")),
+                .any(|e| e.contains("L0w.straight is not connected")),
             "{:#?}",
             report.errors
         );

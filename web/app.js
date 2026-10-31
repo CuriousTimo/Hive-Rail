@@ -148,12 +148,30 @@ function drawLayout(layout) {
     title.textContent = `Signal ${signal.name} (${signal.district}, LocoNet ${signal.address})`;
     elements.signals.set(signal.id, { lamps, title, name: signal.name, district: signal.district, address: signal.address });
   }
+  // A double slip is two turnout halves close together (L0e, L0w): one label, L0.
+  const slipBase = (name) => (/^(.*)[ew]$/.exec(name) || [])[1];
+  const names = new Set(layout.turnouts.map((t) => t.id));
   for (const turnout of layout.turnouts) {
     const [x, y] = flip(turnout.at);
     const dot = el("circle", { cx: x, cy: y, r: 18, class: "turnout straight" }, layer("turnouts"));
     el("title", {}, dot).textContent = `Turnout ${turnout.id}`;
-    text(turnout.name, [turnout.at[0], turnout.at[1] + 30], "turnout-label", layer("labels"));
+    const base = slipBase(turnout.name);
+    const module = turnout.id.slice(0, turnout.id.lastIndexOf("/") + 1);
+    const half = base && names.has(module + base + "e") && names.has(module + base + "w");
+    if (!half) {
+      text(turnout.name, [turnout.at[0], turnout.at[1] + 30], "turnout-label", layer("labels"));
+    } else if (turnout.name.endsWith("e")) {
+      const other = layout.turnouts.find((t) => t.id === module + base + "w");
+      const mid = [(turnout.at[0] + other.at[0]) / 2, (turnout.at[1] + other.at[1]) / 2 + 30];
+      text(`${base} ✕`, mid, "turnout-label", layer("labels"));
+    }
     elements.turnouts.set(turnout.id, dot);
+  }
+  // Station track numbers, on their track.
+  for (const number of layout.track_numbers || []) {
+    const [x, y] = flip(number.at);
+    el("rect", { x: x - 20, y: y - 20, width: 40, height: 40, rx: 8, class: "track-number-box" }, layer("labels"));
+    text(number.text, [number.at[0], number.at[1] - 13], "track-number", layer("labels"));
   }
   // Station names below the front edge of their modules: once per station, centred over
   // every module it spans (Cdorf lies on two).

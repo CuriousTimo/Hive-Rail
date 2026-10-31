@@ -141,6 +141,8 @@ th { font-weight: 600; color: var(--muted); font-size: 12px; }
 .turnout.straight { fill: var(--straight); }
 .turnout.diverging { fill: var(--diverging); }
 .turnout-label { fill: var(--muted); font-size: 30px; }
+.track-number-box { fill: var(--panel); stroke: var(--text); stroke-width: 3; }
+.track-number { fill: var(--text); font-size: 30px; font-weight: 700; }
 .crossing { fill: var(--muted); }
 .crossing.closed { fill: var(--closed); animation: blink 0.9s steps(2, start) infinite; }
 .barrier { stroke: var(--muted); stroke-width: 8; }
