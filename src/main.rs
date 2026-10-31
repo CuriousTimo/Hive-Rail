@@ -230,6 +230,8 @@ fn print_help() {
          --loconet-udp [group[:port]] joins a LocoNet bus over UDP multicast instead, such as a GCA101\n\
            LocoBuffer-UDP (default 224.0.0.1:1235, as Rocrail's LNUDP); --loconet-udp-interface <ip> picks the\n\
            network when this computer has several (Wi-Fi and Ethernet).\n\
+         --show-sensors <turnout=sensor,...> shows sensors on a panel's turnout LEDs (an IB-Switch):\n\
+           green while free, red while occupied.\n\
          --loconet-fast-clock on|off: write the fast clock (slot 123) to the bus (default on;\n\
            off for a central without one, such as an Intellibox I).\n\
          Dispatcher mode (FREMO: Zugleiter) shows every district, the fast clock and the layout's\n\
