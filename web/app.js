@@ -33,12 +33,15 @@ function text(content, [x, y], className, parent, anchor = "middle") {
   return node;
 }
 
+let currentLayout = null;
+
 function drawLayout(layout) {
+  currentLayout = layout;
   document.getElementById("meeting").textContent = layout.meeting;
   document.title = `Hive-Rail – ${layout.meeting}`;
   districtColour = (district) => DISTRICT_COLOURS[Math.max(0, layout.districts.indexOf(district)) % DISTRICT_COLOURS.length];
   document.getElementById("districts").innerHTML = layout.districts
-    .map((d) => `<li><span class="swatch" style="background:${districtColour(d)}"></span>Fed by ${escapeHtml(d)}</li>`)
+    .map((d) => `<li class="zoomable" data-zoom="district:${escapeHtml(d)}" title="Show district ${escapeHtml(d)}"><span class="swatch" style="background:${districtColour(d)}"></span>Fed by ${escapeHtml(d)}</li>`)
     .join("");
 
   for (const module of layout.modules) {
@@ -47,7 +50,7 @@ function drawLayout(layout) {
     outline.style.fill = `color-mix(in srgb, ${districtColour(module.district)} 14%, var(--module))`;
     const title = el("title", {}, outline);
     title.textContent = `${module.name} (${module.id}${module.owner ? ", " + module.owner : ""}), district ${module.district}`;
-    text(module.id, module.label, "module-label", layer("labels"));
+    text(module.id, module.label, "module-label zoomable", layer("labels")).dataset.zoom = `module:${module.id}`;
   }
   // The district names, above the first module of each district.
   for (const district of layout.districts) {
@@ -55,7 +58,9 @@ function drawLayout(layout) {
     if (first) {
       const top = Math.max(...first.outline.map((p) => p[1]));
       const left = Math.min(...first.outline.map((p) => p[0]));
-      text(`District ${district}`, [left + 20, top + 60], "district-label", layer("labels"), "start").style.fill = districtColour(district);
+      const label = text(`District ${district}`, [left + 20, top + 60], "district-label zoomable", layer("labels"), "start");
+      label.style.fill = districtColour(district);
+      label.dataset.zoom = `district:${district}`;
     }
   }
   for (const platform of layout.platforms) {
@@ -229,6 +234,42 @@ function drawLayout(layout) {
   applyView();
 }
 
+// Zooms to a district's modules or one module ("district:MacBook", "module:timo-adorf").
+function zoomTo(target) {
+  const [kind, id] = [target.slice(0, target.indexOf(":")), target.slice(target.indexOf(":") + 1)];
+  const modules = (currentLayout?.modules || []).filter((m) => (kind === "district" ? m.district === id : m.id === id));
+  if (!modules.length) return;
+  const points = modules.flatMap((m) => m.outline);
+  const xs = points.map((p) => p[0]);
+  const ys = points.map((p) => p[1]);
+  const margin = 200;
+  const [minX, maxX, minY, maxY] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+  // Room below for the station board and the names under the modules.
+  view = { x: minX - margin, y: -maxY - margin, w: maxX - minX + 2 * margin, h: maxY - minY + 2 * margin + (BOARD_ROWS + 1) * BOARD_ROW + 80 };
+  applyView();
+}
+
+document.getElementById("districts").addEventListener("click", (event) => {
+  const item = event.target.closest("[data-zoom]");
+  if (item) zoomTo(item.dataset.zoom);
+});
+
+// The side panel can be hidden for more map; the choice is kept on this device.
+const panelToggle = document.getElementById("panel-toggle");
+function showPanel(shown) {
+  document.body.classList.toggle("panel-hidden", !shown);
+  panelToggle.setAttribute("aria-pressed", String(shown));
+  panelToggle.textContent = shown ? "Hide panel" : "Show panel";
+}
+let panelShown = true;
+try { panelShown = localStorage.getItem("hive-rail-panel") !== "hidden"; } catch { /* no storage */ }
+showPanel(panelShown);
+panelToggle.addEventListener("click", () => {
+  panelShown = !panelShown;
+  showPanel(panelShown);
+  try { localStorage.setItem("hive-rail-panel", panelShown ? "shown" : "hidden"); } catch { /* no storage */ }
+});
+
 function applyView() {
   svg.setAttribute("viewBox", `${view.x} ${view.y} ${view.w} ${view.h}`);
 }
@@ -334,12 +375,37 @@ function update(state) {
       const label = el("text", { x, y: y - 40, class: "train-label", fill: colour, "text-anchor": "middle" }, trains);
       label.textContent = train.name;
     }
-    rows.push(`<tr><td style="color:${colour}">${escapeHtml(train.name)}</td><td>${train.address}</td><td>${escapeHtml(train.district)}</td><td>${escapeHtml(train.state)}</td></tr>`);
+    rows.push(`<tr><td style="color:${colour}">${escapeHtml(train.name)}</td><td>${train.address}</td><td>${escapeHtml(train.district)}</td><td>${trainState(train, state.clock)}</td></tr>`);
   });
   document.querySelector("#trains tbody").innerHTML = rows.join("");
 
   const log = document.getElementById("log");
   log.innerHTML = (state.log || []).slice().reverse().map((line) => `<li>${escapeHtml(line)}</li>`).join("");
+}
+
+// What a train is doing, in words: running at what speed, waiting for what, standing at
+// which platform until when (with a countdown in fast clock minutes).
+function trainState(train, clock) {
+  const e = escapeHtml;
+  switch (train.state) {
+    case "Running":
+      return `Running <span class="detail">${train.speed_kmh != null ? Math.round(train.speed_kmh) + " km/h" : ""}</span>`;
+    case "Waiting": {
+      const at = train.signal ? ` at ${e(train.signal)}` : "";
+      const why = train.waiting_for ? ` for ${e(train.waiting_for)}` : "";
+      return `Waiting<span class="detail">${at}${why}</span>`;
+    }
+    case "Dwelling": {
+      const left = Math.max(0, train.departs_in_min || 0);
+      const countdown = `${Math.floor(left)}:${String(Math.floor((left % 1) * 60)).padStart(2, "0")}`;
+      const departs = clock && clock.known ? ` · departs ${boardTime(Math.ceil(left), clock)}` : "";
+      return `At ${e(train.stop || "stop")}<span class="detail">${departs} (in ${countdown})</span>`;
+    }
+    case "NoPower":
+      return `No track power`;
+    default:
+      return e(train.state);
+  }
 }
 
 function escapeHtml(value) {
@@ -361,7 +427,7 @@ svg.addEventListener("wheel", (event) => {
 
 let drag = null;
 svg.addEventListener("pointerdown", (event) => {
-  drag = { x: event.clientX, y: event.clientY, view: { ...view } };
+  drag = { x: event.clientX, y: event.clientY, view: { ...view }, zoom: event.target.closest?.("[data-zoom]")?.dataset.zoom };
   svg.setPointerCapture(event.pointerId);
   svg.classList.add("dragging");
 });
@@ -373,7 +439,12 @@ svg.addEventListener("pointermove", (event) => {
   applyView();
 });
 const endDrag = () => { drag = null; svg.classList.remove("dragging"); };
-svg.addEventListener("pointerup", endDrag);
+// A press on a district or module name that hardly moved is a click: zoom there.
+svg.addEventListener("pointerup", (event) => {
+  const zoom = drag && drag.zoom && Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < 6 ? drag.zoom : null;
+  endDrag();
+  if (zoom) zoomTo(zoom);
+});
 svg.addEventListener("pointercancel", endDrag);
 svg.addEventListener("dblclick", () => { view = { ...fit }; applyView(); });
 

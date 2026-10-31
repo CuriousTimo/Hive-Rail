@@ -46,8 +46,10 @@ fn passing_tracks(layout: &Layout, passing: bool) -> BTreeSet<PieceId> {
     tracks
 }
 
-/// For each passing siding, the through tracks beside it that run the same way (the same
-/// `direction`, in the same module): where a faster train passes a train waiting there.
+/// For each track of a passing loop (or a station's passing siding and through track),
+/// the tracks beside it that run the same way (the same `direction`, in the same module):
+/// a siding's through tracks and a through track's sidings. A slower train waiting at the
+/// exit of one lets a faster one beside it on the other go first.
 fn sidings_beside(layout: &Layout) -> BTreeMap<PieceId, BTreeSet<PieceId>> {
     let mut beside: BTreeMap<PieceId, BTreeSet<PieceId>> = BTreeMap::new();
     for (module_id, (module, _)) in &layout.modules {
@@ -65,10 +67,17 @@ fn sidings_beside(layout: &Layout) -> BTreeMap<PieceId, BTreeSet<PieceId>> {
                 let through = lines()
                     .filter(|t| !t.passing && way.is_some() && direction(&t.track) == way)
                     .map(|t| PieceId::new(module_id, &t.track));
-                beside
-                    .entry(PieceId::new(module_id, &siding.track))
-                    .or_default()
-                    .extend(through);
+                let siding_piece = PieceId::new(module_id, &siding.track);
+                for through in through {
+                    beside
+                        .entry(through.clone())
+                        .or_default()
+                        .insert(siding_piece.clone());
+                    beside
+                        .entry(siding_piece.clone())
+                        .or_default()
+                        .insert(through);
+                }
             }
         }
     }
@@ -298,6 +307,9 @@ pub struct Train {
     pub target: Option<PieceId>,
     /// The track the train was announced on before a platform change at this station.
     pub platform_was: Option<PieceId>,
+    /// Why it cannot go on, while it waits: a free track at a station, a faster train to
+    /// pass, or the train holding the way ahead.
+    pub waiting_for: Option<String>,
     /// The usual stop at a destination, in fast clock minutes; each stop varies around it.
     pub dwell_min: f64,
     /// Stops made, so each stop's time varies but repeats run after run.
@@ -360,7 +372,8 @@ pub enum SimEvent {
         aspect: String,
         address: u16,
     },
-    /// A slower train waits in a passing siding to let a faster one by.
+    /// A slower train waits on a passing loop (in the siding or on the through track) to
+    /// let a faster one by.
     Yield { train: String, to: String },
     /// A train coming into a station was given another platform track than announced.
     PlatformChange {
@@ -485,6 +498,7 @@ impl<'a> LayoutSim<'a> {
             next_stop: 0,
             target: None,
             platform_was: None,
+            waiting_for: None,
             dwell_min: 2.0,
             stops_made: 0,
         });
@@ -719,6 +733,31 @@ impl<'a> LayoutSim<'a> {
         ranked
     }
 
+    /// The signal at the exit of the piece a train's head is on, in its direction: where
+    /// it stands when it waits. Its name, without the module.
+    pub fn signal_ahead(&self, train: &Train) -> Option<String> {
+        self.signals
+            .iter()
+            .find(|s| s.piece == train.head.piece && s.heading == train.head.heading)
+            .map(|s| s.key.rsplit('/').next().unwrap_or(&s.key).to_owned())
+    }
+
+    /// Where a train stands at its stop: the stop, with the track at a station
+    /// ("Adorf track 2").
+    pub fn stop_name(&self, train: &Train) -> Option<String> {
+        let stop = train.plan.get(train.next_stop)?;
+        let track = self.stations.get(stop).and_then(|tracks| {
+            tracks
+                .iter()
+                .find(|(piece, _)| *piece == train.head.piece)
+                .map(|(_, name)| name.clone())
+        });
+        Some(match track {
+            Some(name) => format!("{stop} track {name}"),
+            None => stop.clone(),
+        })
+    }
+
     /// The station information boards: for each station, the trains coming in and the
     /// trains standing there to leave, soonest first.
     pub fn boards(&self) -> BTreeMap<String, Vec<BoardRow>> {
@@ -860,8 +899,8 @@ impl<'a> LayoutSim<'a> {
     }
 
     /// A faster train close behind on the same way: one whose way to its destination
-    /// runs over this train's head piece (or the through track beside its passing siding),
-    /// in the same direction, within `OVERTAKE_WITHIN_MM`.
+    /// runs over this train's head piece (or, on a passing loop, the loop's other track
+    /// that runs the same way), within `OVERTAKE_WITHIN_MM`; or one already beside it there.
     fn faster_follower(&self, index: usize) -> Option<String> {
         let train = &self.trains[index];
         let here = (train.head.piece.clone(), train.head.heading);
@@ -880,8 +919,8 @@ impl<'a> LayoutSim<'a> {
                 .or_else(|| self.station_entry(other))?;
             let way =
                 self.find_way(&(other.head.piece.clone(), other.head.heading), &goal, None)?;
-            // Passing this train: over its head piece, or (when it stands in a passing
-            // siding) over the through track beside it that runs the same way.
+            // Passing this train: over its head piece, or (when it stands on a passing loop)
+            // over the loop's other track that runs the same way.
             let beside = |(piece, heading): &(PieceId, Heading)| {
                 (*piece == here.0 && *heading == here.1)
                     || self
@@ -891,7 +930,9 @@ impl<'a> LayoutSim<'a> {
             };
             let at = way.iter().position(beside)?;
             if at == 0 {
-                return None;
+                // Side by side on the loop's other track: it goes first. On this train's
+                // own piece, it is ahead.
+                return (way[0].0 != here.0).then(|| other.name.clone());
             }
             let distance = self.piece_length(&other.head.piece) - other.head.along_mm
                 + way[1..at]
@@ -1011,6 +1052,8 @@ impl<'a> LayoutSim<'a> {
         match self.approaching_station(index) {
             Some(true) if !into_platform => {
                 if !self.confirm_platform(index, events) {
+                    let station = self.trains[index].plan[self.trains[index].next_stop].clone();
+                    self.trains[index].waiting_for = Some(format!("a free track at {station}"));
                     return false;
                 }
             }
@@ -1058,9 +1101,32 @@ impl<'a> LayoutSim<'a> {
         // on the way, prefer the siding over the through track.
         let follower = self.faster_follower(index);
         let name = self.trains[index].name.clone();
-        // Its reservation ends in a passing siding (at the siding's exit signal): with a
-        // faster train behind, it reserves no further and waits there.
-        if self.passing.contains(&start.0) {
+        // Its reservation ends on a passing loop (at the exit signal of the siding or the
+        // through track): with a faster train behind or beside it, it reserves no further
+        // and waits there.
+        // Only when the faster one can get by: the loop's other track is free, or it is on
+        // it already (else two trains side by side would both wait for a third behind).
+        let can_pass = |faster: &str| {
+            let faster_holds: BTreeSet<PieceId> = self
+                .trains
+                .iter()
+                .filter(|t| t.name == faster)
+                .flat_map(|t| self.covered(t).into_iter().map(|(p, _, _)| p))
+                .chain(
+                    self.reserved
+                        .iter()
+                        .filter(|(_, by)| by.as_str() == faster)
+                        .map(|(p, _)| p.clone()),
+                )
+                .collect();
+            self.beside.get(&start.0).is_some_and(|tracks| {
+                tracks
+                    .iter()
+                    .any(|p| !blocked.contains(p) || faster_holds.contains(p))
+            })
+        };
+        let follower = follower.filter(|faster| can_pass(faster));
+        if self.beside.contains_key(&start.0) {
             match &follower {
                 Some(faster) => {
                     if self.yielding.get(&name) != Some(faster) {
@@ -1073,6 +1139,7 @@ impl<'a> LayoutSim<'a> {
                             },
                         ));
                     }
+                    self.trains[index].waiting_for = Some(format!("{faster} to pass"));
                     return false;
                 }
                 None => {
@@ -1107,10 +1174,24 @@ impl<'a> LayoutSim<'a> {
             .map_or(way.len() - 1, |(i, _)| i);
         let section = &way[..=end];
         let first_new = usize::from(!train.route.is_empty());
-        if section[first_new..]
+        if let Some((taken, _)) = section[first_new..]
             .iter()
-            .any(|(p, _)| blocked.contains(p))
+            .find(|(p, _)| blocked.contains(p))
         {
+            // Who holds the way: a train standing on it, or one that has reserved it.
+            let holder = self
+                .trains
+                .iter()
+                .enumerate()
+                .find(|(i, other)| {
+                    *i != index && self.covered(other).iter().any(|(p, _, _)| p == taken)
+                })
+                .map(|(_, other)| other.name.clone())
+                .or_else(|| self.reserved.get(taken).cloned());
+            self.trains[index].waiting_for = Some(match holder {
+                Some(holder) => format!("{holder} ahead"),
+                None => "the track ahead".to_owned(),
+            });
             return false;
         }
         // The turnouts on the way.
@@ -1262,6 +1343,7 @@ impl<'a> LayoutSim<'a> {
         for index in 0..self.trains.len() {
             // As far ahead as the track is free, section by section.
             if !matches!(self.trains[index].state, TrainState::Dwelling { .. }) {
+                self.trains[index].waiting_for = None;
                 while self.reserve(index, &mut events) {}
             }
             self.step_train(index, dt_s, &mut events);
@@ -1696,7 +1778,7 @@ impl std::fmt::Display for SimEvent {
                 "{district}: signal {signal} shows {aspect} (LocoNet {address})"
             ),
             SimEvent::Yield { train, to } => {
-                write!(f, "{train} waits in the passing siding to let {to} by")
+                write!(f, "{train} waits on the passing loop to let {to} by")
             }
             SimEvent::PlatformChange {
                 train,

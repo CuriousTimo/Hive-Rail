@@ -10,7 +10,7 @@
 //! comes out turned.
 
 use crate::layout::{Layout, ModuleFile};
-use crate::layout_sim::LayoutSim;
+use crate::layout_sim::{LayoutSim, TrainState};
 use crate::topology::{Heading, PieceId, Topology};
 use serde::Serialize;
 use std::collections::{BTreeMap, VecDeque};
@@ -129,6 +129,9 @@ pub struct SignalView {
     pub aspects: Vec<String>,
 }
 
+/// H0: the model is 1:87 of the real train.
+const H0_SCALE: f64 = 87.0;
+
 /// The live state, sent to the page several times a second.
 #[derive(Debug, Serialize)]
 pub struct Snapshot {
@@ -156,6 +159,14 @@ pub struct TrainView {
     pub points: Vec<Point>,
     pub district: String,
     pub state: String,
+    /// While waiting: what for, and the signal it stands at.
+    pub waiting_for: Option<String>,
+    pub signal: Option<String>,
+    /// While standing at a stop: where, and fast clock minutes until it leaves.
+    pub stop: Option<String>,
+    pub departs_in_min: Option<f64>,
+    /// While running: its speed in km/h, scaled up from the model (H0, 1:87).
+    pub speed_kmh: Option<f64>,
 }
 
 /// Places every module: the first one at the origin, the others by joining ends.
@@ -582,6 +593,23 @@ impl ViewBuilder {
                         .piece(&train.head.piece)
                         .map(|p| p.district.clone())
                         .unwrap_or_default(),
+                    waiting_for: (train.state == TrainState::Waiting)
+                        .then(|| train.waiting_for.clone())
+                        .flatten(),
+                    signal: (train.state == TrainState::Waiting)
+                        .then(|| sim.signal_ahead(train))
+                        .flatten(),
+                    stop: matches!(train.state, TrainState::Dwelling { .. })
+                        .then(|| sim.stop_name(train))
+                        .flatten(),
+                    departs_in_min: match train.state {
+                        TrainState::Dwelling { until_s } => {
+                            Some(((until_s - sim.time_s) * sim.clock_rate / 60.0).max(0.0))
+                        }
+                        _ => None,
+                    },
+                    speed_kmh: (train.state == TrainState::Running)
+                        .then(|| train.speed_mm_s * H0_SCALE * 3.6 / 1000.0),
                     state: format!("{:?}", train.state)
                         .split_whitespace()
                         .next()
