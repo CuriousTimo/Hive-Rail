@@ -196,11 +196,15 @@ The input side of U20 and U22 is the master's ground, never the board's: the two
 
 ## 10. Transfer relays and sensors
 
+The transfer relays sit **on the board**: both feeds of a transfer block (the sending district's and this district's) come to the board's screw terminals, and the relay switches the transfer block's output there.
+
 | Ref | Part | Connections | Notes |
 | --- | --- | --- | --- |
-| U25 | ULN2003A (DIP-16) | Inputs from U2, each with a 10 kΩ pull-down; outputs sink the relay coils from +12 V; COM to +12 V (built-in flyback diodes) | Two dual-coil latching relays, three spare channels. The pull-downs keep a booting ESP32 from pulsing a coil, which would flip a latching relay |
-| J60 | 6-pole screw terminal 3.5 mm | +12 V, coil 1 set, coil 1 reset, coil 2 set, coil 2 reset, GND | The relays themselves sit at the transfer blocks (double-pole changeover) |
-| U26 | 4× PC817 (DIP-4) | Input: sensor through 2.2 kΩ and a 1N4148, from its own supply; output to U2 | Isolated sensor inputs |
+| K1, K2 | Latching relay, **double-pole changeover**, at least 5 A at 24 V DC, 12 V coils (one set coil, one reset coil); or two single-pole changeover latching relays per transfer block, switched together | Common contacts → transfer block (both rails); one side → the sending district's feed, the other → this district's own track feed | Double-pole so the two districts never share a rail; changeover breaks before it makes. Part to choose in phase B0 (price, stock, coil current) |
+| J62, J63 | 6-pole screw terminals 5.08 mm, 10 A | Per transfer block: sending feed (2), own feed (2), transfer block (2) | Track current: section 15's 5 A rules apply to these nets and the relay contacts |
+| U25 | ULN2003A (DIP-16, in a socket) | Inputs from U2, each with a 10 kΩ pull-down; outputs sink K1 and K2's coils from +12 V; COM to +12 V (built-in flyback diodes) | Three spare channels. The pull-downs keep a booting ESP32 from pulsing a coil, which would flip a latching relay |
+| D60, D61 | Yellow 3 mm LEDs with resistors, across a set coil each | | Flash when a relay is set (a latching relay shows nothing otherwise) |
+| U26 | 4× PC817 (DIP-4, in sockets) | Input: sensor through 2.2 kΩ and a 1N4148, from its own supply; output to U2 | Isolated sensor inputs (transfer block entry and clear) |
 | J61 | 8-pole screw terminal 3.5 mm | Four sensor pairs | |
 
 ## 11. User interface
@@ -305,6 +309,7 @@ Track widths from IPC-2221 for **outer layers and a 10 °C rise**. The current t
 | R15 | No current and track width rules | Section 15 |
 | R16 | SMD parts need factory assembly or SMD soldering | **Through-hole first:** development boards, driver carriers, 3-pin switching regulators, DIP and TO-92 parts. The SMD variant is for later (14) |
 | R17 | The S3 development board's USB-serial chip sits on GPIO43/44 (UART0) | XpressNet's UART0 moved to GPIO47/21 |
+| R19 | Relays off the board needed extra wiring at each transfer block; blown interface chips needed desoldering | Transfer relays on the board (10), with the track-current rules; interface chips in DIP sockets (12) |
 | R18 | Modules are AliExpress-common and must plug in | Every module on 2.54 mm headers, with current per pin, keying, hold-down and keep-out rules (12). Track drivers that only have screw terminals (IBT-2, L298N) stay a cabled option |
 
 Notes from the review that need no change: the 9-bit XpressNet characters only matter when sending (the master's call bytes); received bytes always have the ninth bit clear, so the receiver can ignore parity. DCC-EX's tracks must be set at start-up in `myAutomation.h` (`SET_TRACK(C, MAIN)` for the booster buses).

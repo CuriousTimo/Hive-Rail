@@ -34,7 +34,9 @@ F50,1,Radial polyfuse 300 mA 30 V+,Radial,XpressNet,X-BUS 12 V supply,
 J20,1,Socket 2x5 2.54 mm,THT,Network,Blue W5500 Ethernet module (optional),Module bought separately; pin order to verify
 -,1,W5500 Ethernet module (blue 2x5 type),Module,Network,Wired Ethernet,Optional
 U25,1,ULN2003A,DIP-16,Relays,Latching relay coil drivers,Built-in flyback diodes
-J60,1,Screw terminal 6-pole 3.5 mm,THT,Relays,Relay coils,Relays sit at the transfer blocks
+K1;K2,2,Latching relay double-pole changeover 5 A+ 12 V coils (or 2x single-pole per block),THT,Relays,Transfer block switching,Part to choose in B0
+J62;J63,2,Screw terminal 6-pole 5.08 mm (10 A),THT,Relays,Transfer feeds in and transfer block out,
+D60;D61,2,LED 3 mm yellow,THT,Relays,Relay set indication,
 U26,4,PC817,DIP-4,Sensors,Four isolated sensor inputs,
 J61,1,Screw terminal 8-pole 3.5 mm,THT,Sensors,Four sensor pairs,
 LED1;LED2;LED3,3,WS2812D-F5 or PL9823 (5 mm addressable RGB),THT,UI,"Status: power, link, layout",
@@ -48,4 +50,5 @@ SW3,1,Push button 6 mm,THT,UI,U1 reset,
 D2;D3,2,LED 3 mm green,THT,Status,+12 V and +5 V present,
 -,-,"Female headers 2.54 mm for U1, U2, M1, M2, U3, U4, J20 (W5500), J31 (OLED)",THT,All,Plug-in modules,Keyed or with a blocked position
 -,-,M3 standoffs and screws,-,Mechanical,Hold-downs for the development boards and the W5500 module,
+-,-,"DIP sockets (8x DIP-8 or DIP-4 pairs, DIP-14, DIP-16) and a 3-pin TO-92 socket",THT,All,Swappable interface chips,
 -,~70,"Resistors (axial 1/4 W), capacitors (ceramic and electrolytic), 1N4148 diodes",THT,All,Passives,Values in the schematic draft; to complete in KiCad
