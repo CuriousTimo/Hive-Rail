@@ -142,6 +142,8 @@ pub struct Snapshot {
     pub turnouts: BTreeMap<String, bool>,
     pub crossings_closed: Vec<String>,
     pub trains: Vec<TrainView>,
+    /// Each station's information board.
+    pub boards: BTreeMap<String, Vec<crate::layout_sim::BoardRow>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -590,6 +592,7 @@ impl ViewBuilder {
             turnouts: sim.turnouts.clone(),
             crossings_closed: sim.closed_crossings().cloned().collect(),
             trains,
+            boards: sim.boards(),
         }
     }
 }

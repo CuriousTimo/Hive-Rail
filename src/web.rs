@@ -80,7 +80,7 @@ pub async fn run_sim(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Syn
                     .map(|p| p.district.clone())
                     .unwrap_or_default();
                 publisher
-                    .put(train.address, &district, RUNNING_STEP, true, true)
+                    .put(train.address, &district, running_step(train), true, true)
                     .await?;
             }
             println!("simulated trains are in session {session}'s loco register; nodes named after the districts follow them");
@@ -138,6 +138,7 @@ pub async fn run_sim(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Syn
                     json["clock"] = serde_json::json!({
                         "known": clock.known(),
                         "time": format!("{:02}:{:02}", minute / 60, minute % 60),
+                        "minute": minute,
                         "running": clock.running(),
                         "rate": clock.rate(),
                     });
@@ -160,8 +161,11 @@ async fn follow_clock(
     }
 }
 
-/// The speed step a running simulated train has in the loco register.
-const RUNNING_STEP: u8 = 40;
+/// The speed step (of 126) a running simulated train has in the loco register: its speed on
+/// the layout, so the IC shows a higher step than the goods train.
+fn running_step(train: &layout_sim::Train) -> u8 {
+    (train.speed_mm_s * 0.6).round().clamp(1.0, 126.0) as u8
+}
 
 /// Tells the mesh what a simulator event means for the loco register: a train in another
 /// district, stopped, or running the other way.
@@ -173,22 +177,23 @@ async fn publish_train(
     event: &layout_sim::SimEvent,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     use layout_sim::SimEvent;
-    let (name, step) = match event {
-        SimEvent::Border { train, .. } => (train, RUNNING_STEP),
-        SimEvent::Arrived { train, .. } => (train, 0),
+    let (name, running) = match event {
+        SimEvent::Border { train, .. } => (train, true),
+        SimEvent::Arrived { train, .. } => (train, false),
         // No track power: the loco stands; with power back it runs again.
-        SimEvent::Power { train, powered, .. } => (train, if *powered { RUNNING_STEP } else { 0 }),
+        SimEvent::Power { train, powered, .. } => (train, *powered),
         SimEvent::Departed { train, .. } => {
             if let Some(direction) = forward.get_mut(train) {
                 *direction = !*direction;
             }
-            (train, RUNNING_STEP)
+            (train, true)
         }
         _ => return Ok(()),
     };
     let Some(train) = sim.trains.iter().find(|t| &t.name == name) else {
         return Ok(());
     };
+    let step = if running { running_step(train) } else { 0 };
     let district = topology
         .piece(&train.head.piece)
         .map(|p| p.district.clone())
@@ -224,7 +229,9 @@ async fn publish_event(
         | SimEvent::Turnout { district, .. } => (district.clone(), true),
         SimEvent::Signal { district, .. } => (district.clone(), true),
         SimEvent::Power { district, .. } => (district.clone(), false),
-        SimEvent::Yield { train, .. } => (train_district(train), false),
+        SimEvent::Yield { train, .. } | SimEvent::PlatformChange { train, .. } => {
+            (train_district(train), false)
+        }
         SimEvent::Feed { block, district } => {
             let _ = block;
             (district.clone(), false)

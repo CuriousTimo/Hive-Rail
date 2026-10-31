@@ -119,6 +119,14 @@ th { font-weight: 600; color: var(--muted); font-size: 12px; }
 /* The map. Sizes are in millimetres of the layout. */
 .module { fill: var(--module); stroke: var(--module-edge); stroke-width: 3; }
 .module-label { fill: var(--muted); font-size: 46px; }
+/* Station information boards: white on blue, as on the platforms; changes in yellow. */
+.board-panel { fill: #0b2a5b; stroke: #3d6fb8; stroke-width: 3; }
+.board-head { fill: #9fb8e0; font-size: 26px; font-weight: 600; }
+.board-text, .board-track { fill: #ffffff; font-size: 32px; }
+.board-track { font-weight: 700; }
+.board-note { fill: #c6d6ef; font-size: 28px; }
+.board-change { fill: #ffd34d; font-size: 32px; font-weight: 700; }
+.board-was { fill: #9fb8e0; font-weight: 400; text-decoration: line-through; }
 .district-label { fill: var(--accent); font-size: 70px; font-weight: 700; }
 .platform { fill: var(--platform); }
 .road { fill: none; stroke: var(--road); stroke-width: 70; stroke-linecap: butt; }

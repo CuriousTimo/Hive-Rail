@@ -6,13 +6,13 @@ const SVG = "http://www.w3.org/2000/svg";
 // Train colours stay clear of the track colours: red occupied, yellow reserved, blue
 // transfer, green and orange turnouts.
 const TRAIN_COLOURS = ["#ff8fe0", "#f2f2f2", "#c9a6ff", "#9bd8ff", "#d4ff6b", "#ffb3a7"];
-// One colour per district: its name on the map, and the transfer blocks it feeds.
+// One colour per district: its modules, its name on the map, and the transfer blocks it feeds.
 const DISTRICT_COLOURS = ["#20c5b5", "#a77bff", "#e08a3c", "#5fa8ff", "#e45c9c", "#9ccf4a"];
 const LAMP = { red: "#ff4d4d", yellow: "#ffd34d", green: "#52d68a" };
 
 const svg = document.getElementById("map");
 const layer = (name) => document.getElementById(`layer-${name}`);
-const elements = { blocks: new Map(), pieces: new Map(), feeds: new Map(), turnouts: new Map(), crossings: new Map(), signals: new Map() };
+const elements = { boards: new Map(), blocks: new Map(), pieces: new Map(), feeds: new Map(), turnouts: new Map(), crossings: new Map(), signals: new Map() };
 let districtColour = () => "var(--muted)";
 let fit = { x: 0, y: 0, w: 1000, h: 500 };
 let view = { ...fit };
@@ -43,6 +43,8 @@ function drawLayout(layout) {
 
   for (const module of layout.modules) {
     const outline = el("polygon", { points: pointsAttr(module.outline), class: "module" }, layer("modules"));
+    // A wash of the district's colour over the module, so each district reads at a glance.
+    outline.style.fill = `color-mix(in srgb, ${districtColour(module.district)} 14%, var(--module))`;
     const title = el("title", {}, outline);
     title.textContent = `${module.name} (${module.id}${module.owner ? ", " + module.owner : ""}), district ${module.district}`;
     text(module.id, module.label, "module-label", layer("labels"));
@@ -187,6 +189,9 @@ function drawLayout(layout) {
       return module ? Math.min(...module.outline.map((p) => p[1])) : s.at[1];
     });
     text(name, [x, Math.min(...bottoms) - 150], "station-label", layer("labels"));
+    // The station's information board, below its name: filled in by update().
+    const group = el("g", { class: "board" }, layer("labels"));
+    elements.boards.set(name, { group, x: x - BOARD_WIDTH / 2, top: Math.min(...bottoms) - 200 });
   }
 
   // The whole layout, or only the modules named in the address: ?modules=timo-adorf (for a
@@ -201,6 +206,8 @@ function drawLayout(layout) {
     [minX, minY, maxX, maxY] = [Math.min(...points.map((p) => p[0])), Math.min(...points.map((p) => p[1])), Math.max(...points.map((p) => p[0])), Math.max(...points.map((p) => p[1]))];
   }
   const margin = 150;
+  // Room for the station boards below the stations.
+  minY -= (BOARD_ROWS + 1) * BOARD_ROW + 80;
   fit = { x: minX - margin, y: -maxY - margin - 100, w: maxX - minX + 2 * margin, h: maxY - minY + 2 * margin + 250 };
   view = { ...fit };
   applyView();
@@ -216,6 +223,45 @@ function formatTime(seconds) {
   if (s < 60) return `${s} s`;
   if (s < 3600) return `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, "0")} s`;
   return `${Math.floor(s / 3600)} h ${String(Math.floor(s / 60) % 60).padStart(2, "0")} min`;
+}
+
+// Station information boards: the trains coming in and leaving, soonest first, with the
+// time on the fast clock (or the minutes to go without one) and the platform track.
+const BOARD_WIDTH = 1100;
+const BOARD_ROW = 46;
+const BOARD_ROWS = 6;
+const BOARD_COLUMNS = [20, 160, 400, 720, 820];
+
+function boardTime(minutes, clock) {
+  if (!clock || !clock.known) return `+${Math.round(minutes)}'`;
+  const at = Math.round(clock.minute + minutes) % 1440;
+  return `${String(Math.floor(at / 60)).padStart(2, "0")}:${String(at % 60).padStart(2, "0")}`;
+}
+
+function drawBoard(board, rows, clock) {
+  const { group, x, top } = board;
+  group.replaceChildren();
+  const height = (BOARD_ROWS + 1) * BOARD_ROW + 20;
+  el("rect", { x, y: -top, width: BOARD_WIDTH, height, rx: 10, class: "board-panel" }, group);
+  const cell = (content, column, row, className) => {
+    const node = el("text", { x: x + BOARD_COLUMNS[column], y: -top + 38 + row * BOARD_ROW, class: className }, group);
+    node.textContent = content;
+    return node;
+  };
+  ["Time", "Train", "From / to", "Track", ""].forEach((h, i) => cell(h, i, 0, "board-head"));
+  rows.slice(0, BOARD_ROWS).forEach((row, i) => {
+    const line = i + 1;
+    cell(boardTime(row.in_min, clock), 0, line, "board-text");
+    cell(row.train, 1, line, "board-text");
+    cell(`${row.departure ? "to" : "from"} ${row.other}`, 2, line, "board-text");
+    const track = cell(row.track ?? "–", 3, line, row.was ? "board-change" : "board-track");
+    if (row.was) {
+      const old = el("tspan", { dx: 12, class: "board-was" }, track);
+      old.textContent = row.was;
+    }
+    const note = row.was ? "track change" : row.departure ? "boarding" : row.state === "on time" ? "" : row.state;
+    cell(note, 4, line, row.was ? "board-change" : "board-note");
+  });
 }
 
 function update(state) {
@@ -257,6 +303,8 @@ function update(state) {
     group.classList.toggle("closed-barrier", closed.has(id));
     for (const dot of group.querySelectorAll("circle")) dot.classList.toggle("closed", closed.has(id));
   }
+
+  for (const [name, board] of elements.boards) drawBoard(board, (state.boards || {})[name] || [], state.clock);
 
   const trains = layer("trains");
   trains.replaceChildren();
