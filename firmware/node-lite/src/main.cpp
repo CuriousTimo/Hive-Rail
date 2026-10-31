@@ -1,7 +1,10 @@
 // Hive-Rail Node-Lite: our lite node test and debug device (phase B0), a zenoh-pico client on
 // an ESP32. It sends the Rust nodes' heartbeat (hive/<session>/node/<id>/hb) every 250 ms, marked
 // "lite" with the node it reaches the mesh through ("via"), and follows the other nodes'
-// heartbeats. On an M5StickC its screen shows the state (front button: next page).
+// heartbeats. It also plays its district's command station with fake hardware: district power
+// on its buttons, a faked short, and the mesh-wide global emergency stop both ways.
+// On an M5StickC: side button B = power on/off (hold 2 s: short circuit), front button A = next
+// page (hold 2 s: GLOBAL emergency stop); the red LED shows the district power.
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
@@ -29,6 +32,20 @@ static const uint16_t ROCNET_ID = 199;
 static z_owned_session_t session;
 static z_owned_publisher_t heartbeat;
 static z_owned_subscriber_t peers;
+static z_owned_subscriber_t global_stop;
+static z_owned_publisher_t global_stop_out;
+static z_owned_publisher_t power_status;
+static z_owned_publisher_t events;
+
+// District power, as the Rust nodes' labels: OFF, ON, STOP (emergency stop), SHORT.
+enum Power { POWER_OFF, POWER_ON, POWER_STOP, POWER_SHORT };
+static const char *POWER_LABEL[] = {"OFF", "ON", "STOP", "SHORT"};
+static volatile Power power = POWER_OFF;
+static volatile bool power_changed = false;
+static char last_event[40] = "";
+// A global stop received from the mesh, applied by loop() (set in the receive task).
+static volatile bool stop_from_mesh = false;
+static char stop_origin[24] = "";
 static bool session_open = false;
 static uint32_t seq = 0;
 static uint32_t received = 0;
@@ -153,7 +170,90 @@ static void find_via() {
     portEXIT_CRITICAL(&nodes_lock);
 }
 
+// RocNet frames as the Rust nodes build them (rocnet.rs): network, recipient (2), sender (2),
+// group, type << 5 | action, data length, data. Group 1 is the command station.
+static const uint8_t RN_CS_GROUP = 1;
+static const uint8_t RN_REQUEST = 0, RN_EVENT = 1;
+static const uint8_t RN_CS_QUERY = 1, RN_CS_HALT = 3;
+
+static void put_with_origin(const z_loaned_publisher_t *publisher, const uint8_t *data, size_t len) {
+    z_owned_bytes_t payload;
+    z_bytes_copy_from_buf(&payload, data, len);
+    z_publisher_put_options_t options;
+    z_publisher_put_options_default(&options);
+    // The Rust nodes read the sender's name from the attachment.
+    z_owned_bytes_t origin;
+    z_bytes_copy_from_str(&origin, HIVE_NODE_ID);
+    options.attachment = z_bytes_move(&origin);
+    z_publisher_put(publisher, z_bytes_move(&payload), &options);
+}
+
+// An event for the dispatcher's list (hive/<s>/node/<id>/event), and the screen.
+static void event(const char *text) {
+    strlcpy(last_event, text, sizeof(last_event));
+    Serial.println(text);
+    char json[160];
+    snprintf(json, sizeof(json), "{\"detail\":false,\"text\":\"%s\"}", text);
+    z_owned_bytes_t payload;
+    z_bytes_copy_from_str(&payload, json);
+    z_publisher_put(z_publisher_loan(&events), z_bytes_move(&payload), NULL);
+}
+
+// The district's power status to the mesh, as a RocNet command station status event:
+// bit 0 power on, bit 1 idle (an emergency stop is on and idle).
+static void publish_power() {
+    uint8_t status = power == POWER_ON ? 0x01 : power == POWER_STOP ? 0x03 : 0x00;
+    uint8_t frame[] = {0, 0, 0, (uint8_t)(ROCNET_ID >> 8), (uint8_t)ROCNET_ID, RN_CS_GROUP,
+                       (uint8_t)(RN_EVENT << 5 | RN_CS_QUERY), 1, status};
+    put_with_origin(z_publisher_loan(&power_status), frame, sizeof(frame));
+}
+
+static void set_power(Power next, const char *why) {
+    if (power == next) {
+        return;
+    }
+    power = next;
+    publish_power();
+    char text[40];
+    snprintf(text, sizeof(text), "district power %s (%s)", POWER_LABEL[next], why);
+    event(text);
+}
+
+// The layout-wide emergency stop: every district goes to STOP.
+static void send_global_stop() {
+    uint8_t frame[] = {0, 0, 0, (uint8_t)(ROCNET_ID >> 8), (uint8_t)ROCNET_ID, RN_CS_GROUP,
+                       (uint8_t)(RN_REQUEST << 5 | RN_CS_HALT), 0};
+    put_with_origin(z_publisher_loan(&global_stop_out), frame, sizeof(frame));
+    set_power(POWER_STOP, "GLOBAL STOP sent");
+}
+
+static void on_global_stop(z_loaned_sample_t *sample, void *) {
+    uint8_t frame[16];
+    z_bytes_reader_t reader = z_bytes_get_reader(z_sample_payload(sample));
+    size_t len = z_bytes_reader_read(&reader, frame, sizeof(frame));
+    // A halt request: group 1, type request, action 3.
+    if (len < 8 || frame[5] != RN_CS_GROUP || (frame[6] >> 5) != RN_REQUEST || (frame[6] & 0x1F) != RN_CS_HALT) {
+        return;
+    }
+    stop_origin[0] = 0;
+    const z_loaned_bytes_t *attachment = z_sample_attachment(sample);
+    if (attachment) {
+        z_owned_string_t origin;
+        if (z_bytes_to_string(attachment, &origin) == Z_OK) {
+            size_t n = z_string_len(z_string_loan(&origin));
+            if (n >= sizeof(stop_origin)) {
+                n = sizeof(stop_origin) - 1;
+            }
+            memcpy(stop_origin, z_string_data(z_string_loan(&origin)), n);
+            stop_origin[n] = 0;
+            z_string_drop(z_string_move(&origin));
+        }
+    }
+    stop_from_mesh = true;
+}
+
 #ifdef HIVE_SCREEN
+static const int RED_LED = 10;  // M5StickC: active low
 static int page = 0;
 
 static void show(const char *status) {
@@ -185,13 +285,19 @@ static void show(const char *status) {
         }
         uint32_t rx = received;
         portEXIT_CRITICAL(&nodes_lock);
-        d.printf("Mesh %d node(s) online\n", online);
+        d.printf("Mesh %d node(s) online  ", online);
+        uint16_t colour = power == POWER_ON ? TFT_GREEN : power == POWER_OFF ? TFT_LIGHTGREY : TFT_RED;
+        d.setTextColor(colour, TFT_BLACK);
+        d.printf("%s\n", POWER_LABEL[power]);
+        d.setTextColor(TFT_WHITE, TFT_BLACK);
         d.printf("hb tx %lu rx %lu\n", (unsigned long)seq, (unsigned long)rx);
         d.printf("heap %uk low %uk cpu %u/%u%%\n", ESP.getFreeHeap() / 1024, ESP.getMinFreeHeap() / 1024,
                  cpu_load[0], cpu_load[1]);
         uint32_t up = now / 1000;
-        d.printf("up %luh%02lum%02lus  M5: nodes", (unsigned long)(up / 3600), (unsigned long)(up / 60 % 60),
+        d.printf("up %luh%02lum%02lus\n", (unsigned long)(up / 3600), (unsigned long)(up / 60 % 60),
                  (unsigned long)(up % 60));
+        d.setTextColor(TFT_CYAN, TFT_BLACK);
+        d.printf("%.26s", last_event);
     } else {
         uint32_t now = millis();
         portENTER_CRITICAL(&nodes_lock);
@@ -236,6 +342,9 @@ void setup() {
     M5.Display.setRotation(3);
     M5.Display.setTextSize(1);
     M5.Display.setBrightness(96);
+    // Holding a button 2 s counts as "hold" (global stop, faked short).
+    M5.BtnA.setHoldThresh(2000);
+    M5.BtnB.setHoldThresh(2000);
 #endif
     // CPU load baseline: one second with nothing running yet.
     esp_register_freertos_idle_hook_for_cpu(idle_hook_0, 0);
@@ -311,6 +420,31 @@ void setup() {
                              z_closure_sample_move(&callback), NULL) < 0) {
         halt("Zenoh: no heartbeat subscriber");
     }
+
+    // District power: the global stop both ways, this district's status, events.
+    static char key_all[64], key_status[96], key_events[96];
+    snprintf(key_all, sizeof(key_all), "hive/%s/rn/cs/all", HIVE_SESSION);
+    snprintf(key_status, sizeof(key_status), "hive/%s/rn/cs/node/%s", HIVE_SESSION, HIVE_NODE_ID);
+    snprintf(key_events, sizeof(key_events), "hive/%s/node/%s/event", HIVE_SESSION, HIVE_NODE_ID);
+    z_view_keyexpr_t ke_all, ke_status, ke_events;
+    z_view_keyexpr_from_str_unchecked(&ke_all, key_all);
+    z_view_keyexpr_from_str_unchecked(&ke_status, key_status);
+    z_view_keyexpr_from_str_unchecked(&ke_events, key_events);
+    z_owned_closure_sample_t stop_cb;
+    z_closure_sample(&stop_cb, on_global_stop, NULL, NULL);
+    if (z_declare_publisher(z_session_loan(&session), &global_stop_out, z_view_keyexpr_loan(&ke_all), NULL) < 0 ||
+        z_declare_publisher(z_session_loan(&session), &power_status, z_view_keyexpr_loan(&ke_status), NULL) < 0 ||
+        z_declare_publisher(z_session_loan(&session), &events, z_view_keyexpr_loan(&ke_events), NULL) < 0 ||
+        z_declare_subscriber(z_session_loan(&session), &global_stop, z_view_keyexpr_loan(&ke_all),
+                             z_closure_sample_move(&stop_cb), NULL) < 0) {
+        halt("Zenoh: no power keys");
+    }
+#ifdef HIVE_SCREEN
+    pinMode(RED_LED, OUTPUT);
+    digitalWrite(RED_LED, HIGH);
+#endif
+    publish_power();
+    event("lite node started, district power OFF");
 }
 
 void loop() {
@@ -327,12 +461,36 @@ void loop() {
 #ifdef HIVE_OTA
     ArduinoOTA.handle();
 #endif
+    if (stop_from_mesh) {
+        stop_from_mesh = false;
+        char why[32];
+        snprintf(why, sizeof(why), "GLOBAL STOP from %s", stop_origin[0] ? stop_origin : "?");
+        set_power(POWER_STOP, why);
+        next_screen = 0;
+    }
 #ifdef HIVE_SCREEN
     M5.update();
-    if (M5.BtnA.wasPressed()) {
+    // Front button: a press is the next page, holding it 2 s the global emergency stop.
+    if (M5.BtnA.wasReleased() && !M5.BtnA.wasReleasedAfterHold()) {
         page = (page + 1) % 2;
         next_screen = 0;
     }
+    if (M5.BtnA.wasHold()) {
+        send_global_stop();
+        next_screen = 0;
+    }
+    // Side button: district power on and off (the board's go and stop), holding it a short.
+    if (M5.BtnB.wasReleased() && !M5.BtnB.wasReleasedAfterHold()) {
+        set_power(power == POWER_ON ? POWER_OFF : POWER_ON, "button");
+        next_screen = 0;
+    }
+    if (M5.BtnB.wasHold()) {
+        set_power(POWER_SHORT, "faked short");
+        next_screen = 0;
+    }
+    // Red LED: on with power, blinking for STOP and SHORT.
+    bool lit = power == POWER_ON || ((power == POWER_STOP || power == POWER_SHORT) && (now / 250) % 2);
+    digitalWrite(RED_LED, lit ? LOW : HIGH);
 #endif
     if (now >= next_via) {
         next_via = now + 2000;
@@ -344,9 +502,9 @@ void loop() {
         // The Rust nodes' Heartbeat, as a lite node with the node that carries it.
         char json[256];
         snprintf(json, sizeof(json),
-                 "{\"node\":\"%s\",\"seq\":%lu,\"power\":\"OFF\",\"rocnet_id\":%u,\"locos\":[],\"register\":null,"
+                 "{\"node\":\"%s\",\"seq\":%lu,\"power\":\"%s\",\"rocnet_id\":%u,\"locos\":[],\"register\":null,"
                  "\"zid\":\"%s\",\"lite\":true%s%s%s}",
-                 HIVE_NODE_ID, (unsigned long)seq, ROCNET_ID, own_zid, via[0] ? ",\"via\":\"" : "", via,
+                 HIVE_NODE_ID, (unsigned long)seq, POWER_LABEL[power], ROCNET_ID, own_zid, via[0] ? ",\"via\":\"" : "", via,
                  via[0] ? "\"" : "");
         z_owned_bytes_t payload;
         z_bytes_copy_from_str(&payload, json);

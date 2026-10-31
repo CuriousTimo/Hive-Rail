@@ -15,7 +15,9 @@ the nodes page. It started as the phase B0 test. See the
 2. On that computer, start a node that listens for the ESP32:
    `hive-rail --mode node --session bench --id MacBook --rocnet-address 101 --listen tcp/0.0.0.0:7447`
 3. Build and flash over USB: `pio run -e m5stick-c -t upload` (or `-e esp32dev`), then `pio device monitor`.
-   Afterwards over Wi-Fi: `pio run -e m5stick-c-ota -t upload --upload-flags="--auth=<HIVE_OTA_PASS>"`.
+   Afterwards over Wi-Fi: `PLATFORMIO_UPLOAD_FLAGS="--auth=<HIVE_OTA_PASS>" pio run -e m5stick-c-ota -t upload`.
+
+**Buttons, screen and lights:** see the wiki page [Node-Lite on the M5StickC](https://github.com/CuriousTimo/Hive-Rail/wiki/Node-Lite-M5StickC). In short: side button B switches district power (hold 2 s: fake short), the front button switches pages (hold 2 s: global emergency stop).
    zenoh-pico's build needs CMake (`pip install cmake` next to PlatformIO).
 
 ## Result (2026-10-31, M5StickC: ESP32-PICO-D4, zenoh-pico 1.10.1, Rust zenoh 1.10.1)
