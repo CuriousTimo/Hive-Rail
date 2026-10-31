@@ -27,7 +27,7 @@ Think of each future Hive-Rail node as a small signal box for one part of a modu
 - Give every district its own power on/off and report its power state and short circuits to every node, so the rest of the layout keeps running. Share one fast clock across all nodes.
 - Later: serve FRED/Fredi throttles on every module as one distributed command station.
 
-These are goals, not finished features. Today this beta can check a module profile, check a simple booster-exclusivity example, exchange network heartbeats between computers, switch simulated district power (with a global emergency stop), report simulated shorts to every node, run one fast clock across the mesh, keep one loco register for the whole layout (translating Rocrail's or a central's own slots by loco address), drive a DCC-EX command station over USB or WiFi, and join a LocoNet bus through a node board or a serial interface. It cannot yet carry out the railway-control jobs above.
+These are goals, not finished features. Today this beta can check a module profile, check a simple booster-exclusivity example, exchange network heartbeats between computers, switch simulated district power (with a global emergency stop and a global go), report simulated shorts to every node, run one fast clock across the mesh, keep one loco register for the whole layout (translating Rocrail's or a central's own slots by loco address), drive a DCC-EX command station over USB or WiFi, and join a LocoNet bus through a node board or a serial interface. A lite node on an ESP32 (the M5StickC test device) joins the mesh as a district. It cannot yet carry out the railway-control jobs above.
 
 ## Intended computers
 
