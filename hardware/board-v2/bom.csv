@@ -1,9 +1,13 @@
 Ref,Qty,Part,Package,Block,Function,Notes
 U1,1,ESP32-DevKitC (ESP32-WROOM-32E),Development board on socket strips,DCC-EX,Runs stock DCC-EX,Check the VBUS diode on clones
 U2,1,ESP32-S3-DevKitC-1 (N8 or N8R2),Development board on socket strips,Node,Hive-Rail lite node,Three UARTs needed; recheck pins on clones
-M1;M2,2,Pololu DRV8874 single brushed DC motor driver carrier,Module on socket strips,Track,Main and programming track drivers,Same chip as EX-CSB1; current-sense scale to verify
-J16,1,Header 2x4 2.54 mm,THT,Track,Option: IBT-2 (BTS7960) module instead of M1,
-J1;J10;J11,3,Screw terminal 2-pole 5.08 mm (10 A),THT,Power/Track,VIN; main track; programming track,
+-,1,"Arduino Uno motor shield: EX-MotorShield8874 or Arduino Motor Shield R3 (or clone)",Shield,Track,Main and programming track drivers,"Owner's choice; optional (not needed with boosters only)"
+J10,1,"Arduino Uno R3 female headers (1x10, 2x 1x8, 1x6)",THT,Track,Motor shield socket,
+J11,1,Screw terminal 2-pole 5.08 mm (10 A),THT,Track,VIN out to the shield's power terminal,
+J12,1,Screw terminal 4-pole 5.08 mm (10 A),THT,Track,Main and programming track (wired from the shield),
+C10,1,470 uF 35 V electrolytic,Radial,Track,Bulk capacitance for the shield,
+J16,1,Header 2x4 2.54 mm,THT,Track,Option: IBT-2 (BTS7960) module on track A (cabled),
+J1,1,Screw terminal 2-pole 5.08 mm (10 A),THT,Power,VIN,
 F1,1,Fuse 5 A fast 5x20 mm + PCB fuse holder,THT,Power,VIN protection,
 Q1,1,IRF4905 P-MOSFET,TO-220,Power,Reverse-polarity protection,
 Z1,1,1N4744A (15 V zener),DO-41,Power,Q1 gate protection,
@@ -48,7 +52,7 @@ J30,1,Header 4-pin 2.54 mm,THT,DCC-EX,Spare I2C on U1,
 SW1;SW2,2,Push button 12 mm (red and green caps),THT,UI,Stop and go (on U1),
 SW3,1,Push button 6 mm,THT,UI,U1 reset,
 D2;D3,2,LED 3 mm green,THT,Status,+12 V and +5 V present,
--,-,"Female headers 2.54 mm for U1, U2, M1, M2, U3, U4, J20 (W5500), J31 (OLED)",THT,All,Plug-in modules,Keyed or with a blocked position
+-,-,"Female headers 2.54 mm for U1, U2, U3, U4, J20 (W5500), J31 (OLED)",THT,All,Plug-in modules,Keyed or with a blocked position
 -,-,M3 standoffs and screws,-,Mechanical,Hold-downs for the development boards and the W5500 module,
 -,-,"DIP sockets (8x DIP-8 or DIP-4 pairs, DIP-14, DIP-16) and a 3-pin TO-92 socket",THT,All,Swappable interface chips,
 -,~70,"Resistors (axial 1/4 W), capacitors (ceramic and electrolytic), 1N4148 diodes",THT,All,Passives,Values in the schematic draft; to complete in KiCad

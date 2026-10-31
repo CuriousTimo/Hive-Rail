@@ -6,7 +6,7 @@
 
 The board is a full DCC-EX command station with the Hive-Rail extras, on two ESP32 development boards:
 
-- **U1, ESP32-DevKitC (ESP32-WROOM-32E):** stock DCC-EX. Its track signals are on EX-CSB1's pins, so DCC-EX's `EXCSB1` motor driver values hold, plus a third DCC-EX track for the booster buses.
+- **U1, ESP32-DevKitC (ESP32-WROOM-32E):** stock DCC-EX, with an **Arduino Uno motor shield** of the owner's choice as track driver (EX-MotorShield8874 or Motor Shield R3), wired as DCC-EX's ESP32 shield definitions expect, plus a third DCC-EX track for the booster buses.
 - **U2, ESP32-S3-DevKitC-1 (N8 or N8R2):** the Hive-Rail lite node: LocoNet, XpressNet, the network, relays, sensors, LEDs and the OLED. The S3 is chosen because the node needs three UARTs (LocoNet, XpressNet, the DCC-EX link); the ESP32-C6 has two plus a limited low-power one.
 
 Each development board brings its own USB port, USB-serial chip, auto-reset and 3.3 V regulator, so the board needs no USB circuit of its own.
@@ -20,8 +20,7 @@ flowchart LR
     end
     subgraph U2["U2 ESP32-S3-DevKitC-1: lite node"]
     end
-    U1 -->|"A: main"| DRVA["M1 DRV8874 carrier"] --> MAIN["Main track"]
-    U1 -->|"B: prog"| DRVB["M2 DRV8874 carrier"] --> PROG["Programming track"]
+    U1 -->|"A: main, B: prog"| SHIELD["Arduino Uno motor shield<br/>(EX-MotorShield8874 or Motor Shield R3)"] --> TRACKS["Main and programming track"]
     U1 -->|"C: booster bus DCC + enable"| GATE["U12 74HCT00"] --> DRV12["U13, U14 TC4427"]
     DRV12 --> LNB["LocoNet-B RailSync"]
     DRV12 --> CDE["CDE out (C, D)"]
@@ -49,76 +48,93 @@ flowchart LR
 | Q1 | IRF4905 P-MOSFET (TO-220, 55 V) | Reverse-polarity protection: in the VIN line, gate to GND through 10 kΩ, 15 V zener (1N4744A) gate–source | Almost no voltage drop, unlike a diode |
 | D1 | 1.5KE27A TVS (axial) | VIN to GND | Conducts above about 25.7 V |
 | U3 | 12 V switching regulator, 3-pin 7805 footprint, 1 A, input up to 36 V (Mornsun K7812-1000R3 or equal) | VIN → **+12 V** | LocoNet RailSync drivers, LocoNet-T supply, X-BUS supply, relay coils, LM393. Needs VIN ≥ 15 V |
-| U4 | 5 V switching regulator, same type, 2 A (K7805-2000R3 or equal) | VIN → **+5 V** | Both development boards (their 5V pins; they make 3.3 V themselves), the W5500 module, the addressable LEDs, 74HCT logic, the 6N137 |
+| U4 | 5 V switching regulator, same type, 2 A (K7805-2000R3 or equal) | VIN → **+5 V** | The shield's logic (5V pin), both development boards (their 5V pins; they make 3.3 V themselves), the W5500 module, the addressable LEDs, 74HCT logic, the 6N137 |
 | C1–C4 | 100 µF / 35 V electrolytic and 100 nF on VIN, +12 V and +5 V | | Per the regulator data sheets |
 | D2, D3 | Green 3 mm LEDs | +12 V, +5 V | Power indication |
 
-- **Input range 15 to 22 V** covers H0 and 0 track supplies. The TVS conducts from about 25.7 V and clamps below 38 V at its full rated surge; the regulators are rated 36 V (*verify* the surge rating of the chosen type, or pick a 72 V input type if affordable). The DRV8874 is rated 37 V.
+- **Input range 15 to 22 V** covers H0 and 0 track supplies. The TVS conducts from about 25.7 V and clamps below 38 V at its full rated surge; the regulators are rated 36 V (*verify* the surge rating of the chosen type, or pick a 72 V input type if affordable). The DRV8874 is rated 37 V, the L298P 46 V.
 - **N scale (12 to 14 V track):** a 12 V regulator cannot work there; the LocoNet 12 V would have to come from VIN through a diode (open point, 13).
 - **USB only:** each development board runs from its own USB cable for flashing and tests, without track power. *Verify* that each development board has a diode between its USB VBUS and its 5V pin, so the board's +5 V does not feed the computer's USB port; the official DevKitC boards do, clones vary.
 
 ## 2. U1: DCC-EX (ESP32-DevKitC)
 
-**Pins.** Tracks A and B on EX-CSB1's pins.
+**Pins.** The track drivers are an Arduino Uno motor shield (3). Its Uno pins are wired to the same GPIOs as on the ESPduino-32 (an ESP32 in Uno form), for which DCC-EX already has shield definitions (`MotorDrivers.h`, ESP32 section), so those definitions hold unchanged.
 
-| GPIO | Function | To |
-| --- | --- | --- |
-| 25 | Track A enable | M1 EN/IN1 |
-| 0 | Track A DCC signal | M1 PH/IN2. GPIO0 is a strapping pin (the DevKitC's BOOT button and auto-reset): M1's input must not pull it low at reset (the DRV8874 input has an internal pull-down of about 100 kΩ, which the DevKitC's 10 kΩ pull-up overrides, *verify*) |
-| 14 | Track A sleep, active low | M1 nSLEEP |
-| 34 | Track A current (input only) | M1 current sense output |
-| 19 | Track A fault | M1 nFAULT, 10 kΩ pull-up to 3.3 V |
-| 27 | Track B enable | M2 EN/IN1 |
-| 15 | Track B DCC signal | M2 PH/IN2 |
-| 2 | Track B sleep, active low | M2 nSLEEP |
-| 35 | Track B current (input only) | M2 current sense output |
-| 23 | Track B fault | M2 nFAULT, 10 kΩ pull-up |
-| 5 | Track C (booster buses) DCC signal | U12 |
-| 18 | Track C enable | U12 |
-| 32 | Booster input (`BOOSTER_INPUT 32`, as EX-CSB1) | U20 output |
-| 16 / 17 | Serial2 RX / TX (`SERIAL2_COMMANDS`, DCC-EX's default pins) | U2 GPIO17 / 18 |
-| 36 | Booster short in (CDE E, B-BUS overload; input only) | U21 outputs, 10 kΩ pull-up |
-| 4 | Short line out to the master (booster mode) | U22 LED through 1 kΩ |
-| 33 | Stop button (to GND, 10 kΩ pull-up) | SW1, front panel |
-| 26 | Go button | SW2, front panel |
-| EN | Reset | DevKitC's own; also Q5 from U2 |
-| 21 / 22 | I²C, spare | Header J30 |
+| GPIO | Uno pin | Function | To |
+| --- | --- | --- | --- |
+| 25 | D3 | Track A enable (PWM) | Shield header |
+| 19 | D12 | Track A DCC signal (direction) | Shield header |
+| 13 | D9 | Track A brake | Shield header |
+| 35 | A0 (A2 on the ESPduino-32) | Track A current (input only) | Shield header A0; solder jumper to A2 for shields that use A2 |
+| 36 | A4 | Track A fault (EX-MotorShield8874; input only) | Shield header |
+| 23 | D11 | Track B enable (PWM) | Shield header |
+| 18 | D13 | Track B DCC signal | Shield header |
+| 12 | D8 | Track B brake | Shield header. GPIO12 is a strapping pin (flash voltage): it must be low at reset; both shields have a pull-down there (*verify*), as on the ESPduino-32 |
+| 34 | A1 (A3 on the ESPduino-32) | Track B current (input only) | Shield header A1; solder jumper to A3 |
+| 39 | A5 | Track B fault (input only) | Shield header |
+| 5 | – | Track C (booster buses) DCC signal | U12 |
+| 4 | – | Track C enable | U12 |
+| 32 | – | Booster input (`BOOSTER_INPUT 32`, as EX-CSB1) | U20 output |
+| 16 / 17 | – | Serial2 RX / TX (`SERIAL2_COMMANDS`, DCC-EX's fixed pins) | U2 GPIO17 / 18 |
+| 27 | – | Booster short in (CDE E, B-BUS overload) | U21 outputs, 10 kΩ pull-up |
+| 14 | – | Short line out to the master (booster mode) | U22 LED through 1 kΩ |
+| 33 | – | Stop button (to GND, 10 kΩ pull-up) | SW1, front panel |
+| 26 | – | Go button | SW2, front panel |
+| EN | – | Reset | DevKitC's own; also Q5 from U2 |
+| 21 / 22 | – | I²C, spare | Header J30 |
 
-**DCC-EX configuration** (`config.h`, stock DCC-EX):
+GPIO0, 2 and 15 (strapping pins) stay free.
+
+**DCC-EX configuration** (`config.h`, stock DCC-EX). The first two lines are DCC-EX's own ESP32 shield definitions; the third adds the booster buses:
 
 ```cpp
-// Tracks A (main) and B (programming) on EX-CSB1's pins; C feeds the booster buses
-// (LocoNet-B RailSync, CDE, B-BUS out): no current sense, boosters measure.
-// Sense factor: Pololu's DRV8874 carrier gives its own current-sense scale (verify; EX-CSB1 uses 2.23).
-#define HIVE_RAIL_BOARD_V2 F("HIVERAIL_V2"), \
-  new MotorDriver(25,  0, UNUSED_PIN, -14, 34, 2.23, 5000, 19), \
-  new MotorDriver(27, 15, UNUSED_PIN,  -2, 35, 2.23, 5000, 23), \
-  new MotorDriver(18,  5, UNUSED_PIN, UNUSED_PIN, UNUSED_PIN, 1.0, 5000, UNUSED_PIN)
-#define MOTOR_SHIELD_TYPE HIVE_RAIL_BOARD_V2
+// EX-MotorShield8874 (DCC-EX's EX8874_SHIELD for ESP32) plus track C for the booster
+// buses (LocoNet-B RailSync, CDE, B-BUS out): no current sense, boosters measure.
+#define HIVE_RAIL_V2_EX8874 F("HIVERAIL_V2_8874"), \
+  new MotorDriver(25, 19, UNUSED_PIN, 13, 35, 1.27, 5000, 36), \
+  new MotorDriver(23, 18, UNUSED_PIN, 12, 34, 1.27, 5000, 39), \
+  new MotorDriver( 4,  5, UNUSED_PIN, UNUSED_PIN, UNUSED_PIN, 1.0, 5000, UNUSED_PIN)
+
+// Arduino Motor Shield R3 and clones (DCC-EX's STANDARD_MOTOR_SHIELD for ESP32): no fault pins
+#define HIVE_RAIL_V2_STANDARD F("HIVERAIL_V2_STD"), \
+  new MotorDriver(25, 19, UNUSED_PIN, 13, 35, 0.70, 1500, UNUSED_PIN), \
+  new MotorDriver(23, 18, UNUSED_PIN, 12, 34, 0.70, 1500, UNUSED_PIN), \
+  new MotorDriver( 4,  5, UNUSED_PIN, UNUSED_PIN, UNUSED_PIN, 1.0, 5000, UNUSED_PIN)
+
+// No shield, boosters only (LocoNet-B, CDE, B-BUS): track C is the district's only DCC output.
+// No programming track; shorts are handled by the boosters (CDE E and B-BUS overload still reach GPIO27).
+#define HIVE_RAIL_V2_BOOSTERS F("HIVERAIL_V2_BOOST"), \
+  new MotorDriver( 4,  5, UNUSED_PIN, UNUSED_PIN, UNUSED_PIN, 1.0, 5000, UNUSED_PIN)
+
+#define MOTOR_SHIELD_TYPE HIVE_RAIL_V2_EX8874   // or HIVE_RAIL_V2_STANDARD, or HIVE_RAIL_V2_BOOSTERS
 #define BOOSTER_INPUT 32
 #define SERIAL2_COMMANDS
 ```
 
-`myAutomation.h`: `SET_TRACK(C, MAIN)` at start, stop and go (`ONBUTTON(33) POWEROFF`, `ONBUTTON(26) POWERON`), the booster short in on GPIO36 as a power off, the short line out from `ONOVERLOAD`, and booster mode on `ONRAILSYNCON` (`SET_TRACK(A, BOOST)`). In booster mode DCC-EX routes GPIO32 to the track outputs in the ESP32's GPIO matrix (hardware, no software in the path).
+`myAutomation.h`: `SET_TRACK(C, MAIN)` at start (`SET_TRACK(A, MAIN)` with the boosters-only definition, where the booster buses are DCC-EX's first track), stop and go (`ONBUTTON(33) POWEROFF`, `ONBUTTON(26) POWERON`), the booster short in on GPIO27 as a power off, the short line out from `ONOVERLOAD`, and booster mode on `ONRAILSYNCON` (`SET_TRACK(A, BOOST)`). In booster mode DCC-EX routes GPIO32 to the track outputs in the ESP32's GPIO matrix (hardware, no software in the path).
 
-## 3. Track outputs
+## 3. Track outputs: an Arduino Uno motor shield
+
+The board has **Arduino Uno R3 shield headers**; the owner plugs in the motor shield of their choice. A blown shield is swapped in seconds.
+
+**The shield is optional.** A district powered entirely by boosters on LocoNet-B, CDE or B-BUS needs no shield: the board then drives only the booster buses (DCC-EX definition `HIVE_RAIL_V2_BOOSTERS` in 2), and the shield, J11, J12, D8, D9 and C10 can be left out. There is no programming track then, until a shield is added.
+
+| Shield | Driver | Notes |
+| --- | --- | --- |
+| **EX-MotorShield8874** (DCC-EX) | 2× DRV8874, up to 5 A | DCC-EX's recommendation; fault outputs on A4/A5 |
+| **Arduino Motor Shield R3** and clones (Deek-Robot and others) | L298P, 2 A per channel | Cheapest; must be the R3 (IOREF-aware, 3.3 V-safe current-sense outputs) |
 
 | Ref | Part | Connections | Notes |
 | --- | --- | --- | --- |
-| M1, M2 | **Pololu DRV8874 single brushed DC motor driver carrier**, on 2.54 mm socket strips | VIN, GND; EN/IN1, PH/IN2, nSLEEP, nFAULT, current sense to U1; PMODE tied for PH/EN mode; OUT1/OUT2 to J10 (main) and J11 (programming track) | The same chip as EX-CSB1, so the DCC-EX setup stays the same; about 3 A continuous per carrier (Pololu's figure, *verify*). Current-sense scale per Pololu's documentation |
-| J10, J11 | 2-pole screw terminals 5.08 mm, 10 A | Main track, programming track | |
-| D8, D9 | P6KE30CA bidirectional TVS (axial) | Across each track output | Spikes and ESD from the track |
-| C10, C11 | 100 µF / 35 V electrolytic | VIN at each carrier | Bulk capacitance |
-| J16 | 2×4 pin header, track A signals (EN, PH, nSLEEP, current sense, fault, 3.3 V, GND) | In parallel with M1's socket | For an **IBT-2 (BTS7960) module** instead of M1, for more than 3 A on the main track: leave M1 out and wire the IBT-2 here. DCC-EX supports the IBT-2 and recommends at most 5 A for N and H0 |
+| J10 | Arduino Uno R3 shield headers (female: 1×10, 2× 1×8, 1×6) | Uno pins to U1 as in 2; **IOREF and 3.3V** to U1's 3.3 V; **5V** to +5 V; GND; **VIN not connected** (solder jumper, open); RESET not connected | Shields take track power on their own screw terminal, not through the VIN pin: one header pin cannot carry 5 A |
+| J11 | 2-pole screw terminal 5.08 mm, 10 A, next to the shield | VIN out to the shield's power terminal (short wires) | Fused by F1 |
+| J12 | 4-pole screw terminal 5.08 mm, 10 A | Main track and programming track, wired from the shield's outputs | The track wiring stays at the board's edge, behind the TVS diodes |
+| D8, D9 | P6KE30CA bidirectional TVS (axial) | Across each track output at J12 | Spikes and ESD from the track |
+| C10 | 470 µF / 35 V electrolytic | VIN at J11 | Bulk capacitance for the shield |
+| J16 | 2×4 pin header, track A signals (enable, signal, brake, current, fault, 3.3 V, GND) | In parallel with the shield's channel A | For an **IBT-2 (BTS7960) module** on the main track for more than 5 A on a large district (cabled). DCC-EX supports the IBT-2 |
 
-**Driver alternatives considered:**
-
-| Driver | Price (roughly) | For | Against |
-| --- | --- | --- | --- |
-| **Pololu DRV8874 carrier** (chosen) | €10–15 each | Same chip as EX-CSB1 and DCC-EX's EX-MotorShield8874; current sense; small; through-hole pins | Dearest of the modules |
-| IBT-2 (BTS7960) | €5–8 | Very high current, DCC-EX supported, sold everywhere | Large; more current than a district's own track should get; prog track sensing coarse |
-| L298N chip on the board (Multiwatt-15, through-hole) | €2–4 | Cheapest, as positron96's v1 and the Arduino Motor Shield | Drops 2 to 4 V, needs a heat sink, old design |
-| DRV8874 chip (SMD with thermal pad) | about $0.60–0.90 at LCSC (C1855818) | Cheapest overall | SMD only: for the machine-assembled variant (14) |
+- **Keep-out:** the shield sits about 69 × 53 mm above the board; only low parts under it.
+- **Shield and booster mode:** in mode 5 the shield's channel A amplifies the master's DCC (DCC-EX switches it to `BOOST`).
 
 ## 4. Booster buses out (LocoNet-B RailSync, CDE, B-BUS)
 
@@ -226,7 +242,7 @@ The transfer relays sit **on the board**: both feeds of a transfer block (the se
 | Module | Header | Where to buy |
 | --- | --- | --- |
 | U1 ESP32-DevKitC, U2 ESP32-S3-DevKitC-1 | Two rows each | Espressif or clones (AliExpress) |
-| M1, M2 Pololu DRV8874 carrier | Two rows, power and motor pins on the same grid | Pololu and its resellers |
+| Motor shield (EX-MotorShield8874 or Arduino Motor Shield R3) | Arduino Uno R3 headers | DCC-EX resellers; Arduino and clones (AliExpress) |
 | U3, U4 3-pin switching regulators (K7812, K7805 type) | 3 pins | AliExpress, electronics shops |
 | W5500 Ethernet module | 2×5 | AliExpress |
 | OLED 128x64 I²C | 4 pins | AliExpress |
@@ -237,10 +253,10 @@ Not plug-in: the IBT-2 and the L298N modules have screw terminals for power and 
 
 **Rules:**
 
-- **Current per pin:** a 2.54 mm header pin carries about 3 A. Nets of 2 A or more use at least two pins in parallel; the 5 A path through a driver carrier (VIN, GND, OUT1, OUT2) uses every pin the carrier has for it, and three where it allows.
+- **Current per pin:** a 2.54 mm header pin carries about 3 A. Nets of 2 A or more use at least two pins in parallel. Track current never runs through a header: the shield has its own screw terminals.
 - **Female headers on the board, male pins on the modules.** Each module's outline and pin 1 printed on the silkscreen; headers laid out so a module cannot be plugged one row off or turned round (a dummy or missing pin, or an asymmetric row). A wrongly plugged module can destroy itself or the ESP32.
 - **Hold-downs:** the board travels to meetings. Modules with mounting holes (development boards, W5500) get standoffs, not only their headers.
-- **Keep-out:** no tall parts under a plugged-in module; height limit from the female header chosen (8.5 mm standard).
+- **Keep-out:** no tall parts under a plugged-in module or the shield; height limit from the female header chosen (8.5 mm standard).
 - **One pinout per module, named on the board:** AliExpress clones differ in pin order (W5500) and in which pins exist (development boards). The board documents the exact module it expects.
 
 **Board:**
@@ -250,10 +266,10 @@ Not plug-in: the IBT-2 and the L298N modules have screw terminals for power and 
 
 ## 13. Open points in this draft
 
-- Every *verify* above, especially: CDE and B-BUS levels and connectors (NB-Q16), the X-BUS cable pinout (NB-Q14), LocoNet-T supply and bus pull-up current, the LM393 values, the DRV8874 carrier's current-sense scale.
+- Every *verify* above, especially: CDE and B-BUS levels and connectors (NB-Q16), the X-BUS cable pinout (NB-Q14), LocoNet-T supply and bus pull-up current, the LM393 values, the shields' pull-downs on D8 (GPIO12 strapping).
 - N-scale track supplies (12 to 14 V): where the LocoNet 12 V comes from.
 - The regulators' surge rating against the TVS clamp voltage.
-- Thermal: two DRV8874 carriers at 3 A, and two switching regulators.
+- Thermal: the shield under load, and two switching regulators.
 
 ## 14. Machine-assembled variant (later)
 
@@ -276,8 +292,8 @@ Track widths from IPC-2221 for **outer layers and a 10 °C rise**. The current t
 
 | Net | Design current | Rule |
 | --- | --- | --- |
-| VIN: J1 → F1 → Q1 → driver carriers and regulators | 5 A (fuse) | Copper pours, at least 3 mm wide on 1 oz, on both layers stitched with vias |
-| Track outputs: carrier OUT1/OUT2 → D8/D9 → J10/J11 | 5 A (DCC-EX trips at 5 A; the DRV8874 limits near 6 A) | Pours at least 3 mm on 1 oz, both layers |
+| VIN: J1 → F1 → Q1 → J11 (shield power) and regulators | 5 A (fuse) | Copper pours, at least 3 mm wide on 1 oz, on both layers stitched with vias |
+| Track outputs: J12 and D8/D9 (wired from the shield) | 5 A (DCC-EX trips at 5 A with the EX-MotorShield8874) | Pours at least 3 mm on 1 oz, both layers |
 | GND return from the track outputs | Same as VIN | Solid ground pour on the bottom layer; no slots under the power path |
 | +12 V from U3 | 1 A | 0.5 mm trunk and branches |
 | +5 V from U4 | 2 A | 1.0 mm trunk, 0.5 mm branches |
@@ -285,10 +301,10 @@ Track widths from IPC-2221 for **outer layers and a 10 °C rise**. The current t
 | LocoNet data, RS-485, signals | Milliamps | 0.25 mm; RS-485 A and B as a pair |
 
 - **Copper:** order 2 oz outer copper, or keep 1 oz and use pours; JLCPCB charges extra for 2 oz. Rev A: 2 oz, the safer choice until the boards are measured warm.
-- **Through-hole pads carrying current** (terminals, fuse holder, Q1, carrier pins): generous annular rings, and the pour connected with wide thermal spokes or solid, so 5 A does not run through four thin spokes.
+- **Through-hole pads carrying current** (terminals, fuse holder, Q1): generous annular rings, and the pour connected with wide thermal spokes or solid, so 5 A does not run through four thin spokes.
 - **Vias carrying current:** count about 1 A per 0.3 mm via; at least 6 vias where 5 A changes layer.
 - **Isolation gaps:** no copper under the optocouplers between their two sides, and at least 2 mm between the master's side of the booster input (J14, J15, U20 and U22 inputs) and the board's ground. This is about keeping the systems apart, not about voltage: everything is below 30 V.
-- **Separation:** keep the track outputs and the driver carriers away from the LM393, the RS-485 transceiver and the ESP32 antennas; the development boards' antennas at the board edge with no copper under them.
+- **Separation:** keep the track outputs, J11 and the shield away from the LM393, the RS-485 transceiver and the ESP32 antennas; the development boards' antennas at the board edge with no copper under them.
 
 ## 16. Review 2026-10-31: findings and changes
 
@@ -311,6 +327,8 @@ Track widths from IPC-2221 for **outer layers and a 10 °C rise**. The current t
 | R15 | No current and track width rules | Section 15 |
 | R16 | SMD parts need factory assembly or SMD soldering | **Through-hole first:** development boards, driver carriers, 3-pin switching regulators, DIP and TO-92 parts. The SMD variant is for later (14) |
 | R17 | The S3 development board's USB-serial chip sits on GPIO43/44 (UART0) | XpressNet's UART0 moved to GPIO47/21 |
+| R21 | Districts powered only by boosters paid for drivers they do not use | The shield is optional; a boosters-only DCC-EX definition |
+| R20 | Track drivers fixed to one type | **Arduino Uno shield headers**: the owner picks the EX-MotorShield8874 or an Arduino Motor Shield R3; wired as DCC-EX's ESP32 shield definitions expect, so they hold unchanged; U1's pins re-planned (2, 3) |
 | R19 | Relays off the board needed extra wiring at each transfer block; blown interface chips needed desoldering | Transfer relays on the board (10), with the track-current rules; interface chips in DIP sockets (12) |
 | R18 | Modules are AliExpress-common and must plug in | Every module on 2.54 mm headers, with current per pin, keying, hold-down and keep-out rules (12). Track drivers that only have screw terminals (IBT-2, L298N) stay a cabled option |
 
