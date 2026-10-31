@@ -2,7 +2,7 @@
 
 > **Status: draft, first review done (2026-10-31, see 16). Not checked by simulation or a prototype; do not order boards from it.** Values marked *verify* come from other designs or from documents still to read. The design and its reasons are in the wiki: [Hive-Rail Node Board](https://github.com/CuriousTimo/Hive-Rail/wiki/Hive-Rail-Node-Board). The parts list is [`bom.csv`](bom.csv).
 
-**Build style: through-hole first (decision 2026-10-31).** Every part can be soldered by hand without SMD work: the ESP32s and the track drivers are plug-in modules, everything else is through-hole. This keeps the board buildable by module owners at home, as the 2021 board was. A machine-assembled SMD variant can follow for batches (14).
+**Build style: through-hole first, modules on pin headers (decision 2026-10-31).** Every part can be soldered by hand without SMD work: the ESP32s, the track drivers, the regulators, Ethernet and the OLED are common modules that plug onto the board on 2.54 mm pin headers (12); everything else is through-hole. This keeps the board buildable by module owners at home, as the 2021 board was. A machine-assembled SMD variant can follow for batches (14).
 
 The board is a full DCC-EX command station with the Hive-Rail extras, on two ESP32 development boards:
 
@@ -215,11 +215,32 @@ The input side of U20 and U22 is the master's ground, never the board's: the two
 | J32 | 4-pin I²C header (3.3 V, GND, SDA, SCL) | I²C accessories (Qwiic and STEMMA QT through an adapter cable) |
 | J33 | 2×5 pin header, **front panel** | Stop and go buttons and the three LEDs, in parallel with the ones on the board, for a module fascia |
 
-## 12. Mechanical
+## 12. Mechanical and plug-in modules
 
-- Board size about 160 × 100 mm with the development boards and modules (*to fit*), four mounting holes; a DIN-rail case is a later option.
+**Modules plug onto the board on 2.54 mm pin headers:**
+
+| Module | Header | Where to buy |
+| --- | --- | --- |
+| U1 ESP32-DevKitC, U2 ESP32-S3-DevKitC-1 | Two rows each | Espressif or clones (AliExpress) |
+| M1, M2 Pololu DRV8874 carrier | Two rows, power and motor pins on the same grid | Pololu and its resellers |
+| U3, U4 3-pin switching regulators (K7812, K7805 type) | 3 pins | AliExpress, electronics shops |
+| W5500 Ethernet module | 2×5 | AliExpress |
+| OLED 128x64 I²C | 4 pins | AliExpress |
+
+Not plug-in: the IBT-2 and the L298N modules have screw terminals for power and the motor. They stay a cabled option for more track current (J16 and screw terminals), not the standard. LM2596 buck boards do not fit either: their corner pads are not on a 0.1" grid and differ per seller.
+
+**Rules:**
+
+- **Current per pin:** a 2.54 mm header pin carries about 3 A. Nets of 2 A or more use at least two pins in parallel; the 5 A path through a driver carrier (VIN, GND, OUT1, OUT2) uses every pin the carrier has for it, and three where it allows.
+- **Female headers on the board, male pins on the modules.** Each module's outline and pin 1 printed on the silkscreen; headers laid out so a module cannot be plugged one row off or turned round (a dummy or missing pin, or an asymmetric row). A wrongly plugged module can destroy itself or the ESP32.
+- **Hold-downs:** the board travels to meetings. Modules with mounting holes (development boards, W5500) get standoffs, not only their headers.
+- **Keep-out:** no tall parts under a plugged-in module; height limit from the female header chosen (8.5 mm standard).
+- **One pinout per module, named on the board:** AliExpress clones differ in pin order (W5500) and in which pins exist (development boards). The board documents the exact module it expects.
+
+**Board:**
+
+- Size about 160 × 100 mm with the modules (*to fit*), four mounting holes; a DIN-rail case is a later option.
 - Screw terminals on one edge (power, tracks, boosters, relays, sensors), RJ12 jacks on another (LocoNet, X-BUS); the development boards' USB ports and the Ethernet jack reachable from the edge.
-- Development boards and driver carriers on socket strips, so they can be swapped.
 
 ## 13. Open points in this draft
 
@@ -284,5 +305,6 @@ Track widths from IPC-2221 for **outer layers and a 10 °C rise**. The current t
 | R15 | No current and track width rules | Section 15 |
 | R16 | SMD parts need factory assembly or SMD soldering | **Through-hole first:** development boards, driver carriers, 3-pin switching regulators, DIP and TO-92 parts. The SMD variant is for later (14) |
 | R17 | The S3 development board's USB-serial chip sits on GPIO43/44 (UART0) | XpressNet's UART0 moved to GPIO47/21 |
+| R18 | Modules are AliExpress-common and must plug in | Every module on 2.54 mm headers, with current per pin, keying, hold-down and keep-out rules (12). Track drivers that only have screw terminals (IBT-2, L298N) stay a cabled option |
 
 Notes from the review that need no change: the 9-bit XpressNet characters only matter when sending (the master's call bytes); received bytes always have the ninth bit clear, so the receiver can ignore parity. DCC-EX's tracks must be set at start-up in `myAutomation.h` (`SET_TRACK(C, MAIN)` for the booster buses).

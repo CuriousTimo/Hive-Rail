@@ -46,5 +46,6 @@ J30,1,Header 4-pin 2.54 mm,THT,DCC-EX,Spare I2C on U1,
 SW1;SW2,2,Push button 12 mm (red and green caps),THT,UI,Stop and go (on U1),
 SW3,1,Push button 6 mm,THT,UI,U1 reset,
 D2;D3,2,LED 3 mm green,THT,Status,+12 V and +5 V present,
--,-,"Socket strips 2.54 mm for U1, U2, M1, M2",THT,All,Plug-in modules,
+-,-,"Female headers 2.54 mm for U1, U2, M1, M2, U3, U4, J20 (W5500), J31 (OLED)",THT,All,Plug-in modules,Keyed or with a blocked position
+-,-,M3 standoffs and screws,-,Mechanical,Hold-downs for the development boards and the W5500 module,
 -,~70,"Resistors (axial 1/4 W), capacitors (ceramic and electrolytic), 1N4148 diodes",THT,All,Passives,Values in the schematic draft; to complete in KiCad
