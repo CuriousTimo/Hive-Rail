@@ -46,6 +46,9 @@ static char last_event[40] = "";
 // A global stop received from the mesh, applied by loop() (set in the receive task).
 static volatile bool stop_from_mesh = false;
 static char stop_origin[24] = "";
+// A firmware update arrived: loop() restarts the ESP32 (not the update code itself, which once
+// left the M5StickC hanging on "restarting").
+static volatile bool update_done = false;
 static bool session_open = false;
 static uint32_t seq = 0;
 static uint32_t received = 0;
@@ -366,8 +369,11 @@ void setup() {
     // Firmware updates over Wi-Fi: pio run -e m5stick-c-ota -t upload
     ArduinoOTA.setHostname("m5stickc");
     ArduinoOTA.setPassword(HIVE_OTA_PASS);
+    ArduinoOTA.setRebootOnSuccess(false);
     ArduinoOTA.onStart([]() { show("Firmware update ..."); });
     ArduinoOTA.onProgress([](unsigned int done, unsigned int total) {
+        // The upload runs inside loop(): keep its watchdog fed.
+        feedLoopWDT();
         static unsigned int last = 101;
         unsigned int percent = done * 100 / total;
         if (percent / 10 != last / 10) {
@@ -377,7 +383,10 @@ void setup() {
             show(text);
         }
     });
-    ArduinoOTA.onEnd([]() { show("Update done, restarting"); });
+    ArduinoOTA.onEnd([]() {
+        show("Update done, restarting");
+        update_done = true;
+    });
     ArduinoOTA.onError([](ota_error_t error) {
         char text[32];
         snprintf(text, sizeof(text), "Update failed (%u)", (unsigned)error);
@@ -442,6 +451,8 @@ void setup() {
 #endif
     publish_power();
     event("lite node started, district power OFF");
+    // If loop() ever hangs for more than a few seconds, the ESP32 restarts.
+    enableLoopWDT();
 }
 
 void loop() {
@@ -457,6 +468,10 @@ void loop() {
 
 #ifdef HIVE_OTA
     ArduinoOTA.handle();
+    if (update_done) {
+        delay(500);
+        ESP.restart();
+    }
 #endif
     if (stop_from_mesh) {
         stop_from_mesh = false;
