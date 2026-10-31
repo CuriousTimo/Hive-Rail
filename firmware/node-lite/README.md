@@ -1,8 +1,11 @@
-# zenoh-pico on an ESP32: phase B0 test
+# Node-Lite: a Hive-Rail lite node on an ESP32 (M5StickC)
 
-Does a microcontroller join the Hive-Rail mesh? This firmware is a zenoh-pico client on an
-ESP32 that sends a Hive-Rail heartbeat (`hive/<session>/node/<id>/hb`, the Rust nodes' JSON,
-every 250 ms) and subscribes to the other nodes' heartbeats. See the
+Our lite node test and debug device. A zenoh-pico client on an ESP32 that sends a Hive-Rail
+heartbeat (`hive/<session>/node/<id>/hb`, the Rust nodes' JSON, every 250 ms) marked `lite`, with
+the node it reaches the mesh through (`via`, found by Zenoh ID), and follows the other nodes'
+heartbeats. On an M5StickC the screen shows the state; the front button (M5) switches between
+the status page (Wi-Fi, Zenoh, via, mesh, heartbeats, memory, CPU load per core, uptime) and
+the nodes page. It started as the phase B0 test. See the
 [node board](https://github.com/CuriousTimo/Hive-Rail/wiki/Hive-Rail-Node-Board), phase B0.
 
 ## Run it
@@ -11,7 +14,8 @@ every 250 ms) and subscribes to the other nodes' heartbeats. See the
    Wi-Fi network and the address of the computer running a node.
 2. On that computer, start a node that listens for the ESP32:
    `hive-rail --mode node --session bench --id MacBook --rocnet-address 101 --listen tcp/0.0.0.0:7447`
-3. Build and flash: `pio run -e m5stick-c -t upload` (or `-e esp32dev`), then `pio device monitor`.
+3. Build and flash over USB: `pio run -e m5stick-c -t upload` (or `-e esp32dev`), then `pio device monitor`.
+   Afterwards over Wi-Fi: `pio run -e m5stick-c-ota -t upload --upload-flags="--auth=<HIVE_OTA_PASS>"`.
    zenoh-pico's build needs CMake (`pip install cmake` next to PlatformIO).
 
 ## Result (2026-10-31, M5StickC: ESP32-PICO-D4, zenoh-pico 1.10.1, Rust zenoh 1.10.1)
