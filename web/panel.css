@@ -1,0 +1,47 @@
+/* The panel editor: palette left, the panel in the middle, the selected tile's properties right. */
+body.panel-editor header { flex-wrap: wrap; row-gap: 8px; }
+.field { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.field input, .field select { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; }
+.field input[type="number"] { width: 56px; }
+body.panel-editor header button, .button-like {
+  font: inherit; font-size: 12px; color: var(--text); background: transparent; border: 1px solid var(--line);
+  border-radius: 6px; padding: 4px 10px; cursor: pointer; text-decoration: none;
+}
+body.panel-editor header button:hover, .button-like:hover { border-color: var(--muted); }
+
+.palette, .properties { width: 240px; background: var(--panel); overflow: auto; padding: 12px 14px; display: block; }
+.palette { border-right: 1px solid var(--line); border-left: 0; }
+.properties { border-left: 1px solid var(--line); }
+.palette h2, .properties h2 { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.palette-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.palette-grid button {
+  display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 2px; font: inherit; font-size: 10px;
+  color: var(--muted); background: transparent; border: 1px solid var(--line); border-radius: 6px; cursor: pointer;
+}
+.palette-grid button.wide { grid-column: span 2; }
+.palette-grid button svg { height: 40px; display: block; }
+.palette-grid button.chosen { border-color: var(--accent); color: var(--text); box-shadow: 0 0 0 1px var(--accent); }
+.palette-grid button.select-tool { grid-column: span 3; flex-direction: row; justify-content: center; font-size: 12px; padding: 6px; }
+.hint-text { font-size: 12px; color: var(--muted); line-height: 1.5; }
+kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+
+.board { flex: 1; overflow: auto; background: #8e8e8e; min-width: 0; }
+#board { display: block; }
+#board .cursor { fill: none; stroke: #2f6fd6; stroke-width: 1.5; stroke-dasharray: 4 3; pointer-events: none; }
+#board .selected-frame { fill: none; stroke: #2f6fd6; stroke-width: 2; pointer-events: none; }
+#board .ghost { opacity: 0.55; pointer-events: none; }
+
+.properties dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 10px; margin: 0; font-size: 13px; align-items: center; }
+.properties dt { color: var(--muted); }
+.properties dd { margin: 0; }
+.properties input, .properties select { font: inherit; width: 100%; box-sizing: border-box; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; }
+.properties .row-buttons { display: flex; gap: 6px; }
+.properties .row-buttons button { font: inherit; font-size: 12px; color: var(--text); background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; cursor: pointer; }
+
+@media (max-width: 800px) {
+  body.panel-editor main { flex-direction: column; }
+  .palette, .properties { width: auto; max-height: 30%; border: 0; border-bottom: 1px solid var(--line); }
+}
+.properties .aspect-buttons { flex-wrap: wrap; }
+.properties .aspect-buttons button.chosen { border-color: var(--accent); color: var(--accent); }
+.properties .signal-face { display: block; background: #dfe3e6; border-radius: 6px; padding: 6px; }

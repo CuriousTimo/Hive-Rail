@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Panel Editor</title>
+  <link rel="stylesheet" href="app.css">
+  <link rel="stylesheet" href="panel.css">
+</head>
+<body class="panel-editor">
+  <header>
+    <div class="brand">Hive-Rail</div>
+    <div class="meeting">Panel editor (SpDrS60)</div>
+    <label class="field">Name <input id="panel-name" type="text" value="Panel" size="14"></label>
+    <label class="field">Size <input id="panel-width" type="number" min="4" max="200" value="40"> × <input id="panel-height" type="number" min="4" max="120" value="24"></label>
+    <label class="field">Lamp test
+      <select id="lamp-test">
+        <option value="">off</option>
+        <option value="route">route (yellow)</option>
+        <option value="occupied">occupied (red)</option>
+        <option value="route hp1 vr1 ks1 sh1 straight">route: Hp 1, Vr 1, Ks 1, Sh 1</option>
+        <option value="route hp2 vr2 ks2 diverging">route: Hp 2, Vr 2, Ks 2</option>
+        <option value="occupied hp0 vr0 sh0 diverging">occupied: Hp 0, Vr 0, Sh 0</option>
+        <option value="hp0 sh1 zs1">Hp 0 with Sh 1 and Zs 1</option>
+      </select>
+    </label>
+    <button type="button" id="zoom-out" title="Zoom out">−</button>
+    <button type="button" id="zoom-in" title="Zoom in">+</button>
+    <button type="button" id="export" title="Save the panel as a JSON file">Export</button>
+    <label class="button-like" title="Load a panel JSON file">Import<input id="import" type="file" accept="application/json,.json" hidden></label>
+    <a class="button-like" href="./">Layout view</a>
+  </header>
+  <main>
+    <aside class="palette" aria-label="Tiles">
+      <h2>Tiles</h2>
+      <div id="palette" class="palette-grid"></div>
+      <p class="hint-text">Click a tile, then click or drag on the panel to place it. <kbd>R</kbd> rotates, <kbd>M</kbd> mirrors, <kbd>Del</kbd> removes, <kbd>Esc</kbd> back to selecting.</p>
+    </aside>
+    <section class="board" aria-label="Panel">
+      <svg id="board" xmlns="http://www.w3.org/2000/svg"></svg>
+    </section>
+    <aside class="properties" aria-label="Selected tile">
+      <h2>Selected tile</h2>
+      <div id="properties"><p class="hint-text">Nothing selected. With no tile chosen in the palette, click a tile on the panel to select it.</p></div>
+    </aside>
+  </main>
+  <datalist id="link-ids"></datalist>
+  <script src="spdrs60-tiles.js"></script>
+  <script src="signal-faces.js"></script>
+  <script src="panel.js"></script>
+</body>
+</html>

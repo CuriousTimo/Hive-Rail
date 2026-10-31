@@ -21,6 +21,13 @@ use tokio::time::{self, Duration, MissedTickBehavior};
 const INDEX_HTML: &str = include_str!("../web/index.html");
 const APP_JS: &str = include_str!("../web/app.js");
 const APP_CSS: &str = include_str!("../web/app.css");
+// The panel editor (SpDrS60 tiles on a grid) and its tiles, made by tools/spdrs60_tiles.py.
+const PANEL_HTML: &str = include_str!("../web/panel.html");
+const PANEL_JS: &str = include_str!("../web/panel.js");
+const PANEL_CSS: &str = include_str!("../web/panel.css");
+const TILES_JS: &str = include_str!("../web/spdrs60-tiles.js");
+// German light signals as they look on the track, made by tools/signal_faces.py.
+const SIGNAL_FACES_JS: &str = include_str!("../web/signal-faces.js");
 /// Event lines kept for the page's log.
 const LOG_LINES: usize = 40;
 
@@ -312,6 +319,45 @@ async fn serve(mut stream: TcpStream, shared: Arc<Shared>) {
             .await
         }
         "/app.css" => respond(&mut stream, "200 OK", "text/css; charset=utf-8", APP_CSS).await,
+        "/panel" | "/panel.html" => {
+            respond(
+                &mut stream,
+                "200 OK",
+                "text/html; charset=utf-8",
+                PANEL_HTML,
+            )
+            .await
+        }
+        "/panel.js" => {
+            respond(
+                &mut stream,
+                "200 OK",
+                "text/javascript; charset=utf-8",
+                PANEL_JS,
+            )
+            .await
+        }
+        "/panel.css" => {
+            respond(&mut stream, "200 OK", "text/css; charset=utf-8", PANEL_CSS).await
+        }
+        "/signal-faces.js" => {
+            respond(
+                &mut stream,
+                "200 OK",
+                "text/javascript; charset=utf-8",
+                SIGNAL_FACES_JS,
+            )
+            .await
+        }
+        "/spdrs60-tiles.js" => {
+            respond(
+                &mut stream,
+                "200 OK",
+                "text/javascript; charset=utf-8",
+                TILES_JS,
+            )
+            .await
+        }
         "/api/layout" => {
             respond(
                 &mut stream,
