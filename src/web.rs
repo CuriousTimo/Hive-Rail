@@ -109,6 +109,8 @@ pub async fn run_sim(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Syn
             _ = tick.tick() => {
                 if let Some(publisher) = mesh.as_mut() {
                     publisher.drain();
+                    // Each district's power, from its node's heartbeats.
+                    sim.district_power = publisher.district_power();
                 }
                 for (time, event) in sim.step(step * speed) {
                     if let Some(publisher) = mesh.as_mut() {
@@ -170,6 +172,8 @@ async fn publish_train(
     let (name, step) = match event {
         SimEvent::Border { train, .. } => (train, RUNNING_STEP),
         SimEvent::Arrived { train, .. } => (train, 0),
+        // No track power: the loco stands; with power back it runs again.
+        SimEvent::Power { train, powered, .. } => (train, if *powered { RUNNING_STEP } else { 0 }),
         SimEvent::Departed { train, .. } => {
             if let Some(direction) = forward.get_mut(train) {
                 *direction = !*direction;
@@ -215,6 +219,7 @@ async fn publish_event(
         | SimEvent::Sensor { district, .. }
         | SimEvent::Turnout { district, .. } => (district.clone(), true),
         SimEvent::Signal { district, .. } => (district.clone(), true),
+        SimEvent::Power { district, .. } => (district.clone(), false),
         SimEvent::Feed { block, district } => {
             let _ = block;
             (district.clone(), false)

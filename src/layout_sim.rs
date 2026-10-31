@@ -186,6 +186,9 @@ pub enum TrainState {
     Dwelling {
         until_s: f64,
     },
+    /// Stopped because its district has no power (off, emergency stop, short); it goes on
+    /// when the power is back.
+    NoPower,
 }
 
 #[derive(Debug, Clone)]
@@ -246,6 +249,12 @@ pub enum SimEvent {
         aspect: String,
         address: u16,
     },
+    /// A train stopped because its district lost power, or went on when it came back.
+    Power {
+        train: String,
+        district: String,
+        powered: bool,
+    },
     /// A level crossing closed (lights on, barriers down) or opened.
     Crossing {
         crossing: String,
@@ -271,6 +280,9 @@ pub struct LayoutSim<'a> {
     /// Turnout positions by `module/turnout`: closed is straight.
     pub turnouts: BTreeMap<String, bool>,
     occupied: BTreeSet<String>,
+    /// Each district's power as its node reports it (ON, OFF, STOP, SHORT). A district with
+    /// no report counts as powered, so the simulator runs on its own.
+    pub district_power: BTreeMap<String, String>,
     /// Track pieces reserved for a train's route, by piece: the train's name.
     pub reserved: BTreeMap<PieceId, String>,
     /// The transfer blocks at district borders and which district feeds each now.
@@ -299,6 +311,7 @@ impl<'a> LayoutSim<'a> {
             turnouts,
             occupied: BTreeSet::new(),
             crossing_trains: BTreeMap::new(),
+            district_power: BTreeMap::new(),
             reserved: BTreeMap::new(),
             transfers: transfers(topology),
             one_way: one_way(layout),
@@ -735,7 +748,48 @@ impl<'a> LayoutSim<'a> {
         events
     }
 
+    /// Whether a district has track power: no report counts as powered.
+    pub fn powered(&self, district: &str) -> bool {
+        self.district_power
+            .get(district)
+            .is_none_or(|power| power == "ON")
+    }
+
     fn step_train(&mut self, index: usize, dt_s: f64, events: &mut Vec<(f64, SimEvent)>) {
+        // A loco stops where its district has no power; the other districts run on.
+        let district = self
+            .topology
+            .piece(&self.trains[index].head.piece)
+            .map(|p| p.district.clone())
+            .unwrap_or_default();
+        let powered = self.powered(&district);
+        let halted = self.trains[index].state == TrainState::NoPower;
+        if !powered {
+            if !halted && !matches!(self.trains[index].state, TrainState::Dwelling { .. }) {
+                self.trains[index].state = TrainState::NoPower;
+                events.push((
+                    self.time_s,
+                    SimEvent::Power {
+                        train: self.trains[index].name.clone(),
+                        district,
+                        powered: false,
+                    },
+                ));
+            }
+            // A dwelling train cannot leave either; its time runs on.
+            return;
+        }
+        if halted {
+            self.trains[index].state = TrainState::Running;
+            events.push((
+                self.time_s,
+                SimEvent::Power {
+                    train: self.trains[index].name.clone(),
+                    district,
+                    powered: true,
+                },
+            ));
+        }
         match self.trains[index].state {
             TrainState::Dwelling { until_s } => {
                 if self.time_s >= until_s {
@@ -743,7 +797,7 @@ impl<'a> LayoutSim<'a> {
                 }
                 return;
             }
-            TrainState::Waiting | TrainState::Running => {}
+            TrainState::Waiting | TrainState::Running | TrainState::NoPower => {}
         }
         if self.trains[index].route.is_empty() {
             self.trains[index].state = TrainState::Waiting;
@@ -1063,6 +1117,17 @@ impl std::fmt::Display for SimEvent {
                 f,
                 "{district}: signal {signal} shows {aspect} (LocoNet {address})"
             ),
+            SimEvent::Power {
+                train,
+                district,
+                powered,
+            } => {
+                if *powered {
+                    write!(f, "{district}: power back, {train} goes on")
+                } else {
+                    write!(f, "{district}: no track power, {train} stops")
+                }
+            }
             SimEvent::Crossing { name, closed, .. } => write!(
                 f,
                 "level crossing {name} {}",
@@ -1391,5 +1456,56 @@ mod tests {
         let sim = LayoutSim::new(&layout, &topology);
         assert_eq!(sim.transfers["anna-2e96-border/t1"].fed_by, "MacBook");
         assert_eq!(sim.transfers["timo-2e96-border/t2"].source, "Windows");
+    }
+
+    /// A short in one district stops the trains there; the others run on, and the stopped
+    /// train goes on when the power is back.
+    #[test]
+    fn a_district_without_power_stops_only_its_trains() {
+        let layout = layout();
+        let topology = Topology::build(&layout);
+        let mut sim = LayoutSim::new(&layout, &topology);
+        example_trains(&mut sim);
+        let district_of = |sim: &LayoutSim, i: usize| {
+            topology
+                .piece(&sim.trains[i].head.piece)
+                .unwrap()
+                .district
+                .clone()
+        };
+        // Run until the trains are in different districts.
+        let mut steps = 0;
+        while district_of(&sim, 0) == district_of(&sim, 1) && steps < 2000 {
+            sim.step(0.1);
+            steps += 1;
+        }
+        let (a, b) = (district_of(&sim, 0), district_of(&sim, 1));
+        assert_ne!(a, b);
+        sim.district_power.insert(a.clone(), "SHORT".to_owned());
+        let events = sim.step(0.1);
+        assert!(events.iter().any(
+            |(_, e)| matches!(e, SimEvent::Power { powered: false, district, .. } if *district == a)
+        ));
+        assert_eq!(sim.trains[0].state, TrainState::NoPower);
+        let (held, other) = (sim.trains[0].head.clone(), sim.trains[1].head.clone());
+        for _ in 0..30 {
+            sim.step(0.1);
+        }
+        assert_eq!(sim.trains[0].head.piece, held.piece);
+        assert_eq!(
+            sim.trains[0].head.along_mm, held.along_mm,
+            "the train in {a} must stand"
+        );
+        assert!(
+            sim.trains[1].head.piece != other.piece
+                || sim.trains[1].head.along_mm != other.along_mm,
+            "the train in {b} runs on"
+        );
+        sim.district_power.insert(a.clone(), "ON".to_owned());
+        let events = sim.step(0.1);
+        assert!(events
+            .iter()
+            .any(|(_, e)| matches!(e, SimEvent::Power { powered: true, .. })));
+        assert_ne!(sim.trains[0].state, TrainState::NoPower);
     }
 }

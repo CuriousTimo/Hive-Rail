@@ -660,6 +660,8 @@ pub struct LocoPublisher {
     locos: HashMap<u16, RegisteredLoco>,
     /// The layout's fast clock, as the nodes keep it.
     pub clock: FastClock,
+    /// Each node's district power from its heartbeats, and when it was last heard.
+    powers: HashMap<String, (String, std::time::Instant)>,
 }
 
 impl LocoPublisher {
@@ -686,6 +688,7 @@ impl LocoPublisher {
             session: session.to_owned(),
             locos,
             clock: state.clock,
+            powers: HashMap::new(),
         })
     }
 
@@ -724,7 +727,14 @@ impl LocoPublisher {
     /// from the nodes are kept, so the versions published here stay the newest.
     /// Call it regularly.
     pub fn drain(&mut self) {
-        while let Ok(Some(_)) = self.mesh.heartbeats.try_recv() {}
+        while let Ok(Some(sample)) = self.mesh.heartbeats.try_recv() {
+            if let Ok(heartbeat) =
+                serde_json::from_slice::<Heartbeat>(sample.payload().to_bytes().as_ref())
+            {
+                self.powers
+                    .insert(heartbeat.node, (heartbeat.power, std::time::Instant::now()));
+            }
+        }
         while let Ok(Some(_)) = self.mesh.events.try_recv() {}
         while let Ok(Some(_)) = self.mesh.stops.try_recv() {}
         while let Ok(Some(sample)) = self.mesh.locos.try_recv() {
@@ -743,6 +753,16 @@ impl LocoPublisher {
                 }
             }
         }
+    }
+
+    /// Each district's power as its node reports it. A node not heard for a heartbeat
+    /// timeout is left out: its district's power is unknown.
+    pub fn district_power(&self) -> std::collections::BTreeMap<String, String> {
+        self.powers
+            .iter()
+            .filter(|(_, (_, seen))| seen.elapsed() < HEARTBEAT_TIMEOUT)
+            .map(|(node, (power, _))| (node.clone(), power.clone()))
+            .collect()
     }
 
     /// Publishes a loco: its district, a speed step (0 to 126), its direction and lights.
