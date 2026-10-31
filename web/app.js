@@ -155,11 +155,20 @@ function drawLayout(layout) {
     text(turnout.name, [turnout.at[0], turnout.at[1] + 30], "turnout-label", layer("labels"));
     elements.turnouts.set(turnout.id, dot);
   }
-  // Station names below the front edge of their module.
+  // Station names below the front edge of their modules: once per station, centred over
+  // every module it spans (Cdorf lies on two).
+  const byName = new Map();
   for (const station of layout.stations) {
-    const module = layout.modules.find((m) => m.id === station.module);
-    const bottom = module ? Math.min(...module.outline.map((p) => p[1])) : station.at[1];
-    text(station.text, [station.at[0], bottom - 150], "station-label", layer("labels"));
+    if (!byName.has(station.text)) byName.set(station.text, []);
+    byName.get(station.text).push(station);
+  }
+  for (const [name, parts] of byName) {
+    const x = parts.reduce((sum, s) => sum + s.at[0], 0) / parts.length;
+    const bottoms = parts.map((s) => {
+      const module = layout.modules.find((m) => m.id === s.module);
+      return module ? Math.min(...module.outline.map((p) => p[1])) : s.at[1];
+    });
+    text(name, [x, Math.min(...bottoms) - 150], "station-label", layer("labels"));
   }
 
   // The whole layout, or only the modules named in the address: ?modules=timo-adorf (for a

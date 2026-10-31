@@ -596,10 +596,31 @@ mod tests {
         assert_eq!(x("timo-adorf"), 0.0);
         assert!((x("timo-2e96-west") - 1800.0).abs() < 1e-6);
         assert!((x("timo-2e96-border") - 2700.0).abs() < 1e-6);
-        assert!((x("anna-bdorf") - 5400.0).abs() < 1e-6);
-        assert!(placed
-            .values()
-            .all(|p| p.angle.abs() < 1e-6 && p.offset[1].abs() < 1e-6));
+        // Up to the 90° curve (anna-2e96-east) everything lies in one line.
+        for id in [
+            "timo-adorf",
+            "timo-2e96-west",
+            "timo-2e96-border",
+            "anna-2e96-border",
+            "anna-2e96-east",
+        ] {
+            assert!(
+                placed[id].angle.abs() < 1e-6 && placed[id].offset[1].abs() < 1e-6,
+                "{id}"
+            );
+        }
+        // The curve turns right: Bdorf continues southward, its end A at the curve's end B.
+        let bdorf = placed["anna-bdorf"];
+        assert!(
+            (bdorf.angle.rem_euclid(360.0) - 270.0).abs() < 1e-6,
+            "{}",
+            bdorf.angle
+        );
+        let a = bdorf.apply([0.0, 273.0]);
+        assert!(
+            (a[0] - 5100.0).abs() < 1e-3 && (a[1] + 327.0).abs() < 1e-3,
+            "{a:?}"
+        );
     }
 
     /// A module turned round and joined at its other end comes out turned by 180°.
@@ -612,8 +633,9 @@ mod tests {
         // Track 1 runs east (A>B), track 2 west, on the line and at the border.
         assert!(signal("timo-2e96-border/sig_1").direction[0] > 0.99);
         assert!(signal("anna-2e96-border/sig_2").direction[0] < -0.99);
-        // Bdorf's exit from track 2 faces trains leaving west, drawn from the east.
-        assert!(signal("anna-bdorf/sig_b2").direction[0] < -0.99);
+        // Bdorf lies south of the 90° curve: its exit from track 2 faces trains leaving
+        // north, back towards the curve.
+        assert!(signal("anna-bdorf/sig_b2").direction[1] > 0.99);
         assert_eq!(
             signal("anna-bdorf/sig_be").aspects,
             ["red", "yellow", "green"]
@@ -623,16 +645,16 @@ mod tests {
     #[test]
     fn a_turned_module_is_drawn_turned() {
         let mut layout = layout();
-        // Join the east line module the other way round: its B end to the border.
-        layout.file.connections[3].b = "anna-2e96-east.B".into();
-        layout.file.connections[4].a = "anna-2e96-east.A".into();
+        // Join the west line module the other way round: its B end to Adorf.
+        layout.file.connections[0].b = "timo-2e96-west.B".into();
+        layout.file.connections[1].a = "timo-2e96-west.A".into();
         let placed = place_modules(&layout);
-        let east = placed["anna-2e96-east"];
-        assert!((east.angle - 180.0).abs() < 1e-6);
-        // Its end B meets the border module's end B at x 4500.
-        let b = east.apply([900.0, 273.0]);
+        let west = placed["timo-2e96-west"];
+        assert!((west.angle.rem_euclid(360.0) - 180.0).abs() < 1e-6);
+        // Its end B meets Adorf's end B at x 1800.
+        let b = west.apply([900.0, 273.0]);
         assert!(
-            (b[0] - 4500.0).abs() < 1e-6 && (b[1] - 273.0).abs() < 1e-6,
+            (b[0] - 1800.0).abs() < 1e-6 && (b[1] - 273.0).abs() < 1e-6,
             "{b:?}"
         );
     }
