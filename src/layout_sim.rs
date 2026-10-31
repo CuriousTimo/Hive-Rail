@@ -46,6 +46,35 @@ fn passing_tracks(layout: &Layout, passing: bool) -> BTreeSet<PieceId> {
     tracks
 }
 
+/// For each passing siding, the through tracks beside it that run the same way (the same
+/// `direction`, in the same module): where a faster train passes a train waiting there.
+fn sidings_beside(layout: &Layout) -> BTreeMap<PieceId, BTreeSet<PieceId>> {
+    let mut beside: BTreeMap<PieceId, BTreeSet<PieceId>> = BTreeMap::new();
+    for (module_id, (module, _)) in &layout.modules {
+        let direction = |track: &str| {
+            module
+                .track
+                .iter()
+                .find(|piece| piece.id == track)
+                .and_then(|piece| piece.direction.clone())
+        };
+        for station in module.stations.iter().chain(&module.passing_loops) {
+            let lines = || station.tracks.iter().filter(|t| !t.platform);
+            for siding in lines().filter(|t| t.passing) {
+                let way = direction(&siding.track);
+                let through = lines()
+                    .filter(|t| !t.passing && way.is_some() && direction(&t.track) == way)
+                    .map(|t| PieceId::new(module_id, &t.track));
+                beside
+                    .entry(PieceId::new(module_id, &siding.track))
+                    .or_default()
+                    .extend(through);
+            }
+        }
+    }
+    beside
+}
+
 /// How far behind a faster train must be for a slower one to step aside for it.
 const OVERTAKE_WITHIN_MM: f64 = 5000.0;
 
@@ -382,6 +411,7 @@ pub struct LayoutSim<'a> {
     /// one close behind takes the siding and waits there until the faster one has passed.
     passing: BTreeSet<PieceId>,
     through: BTreeSet<PieceId>,
+    beside: BTreeMap<PieceId, BTreeSet<PieceId>>,
     /// The trains waiting in a passing siding now, and for which train.
     pub yielding: BTreeMap<String, String>,
     /// Each district's power as its node reports it (ON, OFF, STOP, SHORT). A district with
@@ -417,6 +447,7 @@ impl<'a> LayoutSim<'a> {
             platform_used: BTreeMap::new(),
             passing: passing_tracks(layout, true),
             through: passing_tracks(layout, false),
+            beside: sidings_beside(layout),
             yielding: BTreeMap::new(),
             turnouts,
             occupied: BTreeSet::new(),
@@ -850,13 +881,13 @@ impl<'a> LayoutSim<'a> {
             let way =
                 self.find_way(&(other.head.piece.clone(), other.head.heading), &goal, None)?;
             // Passing this train: over its head piece, or (when it stands in a passing
-            // siding) over the through track beside it, in the same module and direction.
+            // siding) over the through track beside it that runs the same way.
             let beside = |(piece, heading): &(PieceId, Heading)| {
-                *heading == here.1
-                    && (*piece == here.0
-                        || (self.passing.contains(&here.0)
-                            && piece.module == here.0.module
-                            && self.through.contains(piece)))
+                (*piece == here.0 && *heading == here.1)
+                    || self
+                        .beside
+                        .get(&here.0)
+                        .is_some_and(|through| through.contains(piece))
             };
             let at = way.iter().position(beside)?;
             if at == 0 {
