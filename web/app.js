@@ -194,6 +194,22 @@ function drawLayout(layout) {
     elements.boards.set(name, { group, x: x - BOARD_WIDTH / 2, top: Math.min(...bottoms) - 200 });
   }
 
+  // Passing loops: their name only, smaller and below the front edge, as an operating
+  // point on the open line; once per loop, centred over its modules.
+  const loops = new Map();
+  for (const loop of layout.passing_loops || []) {
+    if (!loops.has(loop.text)) loops.set(loop.text, []);
+    loops.get(loop.text).push(loop);
+  }
+  for (const [name, parts] of loops) {
+    const x = parts.reduce((sum, s) => sum + s.at[0], 0) / parts.length;
+    const bottoms = parts.map((s) => {
+      const module = layout.modules.find((m) => m.id === s.module);
+      return module ? Math.min(...module.outline.map((p) => p[1])) : s.at[1];
+    });
+    text(`${name} (passing loop)`, [x, Math.min(...bottoms) - 110], "passing-loop-label", layer("labels"));
+  }
+
   // The whole layout, or only the modules named in the address: ?modules=timo-adorf (for a
   // screen next to one station), or every module of a district: ?districts=M5StickC.
   const params = new URLSearchParams(location.search);

@@ -46,6 +46,10 @@ pub struct ModuleFile {
     pub turnouts: Vec<Turnout>,
     #[serde(default)]
     pub stations: Vec<Station>,
+    /// Passing loops on the open line: no platforms and no stops, only a through track and
+    /// a passing siding per direction, where a slower train lets a faster one by.
+    #[serde(default)]
+    pub passing_loops: Vec<Station>,
     #[serde(default)]
     pub blocks: Vec<Block>,
     #[serde(default)]
@@ -700,7 +704,18 @@ impl ModuleFile {
             }
         }
 
-        for station in &self.stations {
+        for station in &self.passing_loops {
+            for track in station.tracks.iter().filter(|t| t.platform) {
+                error(
+                    report,
+                    format!(
+                        "passing loop {} track {}: a passing loop has no platforms (make it a station)",
+                        station.name, track.name
+                    ),
+                );
+            }
+        }
+        for station in self.stations.iter().chain(&self.passing_loops) {
             for track in &station.tracks {
                 match self.piece(&track.track) {
                     Some(piece) if track.usable_mm > piece.length_mm => error(

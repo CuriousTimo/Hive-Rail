@@ -27,12 +27,12 @@ fn stop_time(train: &Train) -> f64 {
     train.dwell_min * (0.5 + f64::from(hash % 1000) / 1000.0)
 }
 
-/// The passing sidings (`passing`), or the through tracks of stations that have passing
-/// sidings (the other tracks that are not platforms).
+/// The passing sidings (`passing`), or the through tracks beside them (the other tracks
+/// that are not platforms), of passing loops and of stations that have passing sidings.
 fn passing_tracks(layout: &Layout, passing: bool) -> BTreeSet<PieceId> {
     let mut tracks = BTreeSet::new();
     for (module_id, (module, _)) in &layout.modules {
-        for station in &module.stations {
+        for station in module.stations.iter().chain(&module.passing_loops) {
             if !station.tracks.iter().any(|t| t.passing) {
                 continue;
             }

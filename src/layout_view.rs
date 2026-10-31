@@ -47,6 +47,8 @@ pub struct LayoutView {
     pub buildings: Vec<BuildingView>,
     pub platforms: Vec<Vec<Point>>,
     pub stations: Vec<LabelView>,
+    /// Passing loops on the open line, by name.
+    pub passing_loops: Vec<LabelView>,
     /// Station track numbers, drawn on the map next to their track.
     pub track_numbers: Vec<LabelView>,
     /// The drawing's extent: min x, min y, max x, max y.
@@ -354,6 +356,7 @@ impl ViewBuilder {
             buildings: Vec::new(),
             platforms: Vec::new(),
             stations: Vec::new(),
+            passing_loops: Vec::new(),
             track_numbers: Vec::new(),
             bounds: [f64::MAX, f64::MAX, f64::MIN, f64::MIN],
         };
@@ -410,18 +413,30 @@ impl ViewBuilder {
                 }
                 let _ = name;
             }
-            for station in &module.stations {
+            // Passing loops get their name (smaller, as an operating point on the open
+            // line) and track numbers, but no station label or board.
+            for passing_loop in &module.passing_loops {
+                view.passing_loops.push(LabelView {
+                    text: passing_loop.name.clone(),
+                    at: placement.apply([f64::from(module.length_mm) / 2.0, 120.0]),
+                    module: id.clone(),
+                });
+            }
+            for station in module.stations.iter().chain(&module.passing_loops) {
+                let is_station = module.stations.iter().any(|s| std::ptr::eq(s, station));
                 let at = geometry
                     .platforms
                     .values()
                     .next()
                     .map(|p| centroid(p))
                     .unwrap_or([f64::from(module.length_mm) / 2.0, 120.0]);
-                view.stations.push(LabelView {
-                    text: station.name.clone(),
-                    at: placement.apply(at),
-                    module: id.clone(),
-                });
+                if is_station {
+                    view.stations.push(LabelView {
+                        text: station.name.clone(),
+                        at: placement.apply(at),
+                        module: id.clone(),
+                    });
+                }
                 // Each track's number near the far end of its piece (the buffer end of a
                 // terminus platform), on the track itself.
                 for track in &station.tracks {

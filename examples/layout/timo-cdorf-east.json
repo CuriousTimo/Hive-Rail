@@ -71,7 +71,7 @@
       "device": "point_c4"
     }
   ],
-  "stations": [
+  "passing_loops": [
     {
       "name": "Cdorf",
       "code": "Cd",
