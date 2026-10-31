@@ -231,6 +231,8 @@ The transfer relays sit **on the board**: both feeds of a transfer block (the se
 | W5500 Ethernet module | 2×5 | AliExpress |
 | OLED 128x64 I²C | 4 pins | AliExpress |
 
+**Swappable chips:** the parts facing the outside world, which are the ones that blow, sit in **DIP sockets** (or a 3-pin socket for the TO-92 transistor): U40 (LM393) and Q40 (2N3904) on LocoNet, U13 and U14 (TC4427) on the booster buses, U23 (MAX3485) on XpressNet, U20 (6N137), U21 (PC814), U22 and U26 (PC817) at the isolated inputs and outputs, U25 (ULN2003A) on the relays. A blown chip is replaced in seconds, like a module.
+
 Not plug-in: the IBT-2 and the L298N modules have screw terminals for power and the motor. They stay a cabled option for more track current (J16 and screw terminals), not the standard. LM2596 buck boards do not fit either: their corner pads are not on a 0.1" grid and differ per seller.
 
 **Rules:**
