@@ -1,93 +1,95 @@
 # Hive-Rail board v2: schematic draft
 
-> **Status: draft for review (2026-10-31). Not checked by simulation or a prototype; do not order boards from it.** Values marked *verify* come from other designs or from documents still to read. The design and its reasons are in the wiki: [Hive-Rail Node Board](https://github.com/CuriousTimo/Hive-Rail/wiki/Hive-Rail-Node-Board). The parts list is [`bom.csv`](bom.csv).
+> **Status: draft, first review done (2026-10-31, see 16). Not checked by simulation or a prototype; do not order boards from it.** Values marked *verify* come from other designs or from documents still to read. The design and its reasons are in the wiki: [Hive-Rail Node Board](https://github.com/CuriousTimo/Hive-Rail/wiki/Hive-Rail-Node-Board). The parts list is [`bom.csv`](bom.csv).
 
-The board is a full DCC-EX command station with the Hive-Rail extras, on two ESP32s:
+**Build style: through-hole first (decision 2026-10-31).** Every part can be soldered by hand without SMD work: the ESP32s and the track drivers are plug-in modules, everything else is through-hole. This keeps the board buildable by module owners at home, as the 2021 board was. A machine-assembled SMD variant can follow for batches (14).
 
-- **U1, ESP32-WROOM-32E:** stock DCC-EX. Its track side is pin-compatible with DCC-EX's EX-CSB1 (`MOTOR_SHIELD_TYPE EXCSB1`), plus a third DCC-EX track for the booster buses.
-- **U2, ESP32-S3-WROOM-1-N8R2:** the Hive-Rail lite node: LocoNet, XpressNet, the network, relays, sensors, LEDs and the OLED. The S3 is chosen because the node needs three UARTs (LocoNet, XpressNet, the DCC-EX link); the ESP32-C6 has two plus a limited low-power one.
+The board is a full DCC-EX command station with the Hive-Rail extras, on two ESP32 development boards:
 
-Part choices come from three working designs: DCC-EX's [EX-CSB1](https://github.com/DCC-EX/EX-CSB1) (DCC side, power, USB protection), positron96's [LocoNet command station](https://oshwlab.com/positron96/loconet-command-station) (CERN-OHL; LocoNet circuit) and our 2021 board (LocoNet, RailSync driver, Ethernet). We use their part choices, not their layouts.
+- **U1, ESP32-DevKitC (ESP32-WROOM-32E):** stock DCC-EX. Its track signals are on EX-CSB1's pins, so DCC-EX's `EXCSB1` motor driver values hold, plus a third DCC-EX track for the booster buses.
+- **U2, ESP32-S3-DevKitC-1 (N8 or N8R2):** the Hive-Rail lite node: LocoNet, XpressNet, the network, relays, sensors, LEDs and the OLED. The S3 is chosen because the node needs three UARTs (LocoNet, XpressNet, the DCC-EX link); the ESP32-C6 has two plus a limited low-power one.
+
+Each development board brings its own USB port, USB-serial chip, auto-reset and 3.3 V regulator, so the board needs no USB circuit of its own.
+
+Part choices come from three working designs: DCC-EX's [EX-CSB1](https://github.com/DCC-EX/EX-CSB1) (DCC side), positron96's [LocoNet command station](https://oshwlab.com/positron96/loconet-command-station) (CERN-OHL; LocoNet circuit) and our 2021 board (LocoNet, RailSync driver, Ethernet). We use their part choices, not their layouts.
 
 ```mermaid
 flowchart LR
-    VIN["VIN 14–24 V<br/>(track supply)"] --> PWR["Protection,<br/>3 bucks: 12 V, 5 V, 3.3 V"]
-    subgraph U1["U1 ESP32-WROOM-32E: DCC-EX"]
+    VIN["VIN 15–22 V<br/>(track supply)"] --> PWR["Fuse, reverse protection, TVS<br/>12 V and 5 V switching regulators"]
+    subgraph U1["U1 ESP32-DevKitC: DCC-EX"]
     end
-    subgraph U2["U2 ESP32-S3: lite node"]
+    subgraph U2["U2 ESP32-S3-DevKitC-1: lite node"]
     end
-    U1 -->|"A: main"| DRVA["U10 DRV8874"] --> MAIN["Main track"]
-    U1 -->|"B: prog"| DRVB["U11 DRV8874"] --> PROG["Programming track"]
-    U1 -->|"C: booster bus DCC + enable"| GATE["U12 AND gates"] --> DRV12["U13, U14 MIC4427"]
+    U1 -->|"A: main"| DRVA["M1 DRV8874 carrier"] --> MAIN["Main track"]
+    U1 -->|"B: prog"| DRVB["M2 DRV8874 carrier"] --> PROG["Programming track"]
+    U1 -->|"C: booster bus DCC + enable"| GATE["U12 74HCT00"] --> DRV12["U13, U14 TC4427"]
     DRV12 --> LNB["LocoNet-B RailSync"]
     DRV12 --> CDE["CDE out (C, D)"]
     DRV12 --> BBO["B-BUS out"]
-    EIN["E / overload in"] -->|"opto"| U1
-    BIN["Booster in<br/>(B-BUS, CDE, RailSync)"] -->|"U20 TLP2361"| U1
+    EIN["E / overload in"] -->|"PC814"| U1
+    BIN["Booster in<br/>(B-BUS, CDE, RailSync)"] -->|"U20 6N137"| U1
     BIN -->|"same signal"| U2
-    U1 -->|"short out, opto"| BIN
+    U1 -->|"short out, PC817"| BIN
     U2 <-->|"UART: DCC-EX commands"| U1
     U2 -->|"reset"| U1
-    U2 --- LN["LocoNet data<br/>LM393 + transistor"] --- LNT["LocoNet-T ×2, LocoNet-B ×2"]
-    U2 --- XN["RS-485"] --- XBUS["X-BUS (multiMAUS)"]
-    U2 --- ETH["WIZ850io (W5500)"]
+    U2 --- LN["LocoNet data<br/>LM393 + 2N3904"] --- LNT["LocoNet-T ×2, LocoNet-B ×2"]
+    U2 --- XN["MAX3485"] --- XBUS["X-BUS (multiMAUS)"]
+    U2 --- ETH["W5500 module"]
     U2 --- REL["ULN2003A → latching relays"]
-    SENS["Sensors ×4"] -->|"opto"| U2
-    U2 --- UI["OLED, WS2812 ×3, buttons"]
-    USB["USB-C"] --> HUB["CH334F hub"]
-    HUB --> U2
-    HUB --> CH340["CH340C"] --> U1
+    SENS["Sensors ×4"] -->|"PC817"| U2
+    U2 --- UI["OLED, 5 mm addressable LEDs ×3"]
 ```
 
 ## 1. Power
 
 | Ref | Part | Connections | Notes |
 | --- | --- | --- | --- |
-| J1 | 2-pole screw terminal 5.08 mm | VIN, GND | District track supply, 14–24 V DC. The track voltage is VIN |
-| F1 | Polyfuse or fuse, 5 A | VIN in series | *Verify* against the DRV8874 trip settings |
-| Q1 | AO4407C P-MOSFET | VIN reverse-polarity protection, gate to GND through a resistor, 15 V zener gate–source | As EX-CSB1 |
-| D1 | SMBJ26A TVS | VIN to GND | Above 24 V, below the DRV8874's 37 V |
-| U3 | TPS54302 buck | VIN → **+12 V**, 3 A | LocoNet RailSync drivers, LocoNet-T supply, X-BUS supply, relay coils |
-| U4 | TPS54302 buck | VIN → **+5 V**, 3 A | WS2812s, level shifter, OLED (if a 5 V type) |
-| U5 | TPS54302 buck | VIN → **+3.3 V**, 3 A | Both ESP32s and the W5500: about 1 A peaks with Wi-Fi |
-| L1–L3, C | Inductors and capacitors per the TPS54302 data sheet | | One design, three output voltages (feedback divider) |
-| D2–D4 | Green 0603 LEDs | +12 V, +5 V, +3.3 V | Power-good indication |
+| J1 | 2-pole screw terminal 5.08 mm, 10 A | VIN, GND | District track supply, **15 to 22 V DC**. The track voltage is VIN |
+| F1 | Fuse 5 A fast, 5×20 mm, in a PCB fuse holder | VIN in series | |
+| Q1 | IRF4905 P-MOSFET (TO-220, 55 V) | Reverse-polarity protection: in the VIN line, gate to GND through 10 kΩ, 15 V zener (1N4744A) gate–source | Almost no voltage drop, unlike a diode |
+| D1 | 1.5KE27A TVS (axial) | VIN to GND | Conducts above about 25.7 V |
+| U3 | 12 V switching regulator, 3-pin 7805 footprint, 1 A, input up to 36 V (Mornsun K7812-1000R3 or equal) | VIN → **+12 V** | LocoNet RailSync drivers, LocoNet-T supply, X-BUS supply, relay coils, LM393. Needs VIN ≥ 15 V |
+| U4 | 5 V switching regulator, same type, 2 A (K7805-2000R3 or equal) | VIN → **+5 V** | Both development boards (their 5V pins; they make 3.3 V themselves), the W5500 module, the addressable LEDs, 74HCT logic, the 6N137 |
+| C1–C4 | 100 µF / 35 V electrolytic and 100 nF on VIN, +12 V and +5 V | | Per the regulator data sheets |
+| D2, D3 | Green 3 mm LEDs | +12 V, +5 V | Power indication |
 
-Three equal bucks keep the parts list short. A 3.3 V linear regulator from 5 V (AMS1117, as EX-CSB1) would dissipate about 1.7 W at 1 A with two ESP32s.
+- **Input range 15 to 22 V** covers H0 and 0 track supplies. The TVS conducts from about 25.7 V and clamps below 38 V at its full rated surge; the regulators are rated 36 V (*verify* the surge rating of the chosen type, or pick a 72 V input type if affordable). The DRV8874 is rated 37 V.
+- **N scale (12 to 14 V track):** a 12 V regulator cannot work there; the LocoNet 12 V would have to come from VIN through a diode (open point, 13).
+- **USB only:** each development board runs from its own USB cable for flashing and tests, without track power. *Verify* that each development board has a diode between its USB VBUS and its 5V pin, so the board's +5 V does not feed the computer's USB port; the official DevKitC boards do, clones vary.
 
-## 2. U1: DCC-EX (ESP32-WROOM-32E)
+## 2. U1: DCC-EX (ESP32-DevKitC)
 
-**Pins.** Tracks A and B as EX-CSB1, so DCC-EX's `EXCSB1` definition holds for them.
+**Pins.** Tracks A and B on EX-CSB1's pins.
 
-| GPIO | Function | Net / to |
+| GPIO | Function | To |
 | --- | --- | --- |
-| 25 | Track A enable (EN/IN1) | U10 EN/IN1 |
-| 0 | Track A DCC signal (PH/IN2) | U10 PH/IN2. GPIO0 is a strapping pin; EX-CSB1 uses it with a boot jumper (`IO0_boot_option`): copy that circuit |
-| 14 | Track A sleep, active low | U10 nSLEEP |
-| 34 | Track A current (input only) | U10 IPROPI, resistor to GND |
-| 19 | Track A fault | U10 nFAULT, pull-up |
-| 27 | Track B enable | U11 EN/IN1 |
-| 15 | Track B DCC signal | U11 PH/IN2 |
-| 2 | Track B sleep, active low | U11 nSLEEP |
-| 35 | Track B current (input only) | U11 IPROPI |
-| 23 | Track B fault | U11 nFAULT |
+| 25 | Track A enable | M1 EN/IN1 |
+| 0 | Track A DCC signal | M1 PH/IN2. GPIO0 is a strapping pin (the DevKitC's BOOT button and auto-reset): M1's input must not pull it low at reset (the DRV8874 input has an internal pull-down of about 100 kΩ, which the DevKitC's 10 kΩ pull-up overrides, *verify*) |
+| 14 | Track A sleep, active low | M1 nSLEEP |
+| 34 | Track A current (input only) | M1 current sense output |
+| 19 | Track A fault | M1 nFAULT, 10 kΩ pull-up to 3.3 V |
+| 27 | Track B enable | M2 EN/IN1 |
+| 15 | Track B DCC signal | M2 PH/IN2 |
+| 2 | Track B sleep, active low | M2 nSLEEP |
+| 35 | Track B current (input only) | M2 current sense output |
+| 23 | Track B fault | M2 nFAULT, 10 kΩ pull-up |
 | 5 | Track C (booster buses) DCC signal | U12 |
 | 18 | Track C enable | U12 |
 | 32 | Booster input (`BOOSTER_INPUT 32`, as EX-CSB1) | U20 output |
-| 16 / 17 | Serial2 RX / TX (`SERIAL2_COMMANDS`, DCC-EX's default pins) | U2 UART2 TX / RX |
-| 36 | Booster short in (E of CDE, overload of B-BUS out; input only) | U21 output, pull-up |
+| 16 / 17 | Serial2 RX / TX (`SERIAL2_COMMANDS`, DCC-EX's default pins) | U2 GPIO17 / 18 |
+| 36 | Booster short in (CDE E, B-BUS overload; input only) | U21 outputs, 10 kΩ pull-up |
 | 4 | Short line out to the master (booster mode) | U22 LED through 1 kΩ |
-| 33 | Stop button (to GND, pull-up) | SW1 |
-| 26 | Go button | SW2 |
-| 1 / 3 | UART0 TX / RX | U31 (CH340C): USB console and flashing |
-| EN | Reset | Auto-reset from U31; reset from U2 through Q5 |
+| 33 | Stop button (to GND, 10 kΩ pull-up) | SW1, front panel |
+| 26 | Go button | SW2, front panel |
+| EN | Reset | DevKitC's own; also Q5 from U2 |
 | 21 / 22 | I²C, spare | Header J30 |
 
 **DCC-EX configuration** (`config.h`, stock DCC-EX):
 
 ```cpp
-// Tracks A (main) and B (programming) as EX-CSB1; C feeds the booster buses
+// Tracks A (main) and B (programming) on EX-CSB1's pins; C feeds the booster buses
 // (LocoNet-B RailSync, CDE, B-BUS out): no current sense, boosters measure.
+// Sense factor: Pololu's DRV8874 carrier gives its own current-sense scale (verify; EX-CSB1 uses 2.23).
 #define HIVE_RAIL_BOARD_V2 F("HIVERAIL_V2"), \
   new MotorDriver(25,  0, UNUSED_PIN, -14, 34, 2.23, 5000, 19), \
   new MotorDriver(27, 15, UNUSED_PIN,  -2, 35, 2.23, 5000, 23), \
@@ -97,18 +99,26 @@ Three equal bucks keep the parts list short. A 3.3 V linear regulator from 5 V (
 #define SERIAL2_COMMANDS
 ```
 
-`myAutomation.h`: stop and go (`ONBUTTON(33) POWEROFF`, `ONBUTTON(26) POWERON`), the booster short in on GPIO36 as a power off, the short line out from `ONOVERLOAD`, and booster mode on `ONRAILSYNCON` (`SET_TRACK(A, BOOST)`). In booster mode DCC-EX routes GPIO32 to the track outputs in the ESP32's GPIO matrix (hardware, no software in the path).
+`myAutomation.h`: `SET_TRACK(C, MAIN)` at start, stop and go (`ONBUTTON(33) POWEROFF`, `ONBUTTON(26) POWERON`), the booster short in on GPIO36 as a power off, the short line out from `ONOVERLOAD`, and booster mode on `ONRAILSYNCON` (`SET_TRACK(A, BOOST)`). In booster mode DCC-EX routes GPIO32 to the track outputs in the ESP32's GPIO matrix (hardware, no software in the path).
 
 ## 3. Track outputs
 
-| Ref | Part | Connections |
-| --- | --- | --- |
-| U10, U11 | DRV8874PWPR, PH/EN mode | VM = VIN; OUT1/OUT2 to J10 (main) and J11 (programming track); IPROPI to the ESP32's ADC through the sense resistor; IMODE and VREF as EX-CSB1 |
-| J10, J11 | 2-pole screw terminals 5.08 mm | Main track, programming track |
-| C | 100 µF / 35 V bulk, 100 nF per driver | As EX-CSB1 |
-| D5, D6 | Yellow 0603 LEDs | Track A and B on |
+| Ref | Part | Connections | Notes |
+| --- | --- | --- | --- |
+| M1, M2 | **Pololu DRV8874 single brushed DC motor driver carrier**, on 2.54 mm socket strips | VIN, GND; EN/IN1, PH/IN2, nSLEEP, nFAULT, current sense to U1; PMODE tied for PH/EN mode; OUT1/OUT2 to J10 (main) and J11 (programming track) | The same chip as EX-CSB1, so the DCC-EX setup stays the same; about 3 A continuous per carrier (Pololu's figure, *verify*). Current-sense scale per Pololu's documentation |
+| J10, J11 | 2-pole screw terminals 5.08 mm, 10 A | Main track, programming track | |
+| D8, D9 | P6KE30CA bidirectional TVS (axial) | Across each track output | Spikes and ESD from the track |
+| C10, C11 | 100 µF / 35 V electrolytic | VIN at each carrier | Bulk capacitance |
+| J16 | 2×4 pin header, track A signals (EN, PH, nSLEEP, current sense, fault, 3.3 V, GND) | In parallel with M1's socket | For an **IBT-2 (BTS7960) module** instead of M1, for more than 3 A on the main track: leave M1 out and wire the IBT-2 here. DCC-EX supports the IBT-2 and recommends at most 5 A for N and H0 |
 
-The sense resistor and DCC-EX's sense factor (2.23 on EX-CSB1) belong together: copy EX-CSB1's resistor, *verify* in its schematic.
+**Driver alternatives considered:**
+
+| Driver | Price (roughly) | For | Against |
+| --- | --- | --- | --- |
+| **Pololu DRV8874 carrier** (chosen) | €10–15 each | Same chip as EX-CSB1 and DCC-EX's EX-MotorShield8874; current sense; small; through-hole pins | Dearest of the modules |
+| IBT-2 (BTS7960) | €5–8 | Very high current, DCC-EX supported, sold everywhere | Large; more current than a district's own track should get; prog track sensing coarse |
+| L298N chip on the board (Multiwatt-15, through-hole) | €2–4 | Cheapest, as positron96's v1 and the Arduino Motor Shield | Drops 2 to 4 V, needs a heat sink, old design |
+| DRV8874 chip (SMD with thermal pad) | about $0.60–0.90 at LCSC (C1855818) | Cheapest overall | SMD only: for the machine-assembled variant (14) |
 
 ## 4. Booster buses out (LocoNet-B RailSync, CDE, B-BUS)
 
@@ -116,10 +126,10 @@ DCC-EX's track C drives all three: when DCC-EX switches the district off, the bo
 
 | Ref | Part | Connections | Notes |
 | --- | --- | --- | --- |
-| U12 | 74LVC2G08 (two AND gates) and an inverter (74LVC1G04) | DCC_C = signal AND enable; /DCC_C = NOT signal AND enable | Both outputs low when the district is off |
-| U13 | MIC4427 (two non-inverting drivers), 12 V | DCC_C, /DCC_C → **LocoNet-B RailSync** pins 1 and 6 through 47 Ω each | Current-limited per the LocoNet spec, *verify* (positron96's v2 goal) |
-| U14 | MIC4427, 12 V | → **CDE C and D** (J12) and **B-BUS out** pin 1 (J13), through series resistors | CDE and B-BUS signal levels *verify* (wiki NB-Q16) |
-| U21 | PC817 optocoupler (two: CDE E, B-BUS pin 4) | Booster pulls E or overload to its ground → LED; transistor pulls U1 GPIO36 low | Wired-OR of both inputs |
+| U12 | 74HCT00 (DIP-14, four NAND gates), +5 V | DCC_C = signal AND enable; /DCC_C = NOT signal AND enable | HCT inputs take the ESP32's 3.3 V. Both outputs low when the district is off |
+| U13 | TC4427 (DIP-8, two non-inverting drivers), +12 V | DCC_C, /DCC_C → **LocoNet-B RailSync** pins 1 and 6, each through 150 Ω and a 100 mA polyfuse | A shorted RailSync pin draws about 80 mA, which the driver survives; *verify* against the LocoNet spec |
+| U14 | TC4427, +12 V | → **CDE C and D** (J12) and **B-BUS out** pin 1 (J13), through 150 Ω each | CDE and B-BUS levels *verify* (wiki NB-Q16) |
+| U21 | 2× PC814 (DIP-4, AC-input optocoupler), LED fed from +12 V through 2.2 kΩ | CDE E and B-BUS pin 4 → LED; transistors pull U1 GPIO36 low | AC input: works whichever way the booster's E circuit is referenced (C, D or its ground), which is still to measure. Wired-OR |
 | J12 | 3-pole screw terminal (C, D, E) | | Lenz CDE |
 | J13 | B-BUS out, 4-pole (pin 1 DCC, 2–3 GND, 4 overload in) | | Pinout from a forum post; connector type *verify* (NB-Q16) |
 
@@ -129,100 +139,150 @@ DCC-EX's track C drives all three: when DCC-EX switches the district off, the bo
 | --- | --- | --- | --- |
 | J14 | B-BUS in, 4-pole | Pin 1 DCC in, 2–3 GND (master side), 4 short line out | From a Z21's B-BUS |
 | J15 | 3-pole screw terminal | C, D in; E out | From a CDE or RailSync output (Intellibox) |
-| U20 | TLP2361 fast optocoupler | LED: input through 2.2 kΩ, 1N4148 reverse across the LED (accepts C/D or DCC/GND); output to **U1 GPIO32 and U2 GPIO7** | Input resistor for 12–22 V signals, *verify* against B-BUS levels |
-| U22 | PC817 | LED from U1 GPIO4; transistor collector to J14 pin 4 and J15 E, emitter to the master's ground | Pulls the master's short line |
+| U20 | 6N137 (DIP-8, 10 Mbit/s optocoupler), output side on +5 V | LED through a **constant-current source** (two 2N3904, about 8 mA) with a 1N4148 reverse across the LED (accepts C/D or DCC/GND); open-collector output pulled up to **3.3 V** → U1 GPIO32 and U2 GPIO7 | The current source takes any DCC level from 5 to 24 V; a fixed resistor would give too little at 5 V and too much at 22 V. A slow optocoupler (PC817) would skew DCC's 58 µs half-bits |
+| U22 | PC817 (DIP-4) | LED from U1 GPIO4 through 1 kΩ; transistor between J14 pin 4 / J15 E and the master's ground | Pulls the master's short line |
 
 The input side of U20 and U22 is the master's ground, never the board's: the two systems stay separate.
 
-## 6. U2: lite node (ESP32-S3-WROOM-1-N8R2)
+## 6. U2: lite node (ESP32-S3-DevKitC-1)
 
-| GPIO | Function | Net / to |
+| GPIO | Function | To |
 | --- | --- | --- |
-| 4 / 5 | UART1 RX / TX: LocoNet (16 666 baud, TX inverted) | LocoNet receiver output / transmitter base |
+| 4 / 5 | UART1 RX / TX: LocoNet (16 666 baud, TX inverted) | U40 output / Q40 base |
 | 17 / 18 | UART2 TX / RX: DCC-EX link (115 200 baud) | U1 GPIO16 / 17 |
-| 43 / 44 | UART0 TX / RX: XpressNet (62 500 baud, 9 bits by the parity trick) | U23 DI / RO |
-| 6 | XpressNet direction | U23 DE and /RE |
-| 7 | DCC sniffer in | U20 output (booster DCC) |
-| 10 / 11 / 12 / 13 | SPI CS / MOSI / SCK / MISO | J20 (WIZ850io) |
+| 47 / 21 | UART0 TX / RX, moved off GPIO43/44: XpressNet (62 500 baud, 9 bits by the parity trick) | U23 DI / RO |
+| 6 | XpressNet direction | U23 DE and /RE, 10 kΩ pull-down |
+| 7 | DCC sniffer in | U20 output |
+| 10 / 11 / 12 / 13 | SPI CS / MOSI / SCK / MISO | J20 (W5500 module) |
 | 9 / 8 | W5500 interrupt / reset | J20 |
-| 1 / 2 | I²C SDA / SCL | OLED J31, STEMMA QT J32 |
-| 38 | WS2812 data | U24 (74AHCT1G125, 3.3 → 5 V) → LED1–LED3 |
-| 14 | Reset of U1 | Q5 (NPN, collector to U1 EN) |
-| 15 / 16 / 21 / 47 | Relay coils: relay 1 set / reset, relay 2 set / reset | U25 (ULN2003A) inputs 1–4 |
-| 39 / 40 / 41 / 42 | Sensor inputs 1–4 | U26 (TLP291-4, four optocouplers) outputs, pull-ups |
-| 0 | Boot and user button (config) | SW3 |
-| 19 / 20 | Native USB D− / D+ | U30 (hub) downstream port 1: console and flashing |
-| EN | Reset | SW4, RC |
+| 1 / 2 | I²C SDA / SCL, 4.7 kΩ pull-ups | OLED J31, I²C header J32 |
+| 48 | Addressable LED data | U24 (74HCT125, 3.3 → 5 V) → LED1–LED3 |
+| 14 | Reset of U1 | Q5 (2N3904, collector to U1 EN), 10 kΩ base pull-down |
+| 15 / 16 / 39 / 40 | Relay coils: relay 1 set / reset, relay 2 set / reset | U25 (ULN2003A) inputs, 10 kΩ pull-downs |
+| 41 / 42 / 19 / 20 | Sensor inputs 1–4 | U26 (4× PC817) outputs, 10 kΩ pull-ups |
+| 0 | Boot and user button (config) | The DevKitC's BOOT button |
 
-GPIO3, 45 and 46 are strapping pins and stay free; 35–37 are free with quad PSRAM (N8R2).
+- **Pins left free on purpose:** GPIO3, 45 and 46 (strapping), 35–37 (octal PSRAM on N8R8 boards), 43/44 (the DevKitC's USB-serial chip), 38 (the DevKitC's own RGB LED on board version 1.1; on version 1.0 it sits on GPIO48, where it then shows the same colour as LED1, which does no harm).
+- GPIO19 and 20 are the S3's native USB; the board uses the DevKitC's USB-serial port for flashing and the console, so they are free as inputs.
+- **Recheck this pin plan against the DevKitC bought:** clones differ.
 
 ## 7. LocoNet
 
 | Ref | Part | Connections | Notes |
 | --- | --- | --- | --- |
-| J40, J41 | RJ12 6P6C (DS1133-S60BPX) | **LocoNet-T**: pins 3–4 data, 2–5 GND, 1–6 +12 V through F40 | Throttle supply on the RailSync pins, *verify* against Uhlenbrock's LocoNet-T |
+| J40, J41 | RJ12 6P6C, through-hole | **LocoNet-T**: pins 3–4 data, 2–5 GND, 1–6 +12 V through F40 | Throttle supply on the RailSync pins, *verify* against Uhlenbrock's LocoNet-T |
 | J42, J43 | RJ12 6P6C | **LocoNet-B**: pins 3–4 data, 2–5 GND, 1–6 RailSync DCC from U13 | |
-| F40 | Polyfuse 500 mA | +12 V to LocoNet-T | |
-| U40 | LM393 comparator | Data line through a divider to + input, reference to − input, hysteresis resistor, output pull-up to 3.3 V → U2 GPIO4 | Values as positron96's v1 (27k, 12k, 30k, 91k, 330k, 10k), *verify* in its schematic |
-| Q40 | MMBT3904 | Base from U2 GPIO5 through 2 kΩ; collector to the data line through 47 Ω | Open-collector transmitter |
-| U41, JP40 | LM317L as a current source, with a jumper | +12 V to the data line | The bus pull-up, only on the bus master: jumper fitted when this board is the LocoNet master (always, by Hive-Rail's design); *verify* the current against the LocoNet spec |
-| D40 | TVS on the data line | | Protection |
+| F40 | Radial polyfuse 500 mA, 30 V or more | +12 V to LocoNet-T | |
+| U40 | LM393 (DIP-8), **supplied from +12 V** | Data line through a divider to + input, reference to − input, hysteresis resistor; open-collector output pulled up to **3.3 V** → U2 GPIO4 | From 12 V its inputs see the whole bus swing (an LM393 input must stay 1.5 V below its supply); the open-collector output stays safe for the ESP32. Values as positron96's v1 (27k, 12k, 30k, 91k, 330k, 10k), *verify* in its schematic |
+| Q40 | 2N3904 (TO-92) | Base from U2 GPIO5 through 2 kΩ; collector to the data line through 47 Ω | Open-collector transmitter |
+| U41, JP40 | LM317LZ (TO-92) as a current source, with a jumper | +12 V to the data line | The bus pull-up, only on the bus master: jumper fitted when this board is the master; *verify* the current against the LocoNet spec |
+| D40 | P6KE15CA TVS | Data line to GND | Protection |
 
 ## 8. XpressNet (multiMAUS)
 
 | Ref | Part | Connections | Notes |
 | --- | --- | --- | --- |
-| U23 | SN65HVD72 (3.3 V RS-485, half duplex) | A, B to J50 pins 4 and 3 | |
+| U23 | MAX3485 (DIP-8, 3.3 V RS-485, half duplex) | A, B to J50 pins 4 and 3; DE and /RE from U2 GPIO6 with a 10 kΩ pull-down | The pull-down keeps the transceiver receiving while the ESP32 boots |
 | R50–R52 | 680 Ω, 680 Ω bias, 120 Ω termination with jumper JP50 | | Fail-safe idle |
-| D50 | SM712 TVS | A, B | |
+| D50, D51 | P6KE12CA TVS | A and B to GND | RS-485 common-mode range is −7 to +12 V |
 | J50, J51 | RJ12 6P6C | 1 C (DCC, not connected by default), 2 GND, 3 B, 4 A, 5 +12 V through F50, 6 D (not connected) | Lenz pinout; Roco cable *verify* (NB-Q14) |
-| F50 | Polyfuse 300 mA | +12 V to X-BUS | Powers the multiMAUS |
+| F50 | Radial polyfuse 300 mA, 30 V or more | +12 V to X-BUS | Powers the multiMAUS |
 
 ## 9. Network
 
 | Ref | Part | Notes |
 | --- | --- | --- |
-| J20 | 2×6 pin header for a WIZ850io module (W5500 with RJ45 and magnetics) | Optional; the magnetics isolate the network |
+| J20 | 2×5 pin socket for the common blue **W5500 Ethernet module** (RJ45 with magnetics, its own 3.3 V regulator), powered from +5 V | Optional. The cheapest widely sold W5500 module; clones differ in pin order, so the silkscreen names one pinout (*verify* with the module bought). The magnetics isolate the network |
 
 ## 10. Transfer relays and sensors
 
 | Ref | Part | Connections | Notes |
 | --- | --- | --- | --- |
-| U25 | ULN2003A | Inputs from U2; outputs sink the relay coils from +12 V; COM to +12 V (built-in flyback diodes) | Two dual-coil latching relays, three spare channels |
-| J60 | 6-pole screw terminal | +12 V, coil 1 set, coil 1 reset, coil 2 set, coil 2 reset, GND | The relays themselves sit at the transfer blocks (double-pole changeover) |
-| U26 | TLP291-4 (four optocouplers) | Input: sensor through 2.2 kΩ and a 1N4148, from its own supply; output to U2 | Isolated sensor inputs |
-| J61 | 8-pole screw terminal | Four sensor pairs | |
+| U25 | ULN2003A (DIP-16) | Inputs from U2, each with a 10 kΩ pull-down; outputs sink the relay coils from +12 V; COM to +12 V (built-in flyback diodes) | Two dual-coil latching relays, three spare channels. The pull-downs keep a booting ESP32 from pulsing a coil, which would flip a latching relay |
+| J60 | 6-pole screw terminal 3.5 mm | +12 V, coil 1 set, coil 1 reset, coil 2 set, coil 2 reset, GND | The relays themselves sit at the transfer blocks (double-pole changeover) |
+| U26 | 4× PC817 (DIP-4) | Input: sensor through 2.2 kΩ and a 1N4148, from its own supply; output to U2 | Isolated sensor inputs |
+| J61 | 8-pole screw terminal 3.5 mm | Four sensor pairs | |
 
 ## 11. User interface
 
 | Ref | Part | Notes |
 | --- | --- | --- |
-| SW1, SW2 | Red and green push buttons | Stop and go, on U1 |
-| SW3, SW4 | Small push buttons | U2 boot/config and reset |
-| SW5 | Small push button | U1 reset |
-| LED1–LED3 | WS2812B-2020 | Power, link, layout |
-| U24 | 74AHCT1G125 | 3.3 V → 5 V level shift for the WS2812s |
-| J31 | 4-pin header | 128x64 OLED (SSD1306 or SH1106, I²C) |
-| J32 | STEMMA QT / Qwiic (JST-SH 4-pin) | I²C accessories |
+| SW1, SW2 | 12 mm push buttons, red and green caps | Stop and go, on U1 |
+| SW3 | 6 mm push button | U1 reset (the DevKitC's own buttons are hard to reach once plugged in) |
+| LED1–LED3 | 5 mm through-hole addressable RGB LEDs (WS2812D-F5 or PL9823) | Power, link, layout |
+| U24 | 74HCT125 (DIP-14), +5 V | 3.3 V → 5 V level shift for the LEDs |
+| J31 | 4-pin header | 128x64 OLED module (SSD1306 or SH1106, I²C) |
+| J32 | 4-pin I²C header (3.3 V, GND, SDA, SCL) | I²C accessories (Qwiic and STEMMA QT through an adapter cable) |
+| J33 | 2×5 pin header, **front panel** | Stop and go buttons and the three LEDs, in parallel with the ones on the board, for a module fascia |
 
-## 12. USB
+## 12. Mechanical
 
-| Ref | Part | Notes |
+- Board size about 160 × 100 mm with the development boards and modules (*to fit*), four mounting holes; a DIN-rail case is a later option.
+- Screw terminals on one edge (power, tracks, boosters, relays, sensors), RJ12 jacks on another (LocoNet, X-BUS); the development boards' USB ports and the Ethernet jack reachable from the edge.
+- Development boards and driver carriers on socket strips, so they can be swapped.
+
+## 13. Open points in this draft
+
+- Every *verify* above, especially: CDE and B-BUS levels and connectors (NB-Q16), the X-BUS cable pinout (NB-Q14), LocoNet-T supply and bus pull-up current, the LM393 values, the DRV8874 carrier's current-sense scale.
+- N-scale track supplies (12 to 14 V): where the LocoNet 12 V comes from.
+- The regulators' surge rating against the TVS clamp voltage.
+- Thermal: two DRV8874 carriers at 3 A, and two switching regulators.
+
+## 14. Machine-assembled variant (later)
+
+For a batch assembled by a factory (JLCPCB), the same schematic with SMD parts is cheaper per board: ESP32-WROOM-32E and ESP32-S3-WROOM-1 modules instead of development boards (then with a USB hub, a CH340C, USB-C and ESD protection on the board), DRV8874 chips, buck converter chips, SMD optocouplers and logic. The first draft of this file (git history) lists those parts.
+
+## 15. PCB rules: current and track widths
+
+Track widths from IPC-2221 for **outer layers and a 10 °C rise**. The current to design for is the largest one that can flow for longer than a moment: the fuse's 5 A on the power path, the trip current elsewhere.
+
+| Current | 1 oz copper (35 µm) | 2 oz copper (70 µm) |
 | --- | --- | --- |
-| J70 | USB-C receptacle (USB 2.0), 5.1 kΩ on CC1 and CC2 | One cable for both chips |
-| U32 | USBLC6-2SC6 | ESD protection (as EX-CSB1) |
-| U30 | CH334F USB 2.0 hub | Port 1 to U2's native USB; port 2 to U31 |
-| U31 | CH340C USB-serial | U1 UART0, with auto-reset (DTR, RTS) |
-| Q6 | UMH3N (two transistors) | U1 auto-reset: EN and GPIO0, as EX-CSB1 |
+| 0.5 A | 0.12 mm (use 0.25 mm) | 0.25 mm |
+| 1 A | 0.30 mm | 0.15 mm (use 0.25 mm) |
+| 2 A | 0.78 mm | 0.39 mm |
+| 3 A | 1.37 mm | 0.68 mm |
+| 5 A | 2.77 mm | 1.38 mm |
+| 6 A | 3.56 mm | 1.78 mm |
 
-## 13. Mechanical
+**Rules for the layout:**
 
-- Board size about 100 × 80 mm (*to fit the parts*), four mounting holes; a DIN-rail case is a later option.
-- Screw terminals on one edge (power, tracks, boosters, relays, sensors), RJ12 jacks on another (LocoNet, X-BUS), USB-C, Ethernet and the buttons accessible.
+| Net | Design current | Rule |
+| --- | --- | --- |
+| VIN: J1 → F1 → Q1 → driver carriers and regulators | 5 A (fuse) | Copper pours, at least 3 mm wide on 1 oz, on both layers stitched with vias |
+| Track outputs: carrier OUT1/OUT2 → D8/D9 → J10/J11 | 5 A (DCC-EX trips at 5 A; the DRV8874 limits near 6 A) | Pours at least 3 mm on 1 oz, both layers |
+| GND return from the track outputs | Same as VIN | Solid ground pour on the bottom layer; no slots under the power path |
+| +12 V from U3 | 1 A | 0.5 mm trunk and branches |
+| +5 V from U4 | 2 A | 1.0 mm trunk, 0.5 mm branches |
+| RailSync, CDE, B-BUS outputs | Under 0.2 A (resistors and polyfuses) | 0.4 mm |
+| LocoNet data, RS-485, signals | Milliamps | 0.25 mm; RS-485 A and B as a pair |
 
-## 14. Open points in this draft
+- **Copper:** order 2 oz outer copper, or keep 1 oz and use pours; JLCPCB charges extra for 2 oz. Rev A: 2 oz, the safer choice until the boards are measured warm.
+- **Through-hole pads carrying current** (terminals, fuse holder, Q1, carrier pins): generous annular rings, and the pour connected with wide thermal spokes or solid, so 5 A does not run through four thin spokes.
+- **Vias carrying current:** count about 1 A per 0.3 mm via; at least 6 vias where 5 A changes layer.
+- **Isolation gaps:** no copper under the optocouplers between their two sides, and at least 2 mm between the master's side of the booster input (J14, J15, U20 and U22 inputs) and the board's ground. This is about keeping the systems apart, not about voltage: everything is below 30 V.
+- **Separation:** keep the track outputs and the driver carriers away from the LM393, the RS-485 transceiver and the ESP32 antennas; the development boards' antennas at the board edge with no copper under them.
 
-- Every *verify* above, especially: CDE and B-BUS levels and connectors (NB-Q16), the X-BUS cable pinout (NB-Q14), LocoNet-T supply and bus pull-up current, the LM393 values.
-- EX-CSB1's GPIO0 boot circuit, IPROPI resistor and DRV8874 IMODE/VREF settings: copy exactly from its schematic.
-- Whether U1 also needs access to the node's network for DCC-EX's own WiThrottle at home (mode 1): over Wi-Fi it has its own.
-- Thermal: the DRV8874s at 3 A each, and three bucks on one board.
+## 16. Review 2026-10-31: findings and changes
+
+| # | Finding | Change |
+| --- | --- | --- |
+| R1 | Buck chips rated 28 V on VIN: no margin for track-supply spikes | Switching regulators rated 36 V; VIN range 15 to 22 V |
+| R2 | 5 A polyfuse in 1812: such parts are mostly rated 6 to 16 V | 5 A fast fuse in a holder; all polyfuses radial, rated 30 V or more |
+| R3 | TVS clamping above what the regulators survive | 1.5KE27A with a 15 to 22 V input range; surge rating to verify |
+| R4 | LM393 on 3.3 V cannot see the 12 V LocoNet bus without careful dividers | LM393 on +12 V, open-collector output pulled to 3.3 V |
+| R5 | A shorted RailSync pin with 47 Ω would overheat the driver | 150 Ω and a polyfuse per pin; TC4427 instead of MIC4427 (same pinout, cheaper, also in DIP) |
+| R6 | The E line's reference in CDE boosters is not known yet | AC-input optocouplers (PC814) on E and the B-BUS overload line |
+| R7 | The booster input's fixed resistor fails at 5 V or overdrives at 22 V | Constant-current source for the optocoupler's LED |
+| R8 | Floating pins while an ESP32 boots: could pulse a latching relay, hold DCC-EX in reset, or drive the RS-485 bus | 10 kΩ pull-downs on the ULN2003A inputs, Q5's base and the RS-485 DE pin |
+| R9 | No logic power without track power | Each development board runs from its own USB |
+| R10 | No protection on the track outputs | Bidirectional TVS across each track output |
+| R11 | WIZ850io is expensive | Socket for the common blue W5500 module |
+| R12 | Only 3 A on the main track | Header for an IBT-2 module instead of M1 |
+| R13 | Buttons and LEDs only on the board | Front-panel header for a module fascia |
+| R14 | I²C pull-ups missing | Added |
+| R15 | No current and track width rules | Section 15 |
+| R16 | SMD parts need factory assembly or SMD soldering | **Through-hole first:** development boards, driver carriers, 3-pin switching regulators, DIP and TO-92 parts. The SMD variant is for later (14) |
+| R17 | The S3 development board's USB-serial chip sits on GPIO43/44 (UART0) | XpressNet's UART0 moved to GPIO47/21 |
+
+Notes from the review that need no change: the 9-bit XpressNet characters only matter when sending (the master's call bytes); received bytes always have the ninth bit clear, so the receiver can ignore parity. DCC-EX's tracks must be set at start-up in `myAutomation.h` (`SET_TRACK(C, MAIN)` for the booster buses).

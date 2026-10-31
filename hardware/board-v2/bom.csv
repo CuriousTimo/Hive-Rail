@@ -1,49 +1,50 @@
 Ref,Qty,Part,Package,Block,Function,Notes
-U1,1,ESP32-WROOM-32E (4 MB),Module,DCC-EX,Runs stock DCC-EX,Chip DCC-EX supports; as EX-CSB1
-U2,1,ESP32-S3-WROOM-1-N8R2,Module,Node,Hive-Rail lite node,Three UARTs needed
-U3;U4;U5,3,TPS54302,SOT-23-6,Power,"Bucks: 12 V, 5 V, 3.3 V",As EX-CSB1; inductor and capacitors per data sheet
-L1;L2;L3,3,Inductor per TPS54302 data sheet,SMD,Power,Buck inductors,Values differ per output voltage
-Q1,1,AO4407C,SO-8,Power,Reverse-polarity protection,As EX-CSB1
-D1,1,SMBJ26A,SMB,Power,VIN TVS,
-F1,1,Polyfuse or fuse 5 A,1812 or holder,Power,VIN protection,Verify
-J1,1,Screw terminal 2-pole 5.08 mm,THT,Power,VIN 14-24 V,
-U10;U11,2,DRV8874PWPR,HTSSOP-16,Track,Main and programming track drivers,As EX-CSB1 (PH/EN mode)
-J10;J11,2,Screw terminal 2-pole 5.08 mm,THT,Track,Main and programming track,
-U12,1,74LVC2G08,SOT-23-8,Booster out,Gate booster DCC with enable,
-U15,1,74LVC1G04,SOT-23-5,Booster out,Inverted booster DCC,
-U13;U14,2,MIC4427,SOIC-8,Booster out,LocoNet-B RailSync; CDE C/D and B-BUS out drivers,12 V
-U20,1,TLP2361,SO-6,Booster in,Booster DCC input (fast),As EX-CSB1
-U21;U22,3,PC817,SMD-4,Booster in/out,"Booster short in (CDE E, B-BUS overload); short line out to master",
+U1,1,ESP32-DevKitC (ESP32-WROOM-32E),Development board on socket strips,DCC-EX,Runs stock DCC-EX,Check the VBUS diode on clones
+U2,1,ESP32-S3-DevKitC-1 (N8 or N8R2),Development board on socket strips,Node,Hive-Rail lite node,Three UARTs needed; recheck pins on clones
+M1;M2,2,Pololu DRV8874 single brushed DC motor driver carrier,Module on socket strips,Track,Main and programming track drivers,Same chip as EX-CSB1; current-sense scale to verify
+J16,1,Header 2x4 2.54 mm,THT,Track,Option: IBT-2 (BTS7960) module instead of M1,
+J1;J10;J11,3,Screw terminal 2-pole 5.08 mm (10 A),THT,Power/Track,VIN; main track; programming track,
+F1,1,Fuse 5 A fast 5x20 mm + PCB fuse holder,THT,Power,VIN protection,
+Q1,1,IRF4905 P-MOSFET,TO-220,Power,Reverse-polarity protection,
+Z1,1,1N4744A (15 V zener),DO-41,Power,Q1 gate protection,
+D1,1,1.5KE27A TVS,DO-201,Power,VIN TVS,
+U3,1,K7812-1000R3 (or equal 12 V 1 A switching regulator 36 V input),SIP-3,Power,VIN to +12 V,Needs VIN 15 V or more
+U4,1,K7805-2000R3 (or equal 5 V 2 A switching regulator 36 V input),SIP-3,Power,VIN to +5 V,
+D8;D9,2,P6KE30CA TVS (bidirectional),DO-15,Track,Track output protection,
+U12,1,74HCT00,DIP-14,Booster out,Gate booster DCC with enable,
+U13;U14,2,TC4427,DIP-8,Booster out,LocoNet-B RailSync; CDE C/D and B-BUS out drivers,12 V
+F41;F42,2,Radial polyfuse 100 mA 30 V+,Radial,Booster out,RailSync pin protection,With 150 ohm per pin
+U20,1,6N137,DIP-8,Booster in,Booster DCC input (fast),Constant-current LED drive
+Q20;Q21,2,2N3904,TO-92,Booster in,Constant-current source for U20,
+U21,2,PC814 (AC input),DIP-4,Booster out,"Booster short in (CDE E, B-BUS overload)",
+U22,1,PC817,DIP-4,Booster in,Short line out to the master,
 J12;J15,2,Screw terminal 3-pole 5.08 mm,THT,Booster,CDE out (C D E); booster in (C D E),
-J13;J14,2,"B-BUS 4-pole connector (type to verify)",THT,Booster,B-BUS out and in,NB-Q16
-J40;J41;J42;J43,4,RJ12 6P6C DS1133-S60BPX,THT,LocoNet,LocoNet-T x2 and LocoNet-B x2,LCSC C77859 (as positron96)
-U40,1,LM393,SOIC-8,LocoNet,Receiver comparator,Circuit as positron96 v1 and our 2021 board
-Q40,1,MMBT3904,SOT-23,LocoNet,Transmitter,
-U41,1,LM317L,SOIC-8,LocoNet,Bus pull-up current source,Verify current against the LocoNet spec
-JP40,1,Jumper 2-pin,2.54 mm,LocoNet,Bus pull-up on/off,
-F40,1,Polyfuse 500 mA,1206,LocoNet,LocoNet-T 12 V supply,
-D40,1,TVS (data line),SOD-323,LocoNet,Protection,
-U23,1,SN65HVD72,SOIC-8,XpressNet,3.3 V RS-485 transceiver,
-D50,1,SM712,SOT-23,XpressNet,RS-485 TVS,
+J13;J14,2,B-BUS 4-pole connector (type to verify),THT,Booster,B-BUS out and in,NB-Q16
+J40;J41;J42;J43,4,RJ12 6P6C,THT,LocoNet,LocoNet-T x2 and LocoNet-B x2,
+U40,1,LM393,DIP-8,LocoNet,Receiver comparator (on +12 V),Circuit as positron96 v1 and our 2021 board
+Q40;Q5,2,2N3904,TO-92,LocoNet/Link,LocoNet transmitter; U2 resets U1,
+U41,1,LM317LZ,TO-92,LocoNet,Bus pull-up current source,Verify current against the LocoNet spec
+JP40;JP50,2,Jumper 2-pin + shunt,2.54 mm,LocoNet/XpressNet,Bus pull-up on/off; RS-485 termination,
+F40,1,Radial polyfuse 500 mA 30 V+,Radial,LocoNet,LocoNet-T 12 V supply,
+D40,1,P6KE15CA TVS,DO-15,LocoNet,Data line protection,
+U23,1,MAX3485,DIP-8,XpressNet,3.3 V RS-485 transceiver,
+D50;D51,2,P6KE12CA TVS,DO-15,XpressNet,RS-485 protection,
 J50;J51,2,RJ12 6P6C,THT,XpressNet,X-BUS (multiMAUS),Roco pinout to verify (NB-Q14)
-F50,1,Polyfuse 300 mA,1206,XpressNet,X-BUS 12 V supply,
-JP50,1,Jumper 2-pin,2.54 mm,XpressNet,120 ohm termination,
-J20,1,Header 2x6 2.54 mm (WIZ850io socket),THT,Network,Optional W5500 Ethernet module,Module bought separately
-U25,1,ULN2003A,SOIC-16,Relays,Latching relay coil drivers,Built-in flyback diodes
+F50,1,Radial polyfuse 300 mA 30 V+,Radial,XpressNet,X-BUS 12 V supply,
+J20,1,Socket 2x5 2.54 mm,THT,Network,Blue W5500 Ethernet module (optional),Module bought separately; pin order to verify
+-,1,W5500 Ethernet module (blue 2x5 type),Module,Network,Wired Ethernet,Optional
+U25,1,ULN2003A,DIP-16,Relays,Latching relay coil drivers,Built-in flyback diodes
 J60,1,Screw terminal 6-pole 3.5 mm,THT,Relays,Relay coils,Relays sit at the transfer blocks
-U26,1,TLP291-4,SOP-16,Sensors,Four isolated sensor inputs,
+U26,4,PC817,DIP-4,Sensors,Four isolated sensor inputs,
 J61,1,Screw terminal 8-pole 3.5 mm,THT,Sensors,Four sensor pairs,
-LED1;LED2;LED3,3,WS2812B-2020,2020,UI,"Status: power, link, layout",
-U24,1,74AHCT1G125,SOT-23-5,UI,WS2812 level shift,
-J31,1,Header 4-pin 2.54 mm,THT,UI,OLED 128x64 I2C,
-J32,1,JST-SH 4-pin (STEMMA QT),SMD,UI,I2C accessories,As EX-CSB1
-SW1;SW2,2,Push button (red and green caps),THT,UI,Stop and go (on U1),
-SW3;SW4;SW5,3,Push button small,SMD,UI,"U2 boot/config, U2 reset, U1 reset",
-J70,1,USB-C receptacle USB 2.0,SMD,USB,One cable for both chips,5.1 kohm on CC1 and CC2
-U32,1,USBLC6-2SC6,SOT-23-6,USB,ESD protection,As EX-CSB1
-U30,1,CH334F,QFN-24,USB,USB hub for both chips,
-U31,1,CH340C,SOIC-16,USB,USB-serial for U1,As EX-CSB1
-Q6,1,UMH3N,SOT-363,USB,U1 auto-reset,As EX-CSB1
-Q5,1,MMBT3904,SOT-23,Link,U2 resets U1,
-D2-D6,5,LED 0603 (3 green; 2 yellow),0603,Status,Power rails; track A and B on,
--,~60,"Resistors and capacitors 0603/0805, 1N4148 diodes",SMD,All,Passives,Values in the schematic draft; to complete in KiCad
+LED1;LED2;LED3,3,WS2812D-F5 or PL9823 (5 mm addressable RGB),THT,UI,"Status: power, link, layout",
+U24,1,74HCT125,DIP-14,UI,LED level shift 3.3 to 5 V,
+J31;J32,2,Header 4-pin 2.54 mm,THT,UI,OLED; I2C accessories,
+J33,1,Header 2x5 2.54 mm,THT,UI,Front panel: buttons and LEDs,
+J30,1,Header 4-pin 2.54 mm,THT,DCC-EX,Spare I2C on U1,
+-,1,OLED module 128x64 I2C (SSD1306 or SH1106),Module,UI,Status screen,
+SW1;SW2,2,Push button 12 mm (red and green caps),THT,UI,Stop and go (on U1),
+SW3,1,Push button 6 mm,THT,UI,U1 reset,
+D2;D3,2,LED 3 mm green,THT,Status,+12 V and +5 V present,
+-,-,"Socket strips 2.54 mm for U1, U2, M1, M2",THT,All,Plug-in modules,
+-,~70,"Resistors (axial 1/4 W), capacitors (ceramic and electrolytic), 1N4148 diodes",THT,All,Passives,Values in the schematic draft; to complete in KiCad
