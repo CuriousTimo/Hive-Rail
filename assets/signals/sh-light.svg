@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 36" width="64" height="72" class="">
+  <title>Light shunting signal (Lichtsperrsignal): Sh 0 (two reds), Sh 1 (two whites rising to the right)</title>
+  <style>
+  .sf-screen { fill: #0d0d0d; stroke: #3a3a3a; stroke-width: 0.8; }
+  .sf-mast { fill: #8a8a8a; }
+  .sf-lamp { fill: #262626; stroke: #3c3c3c; stroke-width: 0.6; }
+  .sf-option { display: none; }
+  .sh-lamp .sf-option.sh-lamp, .zs1-lamp .sf-option.zs1-lamp, .extra-lamp .sf-option.extra-lamp { display: inline; }
+  /* H/V main */
+  .hp0 .sf-red1, .hp0 .sf-red2 { fill: #ff2a1f; }
+  .hp0.sh1 .sf-red2 { fill: #262626; }
+  .hp1 .sf-green, .hp2 .sf-green { fill: #2fe05a; }
+  .hp2 .sf-yellow { fill: #ffbf1a; }
+  .sh1 .sf-white { fill: #f6f6f6; }
+  .zs1 .sf-zs1 { fill: #f6f6f6; }
+  /* H/V distant */
+  .vr0 .sf-ll, .vr0 .sf-ur, .vr2 .sf-ll { fill: #ffbf1a; }
+  .vr1 .sf-ll, .vr1 .sf-ur, .vr2 .sf-ur { fill: #2fe05a; }
+  .short .sf-extra { fill: #f6f6f6; }
+  .hp0 .sf-on-main .sf-ll, .hp0 .sf-on-main .sf-ur { fill: #262626; }
+  /* Ks */
+  .hp0 .sf-ks-red { fill: #ff2a1f; }
+  .ks1 .sf-ks-green { fill: #2fe05a; }
+  .ks2 .sf-ks-yellow { fill: #ffbf1a; }
+  .zs1 .sf-ks-zs1 { fill: #f6f6f6; animation: sf-blink 1s steps(2, start) infinite; }
+  /* light shunting signal */
+  .sh0 .sf-sh-red, .hp0 .sf-sh-red { fill: #ff2a1f; }
+  @keyframes sf-blink { to { visibility: hidden; } }
+  </style>
+  <rect class="sf-mast" x="14" y="28" width="4" height="8"/>
+  <path class="sf-screen" d="M4 0 H28 L32 4 V28 H0 V4 Z"/>
+  <circle class="sf-lamp sf-sh-red" cx="8" cy="9" r="3.4"/>
+  <circle class="sf-lamp sf-sh-red" cx="24" cy="9" r="3.4"/>
+  <circle class="sf-lamp sf-white" cx="23" cy="15" r="2.4"/>
+  <circle class="sf-lamp sf-white" cx="9" cy="23" r="2.4"/>
+
+</svg>
