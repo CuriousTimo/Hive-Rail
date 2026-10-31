@@ -4,7 +4,8 @@
 // heartbeats. It also plays its district's command station with fake hardware: district power
 // on its buttons, a faked short, and the mesh-wide global emergency stop both ways.
 // On an M5StickC: side button B = power on/off (double press: short circuit), front button A =
-// next page (double press: GLOBAL emergency stop); the red LED shows the district power.
+// next page (double press: GLOBAL emergency stop, triple press: GLOBAL go); the red LED shows
+// the district power.
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
@@ -43,8 +44,9 @@ static const char *POWER_LABEL[] = {"OFF", "ON", "STOP", "SHORT"};
 static volatile Power power = POWER_OFF;
 static volatile bool power_changed = false;
 static char last_event[80] = "";
-// A global stop received from the mesh, applied by loop() (set in the receive task).
+// A global stop or go received from the mesh, applied by loop() (set in the receive task).
 static volatile bool stop_from_mesh = false;
+static volatile bool go_from_mesh = false;
 static char stop_origin[24] = "";
 // A firmware update arrived: loop() restarts the ESP32 (not the update code itself, which once
 // left the M5StickC hanging on "restarting").
@@ -177,7 +179,7 @@ static void find_via() {
 // group, type << 5 | action, data length, data. Group 1 is the command station.
 static const uint8_t RN_CS_GROUP = 1;
 static const uint8_t RN_REQUEST = 0, RN_EVENT = 1;
-static const uint8_t RN_CS_QUERY = 1, RN_CS_HALT = 3;
+static const uint8_t RN_CS_QUERY = 1, RN_CS_TRACK_POWER = 2, RN_CS_HALT = 3;
 
 static void put_with_origin(const z_loaned_publisher_t *publisher, const uint8_t *data, size_t len) {
     z_owned_bytes_t payload;
@@ -239,12 +241,35 @@ static void send_global_stop() {
     emergency_stop("own global stop");
 }
 
+// The global go ends a global stop: a district in emergency stop goes back on; OFF stays OFF
+// and SHORT stays SHORT (power.rs, resumes). On the layout-wide key it is a power-on request.
+static void global_go(const char *why) {
+    if (power == POWER_STOP) {
+        set_power(POWER_ON, why);
+    }
+}
+
+static void send_global_go() {
+    uint8_t frame[] = {0, 0, 0, (uint8_t)(ROCNET_ID >> 8), (uint8_t)ROCNET_ID, RN_CS_GROUP,
+                       (uint8_t)(RN_REQUEST << 5 | RN_CS_TRACK_POWER), 1, 1};
+    put_with_origin(z_publisher_loan(&global_stop_out), frame, sizeof(frame));
+    event("GLOBAL GO sent: every district in emergency stop back on");
+    global_go("own global go");
+}
+
 static void on_global_stop(z_loaned_sample_t *sample, void *) {
     uint8_t frame[16];
     z_bytes_reader_t reader = z_bytes_get_reader(z_sample_payload(sample));
     size_t len = z_bytes_reader_read(&reader, frame, sizeof(frame));
-    // A halt request: group 1, type request, action 3.
-    if (len < 8 || frame[5] != RN_CS_GROUP || (frame[6] >> 5) != RN_REQUEST || (frame[6] & 0x1F) != RN_CS_HALT) {
+    // A halt request (group 1, type request, action 3) is the global stop; a track power on
+    // request (action 2, data 1) the global go.
+    if (len < 8 || frame[5] != RN_CS_GROUP || (frame[6] >> 5) != RN_REQUEST) {
+        return;
+    }
+    uint8_t action = frame[6] & 0x1F;
+    bool halt = action == RN_CS_HALT;
+    bool go = action == RN_CS_TRACK_POWER && len >= 9 && frame[8] == 1;
+    if (!halt && !go) {
         return;
     }
     stop_origin[0] = 0;
@@ -261,7 +286,11 @@ static void on_global_stop(z_loaned_sample_t *sample, void *) {
             z_string_drop(z_string_move(&origin));
         }
     }
-    stop_from_mesh = true;
+    if (halt) {
+        stop_from_mesh = true;
+    } else {
+        go_from_mesh = true;
+    }
 }
 
 #ifdef HIVE_SCREEN
@@ -492,6 +521,16 @@ void loop() {
         emergency_stop(why);
         next_screen = 0;
     }
+    if (go_from_mesh) {
+        go_from_mesh = false;
+        char why[48];
+        snprintf(why, sizeof(why), "global go from %s", stop_origin[0] ? stop_origin : "?");
+        char text[80];
+        snprintf(text, sizeof(text), "Global go from %s", stop_origin[0] ? stop_origin : "?");
+        event(text);
+        global_go(why);
+        next_screen = 0;
+    }
 #ifdef HIVE_SCREEN
     M5.update();
     // Front button: a single press is the next page, a double press the global emergency stop.
@@ -502,6 +541,11 @@ void loop() {
     }
     if (M5.BtnA.wasDoubleClicked()) {
         send_global_stop();
+        next_screen = 0;
+    }
+    // Three presses: the global go, ending a global stop.
+    if (M5.BtnA.wasDecideClickCount() && M5.BtnA.getClickCount() >= 3) {
+        send_global_go();
         next_screen = 0;
     }
     // Side button: district power on and off (the board's go and stop); a double press a short.

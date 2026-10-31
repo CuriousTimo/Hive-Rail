@@ -621,6 +621,16 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                                     global_stop = Some((origin.clone(), Local::now().format("%H:%M:%S").to_string()));
                                     handle_power_request(PowerRequest::Halt, RequestSource::Mesh, &origin, &mut power, &outputs, &mut log).await?;
                                 }
+                                // A global resume: back on only from emergency stop.
+                                Some(PowerRequest::On) => {
+                                    global_stop = None;
+                                    if crate::power::resumes(power.station.state()) {
+                                        log.event(format!("Global go from {origin}"));
+                                        handle_power_request(PowerRequest::On, RequestSource::Mesh, &origin, &mut power, &outputs, &mut log).await?;
+                                    } else {
+                                        log.line(format!("[mesh] <- global go from {origin}: district is {}, stays as it is", power.station.state().label()));
+                                    }
+                                }
                                 Some(request) => log.line(format!("[mesh] <- ignored layout-wide {request} from {origin}; power is per district")),
                                 None => {}
                             }
@@ -1016,6 +1026,17 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                         log.event("GLOBAL EMERGENCY STOP sent to every district".to_owned());
                         global_stop = Some((options.id.clone(), Local::now().format("%H:%M:%S").to_string()));
                         handle_power_request(PowerRequest::Halt, RequestSource::Dashboard, &options.id, &mut power, &outputs, &mut log).await?;
+                    }
+                    UiCommand::GlobalResume => {
+                        // On the layout-wide key, a power-on request is the global resume.
+                        let frame = RocNetFrame::power_request(rocnet_id, PowerRequest::On);
+                        global_stop_publisher.put(frame.as_bytes().to_vec()).attachment(options.id.clone()).await?;
+                        log.line(format!("[mesh] -> {}  {}", frame.to_hex(), frame.describe()));
+                        log.event("GLOBAL GO sent: every district in emergency stop back on".to_owned());
+                        global_stop = None;
+                        if crate::power::resumes(power.station.state()) {
+                            handle_power_request(PowerRequest::On, RequestSource::Dashboard, &options.id, &mut power, &outputs, &mut log).await?;
+                        }
                     }
                     UiCommand::Clock(change) => {
                         let now = Instant::now();

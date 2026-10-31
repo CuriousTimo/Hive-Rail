@@ -17,7 +17,7 @@ the nodes page. It started as the phase B0 test. See the
 3. Build and flash over USB: `pio run -e m5stick-c -t upload` (or `-e esp32dev`), then `pio device monitor`.
    Afterwards over Wi-Fi: `PLATFORMIO_UPLOAD_FLAGS="--auth=<HIVE_OTA_PASS>" pio run -e m5stick-c-ota -t upload`.
 
-**Buttons, screen and lights:** see the wiki page [Node-Lite on the M5StickC](https://github.com/CuriousTimo/Hive-Rail/wiki/Node-Lite-M5StickC). In short: side button B switches district power (double press: fake short), the front button switches pages (double press: global emergency stop).
+**Buttons, screen and lights:** see the wiki page [Node-Lite on the M5StickC](https://github.com/CuriousTimo/Hive-Rail/wiki/Node-Lite-M5StickC). In short: side button B switches district power (double press: fake short), the front button switches pages (double press: global emergency stop, triple press: global go).
    zenoh-pico's build needs CMake (`pip install cmake` next to PlatformIO).
 
 ## Result (2026-10-31, M5StickC: ESP32-PICO-D4, zenoh-pico 1.10.1, Rust zenoh 1.10.1)

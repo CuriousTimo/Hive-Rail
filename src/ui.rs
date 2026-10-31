@@ -65,8 +65,10 @@ pub enum UiCommand {
     None,
     Quit,
     Power(PowerRequest),
-    /// Emergency stop in every district; each district resumes on its own.
+    /// Emergency stop in every district that is on.
     GlobalStop,
+    /// Every district in emergency stop back on (off and short districts stay as they are).
+    GlobalResume,
     Clock(ClockChange),
     SimulateShort,
     /// Forget a stale peer; the node refuses this for a peer that is still online.
@@ -184,6 +186,7 @@ pub fn command_for_key(key: char) -> Option<UiCommand> {
         '0' => UiCommand::Power(PowerRequest::Off),
         'h' => UiCommand::Power(PowerRequest::Halt),
         'E' => UiCommand::GlobalStop,
+        'G' => UiCommand::GlobalResume,
         's' => UiCommand::SimulateShort,
         'c' => UiCommand::Clock(ClockChange::ToggleRunning),
         '+' | '=' => UiCommand::Clock(ClockChange::Rate(1)),
@@ -374,7 +377,7 @@ fn render(frame: &mut Frame<'_>, dashboard: &Dashboard, scroll_back: usize, sele
             Span::raw(&dashboard.last_event),
         ]),
         Line::from(Span::styled(
-            "1  District power on  |  0  District power off  |  h  District emergency stop  |  E  GLOBAL emergency stop  |  s  Simulate short",
+            "1  District power on  |  0  District power off  |  h  District emergency stop  |  E  GLOBAL emergency stop  |  G  GLOBAL go (resume)  |  s  Simulate short",
             Style::default().fg(Color::Gray),
         )),
         Line::from(Span::styled(

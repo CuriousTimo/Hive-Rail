@@ -169,12 +169,19 @@ impl State {
         crate::power::layout_power(&districts, self.global_stop.as_ref())
     }
 
-    /// A global emergency stop seen on the mesh.
+    /// A global emergency stop or resume seen on the mesh.
     fn global_stop_frame(&mut self, frame: &RocNetFrame, origin: &str) {
-        if frame.power_request_kind() == Some(crate::power::PowerRequest::Halt) {
-            let time = Local::now().format("%H:%M:%S").to_string();
-            self.event(format!("GLOBAL EMERGENCY STOP by {origin}"));
-            self.global_stop = Some((origin.to_owned(), time));
+        match frame.power_request_kind() {
+            Some(crate::power::PowerRequest::Halt) => {
+                let time = Local::now().format("%H:%M:%S").to_string();
+                self.event(format!("GLOBAL EMERGENCY STOP by {origin}"));
+                self.global_stop = Some((origin.to_owned(), time));
+            }
+            Some(crate::power::PowerRequest::On) => {
+                self.event(format!("GLOBAL GO by {origin}"));
+                self.global_stop = None;
+            }
+            _ => {}
         }
     }
 
@@ -313,6 +320,8 @@ struct Mesh {
     updates: zenoh::pubsub::Publisher<'static>,
     /// Clock sets from the dispatcher's keys, as a node's dashboard sends them.
     clock_set: zenoh::pubsub::Publisher<'static>,
+    /// The global emergency stop and resume from the dispatcher's keys.
+    global: zenoh::pubsub::Publisher<'static>,
     id: String,
 }
 
@@ -351,6 +360,12 @@ impl Mesh {
                 .declare_publisher(format!("hive/{s}/rn/ck"))
                 .allowed_destination(zenoh::sample::Locality::Remote)
                 .await?,
+            global: session
+                .declare_publisher(format!("hive/{s}/rn/cs/all"))
+                .priority(zenoh::qos::Priority::RealTime)
+                .congestion_control(zenoh::qos::CongestionControl::Block)
+                .allowed_destination(zenoh::sample::Locality::Remote)
+                .await?,
             _session: session,
             id: args.id.clone(),
         })
@@ -370,6 +385,20 @@ impl Mesh {
             },
         );
         self.clock_set
+            .put(frame.as_bytes().to_vec())
+            .attachment(self.id.clone())
+            .await?;
+        Ok(())
+    }
+
+    /// A global emergency stop or resume to every district. The dispatcher has no RocNet
+    /// address of its own; 0 is the sender.
+    async fn send_global(
+        &self,
+        request: crate::power::PowerRequest,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+        let frame = RocNetFrame::power_request(0, request);
+        self.global
             .put(frame.as_bytes().to_vec())
             .attachment(self.id.clone())
             .await?;
@@ -466,6 +495,16 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                     match ui.handle_input()? {
                         UiCommand::Quit => break,
                         UiCommand::ToggleDetails => state.details = !state.details,
+                        UiCommand::GlobalStop => {
+                            mesh.send_global(crate::power::PowerRequest::Halt).await?;
+                            state.event(format!("GLOBAL EMERGENCY STOP sent by {}", args.id));
+                            state.global_stop = Some((args.id.clone(), Local::now().format("%H:%M:%S").to_string()));
+                        }
+                        UiCommand::GlobalResume => {
+                            mesh.send_global(crate::power::PowerRequest::On).await?;
+                            state.event(format!("GLOBAL GO sent by {}", args.id));
+                            state.global_stop = None;
+                        }
                         UiCommand::Clock(change) => {
                             let now = Instant::now();
                             let was = state.clock.label(now);
@@ -1072,9 +1111,9 @@ fn render(frame: &mut Frame<'_>, state: &State) {
         .map(|line| Line::from(line.as_str()))
         .collect();
     let title = if state.details {
-        "Events of every district, all details (d: fewer, c: clock run/pause, + -: rate, [ ]: hour, q: quit)"
+        "Events, all details (d: fewer, E: GLOBAL STOP, G: GLOBAL GO, c: clock, + -: rate, [ ]: hour, q: quit)"
     } else {
-        "Events of every district (d: all details, c: clock run/pause, + -: rate, [ ]: hour, q: quit)"
+        "Events (d: all details, E: GLOBAL STOP, G: GLOBAL GO, c: clock, + -: rate, [ ]: hour, q: quit)"
     };
     frame.render_widget(
         Paragraph::new(events).block(Block::default().borders(Borders::ALL).title(title)),

@@ -19,6 +19,12 @@ impl fmt::Display for PowerRequest {
     }
 }
 
+/// A global resume ends a global emergency stop: a district in emergency stop goes back on;
+/// one that is off stays off, and one with a short stays in short until it is cleared.
+pub fn resumes(state: PowerState) -> bool {
+    state == PowerState::EmergencyStop
+}
+
 /// Actual power state of one node's district.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PowerState {
@@ -155,9 +161,10 @@ pub fn layout_power(
         if !stopped.is_empty() {
             parts.push(format!("STOP in {}", stopped.join(", ")));
         }
+        // The list of districts shows which ones are stopped; a global stop needs no list.
         let label = match global_stop {
             Some((origin, time)) if !stopped.is_empty() => {
-                format!("GLOBAL STOP by {origin} at {time}: {}", parts.join("; "))
+                format!("GLOBAL STOP by {origin} at {time}")
             }
             _ => parts.join("; "),
         };
@@ -220,10 +227,7 @@ mod tests {
             ],
             Some(&stop),
         );
-        assert_eq!(
-            stopped.label,
-            "GLOBAL STOP by M5StickC at 12:31:34: SHORT in M5StickC; STOP in Windows"
-        );
+        assert_eq!(stopped.label, "GLOBAL STOP by M5StickC at 12:31:34");
         assert_eq!(stopped.level, LayoutLevel::Stopped);
         // A short alone is not a global stop.
         let short = layout_power(&[("Windows", "SHORT")], Some(&stop));
