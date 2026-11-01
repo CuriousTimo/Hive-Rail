@@ -1,0 +1,1400 @@
+{
+ "schema_version": 3,
+ "module_id": "timo-adorf",
+ "friendly_name": "Adorf, west terminus: inbound straight into track 1, double slip L0 to tracks 2 and 3, crossover at the entry",
+ "owner": "Timo",
+ "scale": "H0",
+ "size_mm": [
+  1800,
+  546
+ ],
+ "ends": [
+  {
+   "id": "B",
+   "side": "right",
+   "profile": "2E96",
+   "tracks": [
+    "in",
+    "out"
+   ]
+  }
+ ],
+ "tracks": [
+  {
+   "name": "in",
+   "direction": "B>A"
+  },
+  {
+   "name": "out",
+   "direction": "A>B"
+  }
+ ],
+ "tiles": [
+  {
+   "tile": "plate",
+   "x": 0,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "text": "1"
+  },
+  {
+   "tile": "buffer-stop",
+   "x": 1,
+   "y": 5,
+   "turn": 2,
+   "mirror": false,
+   "track": "1",
+   "block": "adorf_1_w"
+  },
+  {
+   "tile": "track-straight",
+   "x": 2,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "adorf_1_w",
+   "options": [
+    "platform-top"
+   ]
+  },
+  {
+   "tile": "sensor",
+   "x": 3,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "id": "1 H-A",
+   "track": "1",
+   "block": "adorf_1_w",
+   "device": "sensor_1_h_a",
+   "options": [
+    "platform-top"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 4,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "adorf_1_w",
+   "options": [
+    "platform-top"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 5,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "adorf_1_w",
+   "options": [
+    "platform-top"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 6,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "adorf_1_b",
+   "options": [
+    "platform-top"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 7,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "adorf_1_b",
+   "options": [
+    "platform-top"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 8,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "adorf_1_b",
+   "options": [
+    "platform-top"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 9,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "adorf_1_b",
+   "options": [
+    "platform-top"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 10,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "adorf_1_b",
+   "options": [
+    "platform-top"
+   ]
+  },
+  {
+   "tile": "sensor",
+   "x": 11,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "id": "1 B",
+   "track": "1",
+   "block": "adorf_1_b",
+   "device": "sensor_1_b",
+   "options": [
+    "platform-top"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 12,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "adorf_1_b",
+   "options": [
+    "platform-top"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 13,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "adorf_1_b",
+   "options": [
+    "platform-top"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 14,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "adorf_1_b",
+   "options": [
+    "platform-top"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 15,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "adorf_1_b",
+   "options": [
+    "platform-top"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 16,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "adorf_1_b",
+   "options": [
+    "platform-top"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 17,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "adorf_1_b",
+   "options": [
+    "platform-top"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 18,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "adorf_1_e",
+   "options": [
+    "platform-top"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 19,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "adorf_1_e",
+   "options": [
+    "platform-top"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 20,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "adorf_1_e",
+   "options": [
+    "platform-top"
+   ]
+  },
+  {
+   "tile": "sensor",
+   "x": 21,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "id": "1 H-B",
+   "track": "1",
+   "block": "adorf_1_e",
+   "device": "sensor_1_h_b",
+   "options": [
+    "platform-top"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 22,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "adorf_1_e"
+  },
+  {
+   "tile": "track-straight",
+   "x": 23,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "adorf_1_e"
+  },
+  {
+   "tile": "signal-hv-main",
+   "x": 24,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "id": "N1",
+   "track": "1",
+   "block": "adorf_1_e",
+   "device": "signal_n1",
+   "options": [
+    "sh-lamp"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 25,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "adorf_1_e"
+  },
+  {
+   "tile": "turnout-left",
+   "x": 26,
+   "y": 5,
+   "turn": 2,
+   "mirror": false,
+   "id": "3",
+   "block": "throat",
+   "device": "point_3"
+  },
+  {
+   "tile": "track-straight",
+   "x": 27,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "a1",
+   "block": "throat"
+  },
+  {
+   "tile": "track-straight",
+   "x": 28,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "a1",
+   "block": "throat"
+  },
+  {
+   "tile": "track-straight",
+   "x": 29,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "a1",
+   "block": "throat"
+  },
+  {
+   "tile": "track-straight",
+   "x": 30,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "a1",
+   "block": "throat"
+  },
+  {
+   "tile": "turnout-right",
+   "x": 31,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "id": "1",
+   "block": "throat",
+   "device": "point_1"
+  },
+  {
+   "tile": "track-straight",
+   "x": 32,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "in",
+   "block": "throat"
+  },
+  {
+   "tile": "signal-hv-main",
+   "x": 33,
+   "y": 5,
+   "turn": 2,
+   "mirror": false,
+   "id": "F",
+   "track": "in",
+   "block": "throat",
+   "device": "signal_f"
+  },
+  {
+   "tile": "track-straight",
+   "x": 34,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "in",
+   "block": "throat"
+  },
+  {
+   "tile": "track-straight",
+   "x": 35,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "in",
+   "block": "throat"
+  },
+  {
+   "tile": "plate",
+   "x": 0,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "text": "2"
+  },
+  {
+   "tile": "buffer-stop",
+   "x": 1,
+   "y": 6,
+   "turn": 2,
+   "mirror": false,
+   "track": "2",
+   "block": "adorf_2_w"
+  },
+  {
+   "tile": "track-straight",
+   "x": 2,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "adorf_2_w",
+   "options": [
+    "platform-bottom"
+   ]
+  },
+  {
+   "tile": "sensor",
+   "x": 3,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "id": "2 H-A",
+   "track": "2",
+   "block": "adorf_2_w",
+   "device": "sensor_2_h_a",
+   "options": [
+    "platform-bottom"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 4,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "adorf_2_w",
+   "options": [
+    "platform-bottom"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 5,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "adorf_2_w",
+   "options": [
+    "platform-bottom"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 6,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "adorf_2_b",
+   "options": [
+    "platform-bottom"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 7,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "adorf_2_b",
+   "options": [
+    "platform-bottom"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 8,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "adorf_2_b",
+   "options": [
+    "platform-bottom"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 9,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "adorf_2_b",
+   "options": [
+    "platform-bottom"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 10,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "adorf_2_b",
+   "options": [
+    "platform-bottom"
+   ]
+  },
+  {
+   "tile": "sensor",
+   "x": 11,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "id": "2 B",
+   "track": "2",
+   "block": "adorf_2_b",
+   "device": "sensor_2_b",
+   "options": [
+    "platform-bottom"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 12,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "adorf_2_b",
+   "options": [
+    "platform-bottom"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 13,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "adorf_2_b",
+   "options": [
+    "platform-bottom"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 14,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "adorf_2_b",
+   "options": [
+    "platform-bottom"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 15,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "adorf_2_b",
+   "options": [
+    "platform-bottom"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 16,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "adorf_2_b",
+   "options": [
+    "platform-bottom"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 17,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "adorf_2_b",
+   "options": [
+    "platform-bottom"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 18,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "adorf_2_e",
+   "options": [
+    "platform-bottom"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 19,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "adorf_2_e",
+   "options": [
+    "platform-bottom"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 20,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "adorf_2_e",
+   "options": [
+    "platform-bottom"
+   ]
+  },
+  {
+   "tile": "sensor",
+   "x": 21,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "id": "2 H-B",
+   "track": "2",
+   "block": "adorf_2_e",
+   "device": "sensor_2_h_b"
+  },
+  {
+   "tile": "track-straight",
+   "x": 22,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "adorf_2_e"
+  },
+  {
+   "tile": "signal-hv-main",
+   "x": 23,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "id": "N2",
+   "track": "2",
+   "block": "adorf_2_e",
+   "device": "signal_n2",
+   "options": [
+    "sh-lamp"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 24,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "adorf_2_e"
+  },
+  {
+   "tile": "double-slip",
+   "x": 25,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "id": "4",
+   "block": "throat",
+   "device": "point_4"
+  },
+  {
+   "tile": "track-straight",
+   "x": 27,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "b1",
+   "block": "throat"
+  },
+  {
+   "tile": "track-straight",
+   "x": 28,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "b1",
+   "block": "throat"
+  },
+  {
+   "tile": "sensor",
+   "x": 29,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "id": "W 1-4",
+   "track": "b1",
+   "block": "throat",
+   "device": "sensor_w_1_4"
+  },
+  {
+   "tile": "track-straight",
+   "x": 30,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "b1",
+   "block": "throat"
+  },
+  {
+   "tile": "turnout-right",
+   "x": 31,
+   "y": 6,
+   "turn": 2,
+   "mirror": false,
+   "id": "2",
+   "block": "throat",
+   "device": "point_2"
+  },
+  {
+   "tile": "track-straight",
+   "x": 32,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "out",
+   "block": "throat"
+  },
+  {
+   "tile": "track-straight",
+   "x": 33,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "out",
+   "block": "throat"
+  },
+  {
+   "tile": "track-straight",
+   "x": 34,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "out",
+   "block": "throat"
+  },
+  {
+   "tile": "track-straight",
+   "x": 35,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "out",
+   "block": "throat"
+  },
+  {
+   "tile": "plate",
+   "x": 0,
+   "y": 7,
+   "turn": 0,
+   "mirror": false,
+   "text": "3"
+  },
+  {
+   "tile": "buffer-stop",
+   "x": 1,
+   "y": 7,
+   "turn": 2,
+   "mirror": false,
+   "track": "3",
+   "block": "adorf_3_w"
+  },
+  {
+   "tile": "track-straight",
+   "x": 2,
+   "y": 7,
+   "turn": 0,
+   "mirror": false,
+   "track": "3",
+   "block": "adorf_3_w",
+   "options": [
+    "platform-top"
+   ]
+  },
+  {
+   "tile": "sensor",
+   "x": 3,
+   "y": 7,
+   "turn": 0,
+   "mirror": false,
+   "id": "3 H-A",
+   "track": "3",
+   "block": "adorf_3_w",
+   "device": "sensor_3_h_a",
+   "options": [
+    "platform-top"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 4,
+   "y": 7,
+   "turn": 0,
+   "mirror": false,
+   "track": "3",
+   "block": "adorf_3_w",
+   "options": [
+    "platform-top"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 5,
+   "y": 7,
+   "turn": 0,
+   "mirror": false,
+   "track": "3",
+   "block": "adorf_3_w",
+   "options": [
+    "platform-top"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 6,
+   "y": 7,
+   "turn": 0,
+   "mirror": false,
+   "track": "3",
+   "block": "adorf_3_b",
+   "options": [
+    "platform-top"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 7,
+   "y": 7,
+   "turn": 0,
+   "mirror": false,
+   "track": "3",
+   "block": "adorf_3_b",
+   "options": [
+    "platform-top"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 8,
+   "y": 7,
+   "turn": 0,
+   "mirror": false,
+   "track": "3",
+   "block": "adorf_3_b",
+   "options": [
+    "platform-top"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 9,
+   "y": 7,
+   "turn": 0,
+   "mirror": false,
+   "track": "3",
+   "block": "adorf_3_b",
+   "options": [
+    "platform-top"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 10,
+   "y": 7,
+   "turn": 0,
+   "mirror": false,
+   "track": "3",
+   "block": "adorf_3_b",
+   "options": [
+    "platform-top"
+   ]
+  },
+  {
+   "tile": "sensor",
+   "x": 11,
+   "y": 7,
+   "turn": 0,
+   "mirror": false,
+   "id": "3 B",
+   "track": "3",
+   "block": "adorf_3_b",
+   "device": "sensor_3_b",
+   "options": [
+    "platform-top"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 12,
+   "y": 7,
+   "turn": 0,
+   "mirror": false,
+   "track": "3",
+   "block": "adorf_3_b",
+   "options": [
+    "platform-top"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 13,
+   "y": 7,
+   "turn": 0,
+   "mirror": false,
+   "track": "3",
+   "block": "adorf_3_b",
+   "options": [
+    "platform-top"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 14,
+   "y": 7,
+   "turn": 0,
+   "mirror": false,
+   "track": "3",
+   "block": "adorf_3_b",
+   "options": [
+    "platform-top"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 15,
+   "y": 7,
+   "turn": 0,
+   "mirror": false,
+   "track": "3",
+   "block": "adorf_3_b",
+   "options": [
+    "platform-top"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 16,
+   "y": 7,
+   "turn": 0,
+   "mirror": false,
+   "track": "3",
+   "block": "adorf_3_b",
+   "options": [
+    "platform-top"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 17,
+   "y": 7,
+   "turn": 0,
+   "mirror": false,
+   "track": "3",
+   "block": "adorf_3_b",
+   "options": [
+    "platform-top"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 18,
+   "y": 7,
+   "turn": 0,
+   "mirror": false,
+   "track": "3",
+   "block": "adorf_3_e",
+   "options": [
+    "platform-top"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 19,
+   "y": 7,
+   "turn": 0,
+   "mirror": false,
+   "track": "3",
+   "block": "adorf_3_e",
+   "options": [
+    "platform-top"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 20,
+   "y": 7,
+   "turn": 0,
+   "mirror": false,
+   "track": "3",
+   "block": "adorf_3_e",
+   "options": [
+    "platform-top"
+   ]
+  },
+  {
+   "tile": "sensor",
+   "x": 21,
+   "y": 7,
+   "turn": 0,
+   "mirror": false,
+   "id": "3 H-B",
+   "track": "3",
+   "block": "adorf_3_e",
+   "device": "sensor_3_h_b"
+  },
+  {
+   "tile": "track-straight",
+   "x": 22,
+   "y": 7,
+   "turn": 0,
+   "mirror": false,
+   "track": "3",
+   "block": "adorf_3_e"
+  },
+  {
+   "tile": "signal-hv-main",
+   "x": 23,
+   "y": 7,
+   "turn": 0,
+   "mirror": false,
+   "id": "N3",
+   "track": "3",
+   "block": "adorf_3_e",
+   "device": "signal_n3",
+   "options": [
+    "sh-lamp"
+   ]
+  },
+  {
+   "tile": "track-straight",
+   "x": 24,
+   "y": 7,
+   "turn": 0,
+   "mirror": false,
+   "track": "3",
+   "block": "adorf_3_e"
+  },
+  {
+   "tile": "track-curve",
+   "x": 25,
+   "y": 7,
+   "turn": 1,
+   "mirror": false,
+   "track": "3",
+   "block": "throat"
+  },
+  {
+   "tile": "plate",
+   "x": 13,
+   "y": 9,
+   "turn": 0,
+   "mirror": false,
+   "text": "Adorf"
+  }
+ ],
+ "stations": [
+  {
+   "name": "Adorf",
+   "code": "Ad",
+   "tracks": [
+    {
+     "name": "1",
+     "track": "1",
+     "platform": true
+    },
+    {
+     "name": "2",
+     "track": "2",
+     "platform": true
+    },
+    {
+     "name": "3",
+     "track": "3",
+     "platform": true
+    }
+   ]
+  }
+ ],
+ "passing_loops": [],
+ "blocks": [
+  {
+   "id": "adorf_1_w",
+   "track": "1",
+   "detected_rail": "outer",
+   "sections": [
+    {
+     "device": "sensor_1_h_a",
+     "role": "stop",
+     "for": "B>A"
+    }
+   ]
+  },
+  {
+   "id": "adorf_1_b",
+   "track": "1",
+   "detected_rail": "outer",
+   "sections": [
+    {
+     "device": "sensor_1_b",
+     "role": "brake"
+    }
+   ]
+  },
+  {
+   "id": "adorf_1_e",
+   "track": "1",
+   "detected_rail": "outer",
+   "sections": [
+    {
+     "device": "sensor_1_h_b",
+     "role": "stop",
+     "for": "A>B"
+    }
+   ]
+  },
+  {
+   "id": "adorf_2_w",
+   "track": "2",
+   "detected_rail": "outer",
+   "sections": [
+    {
+     "device": "sensor_2_h_a",
+     "role": "stop",
+     "for": "B>A"
+    }
+   ]
+  },
+  {
+   "id": "adorf_2_b",
+   "track": "2",
+   "detected_rail": "outer",
+   "sections": [
+    {
+     "device": "sensor_2_b",
+     "role": "brake"
+    }
+   ]
+  },
+  {
+   "id": "adorf_2_e",
+   "track": "2",
+   "detected_rail": "outer",
+   "sections": [
+    {
+     "device": "sensor_2_h_b",
+     "role": "stop",
+     "for": "A>B"
+    }
+   ]
+  },
+  {
+   "id": "adorf_3_w",
+   "track": "3",
+   "detected_rail": "outer",
+   "sections": [
+    {
+     "device": "sensor_3_h_a",
+     "role": "stop",
+     "for": "B>A"
+    }
+   ]
+  },
+  {
+   "id": "adorf_3_b",
+   "track": "3",
+   "detected_rail": "outer",
+   "sections": [
+    {
+     "device": "sensor_3_b",
+     "role": "brake"
+    }
+   ]
+  },
+  {
+   "id": "adorf_3_e",
+   "track": "3",
+   "detected_rail": "outer",
+   "sections": [
+    {
+     "device": "sensor_3_h_b",
+     "role": "stop",
+     "for": "A>B"
+    }
+   ]
+  },
+  {
+   "id": "throat",
+   "sections": [
+    {
+     "device": "sensor_w_1_4",
+     "role": "throat"
+    }
+   ],
+   "detected_rail": "outer"
+  }
+ ],
+ "crossings": [],
+ "devices": [
+  {
+   "id": "signal_f",
+   "type": "signal",
+   "bus": "loconet",
+   "address": 125,
+   "aspects": [
+    "hp0",
+    "hp1",
+    "hp2"
+   ]
+  },
+  {
+   "id": "point_1",
+   "type": "turnout",
+   "bus": "loconet",
+   "address": 11
+  },
+  {
+   "id": "point_2",
+   "type": "turnout",
+   "bus": "loconet",
+   "address": 12
+  },
+  {
+   "id": "point_3",
+   "type": "turnout",
+   "bus": "loconet",
+   "address": 21
+  },
+  {
+   "id": "point_4",
+   "type": "turnout",
+   "bus": "loconet",
+   "address": 22,
+   "second_address": 23
+  },
+  {
+   "id": "sensor_1_h_a",
+   "type": "occupancy",
+   "bus": "loconet",
+   "address": 241
+  },
+  {
+   "id": "sensor_1_b",
+   "type": "occupancy",
+   "bus": "loconet",
+   "address": 203
+  },
+  {
+   "id": "sensor_1_h_b",
+   "type": "occupancy",
+   "bus": "loconet",
+   "address": 242
+  },
+  {
+   "id": "signal_n1",
+   "type": "signal",
+   "bus": "loconet",
+   "address": 121,
+   "aspects": [
+    "hp0",
+    "hp1",
+    "hp2"
+   ]
+  },
+  {
+   "id": "sensor_2_h_a",
+   "type": "occupancy",
+   "bus": "loconet",
+   "address": 243
+  },
+  {
+   "id": "sensor_2_b",
+   "type": "occupancy",
+   "bus": "loconet",
+   "address": 205
+  },
+  {
+   "id": "sensor_2_h_b",
+   "type": "occupancy",
+   "bus": "loconet",
+   "address": 244
+  },
+  {
+   "id": "signal_n2",
+   "type": "signal",
+   "bus": "loconet",
+   "address": 122,
+   "aspects": [
+    "hp0",
+    "hp1",
+    "hp2"
+   ]
+  },
+  {
+   "id": "sensor_3_h_a",
+   "type": "occupancy",
+   "bus": "loconet",
+   "address": 245
+  },
+  {
+   "id": "sensor_3_b",
+   "type": "occupancy",
+   "bus": "loconet",
+   "address": 204
+  },
+  {
+   "id": "sensor_3_h_b",
+   "type": "occupancy",
+   "bus": "loconet",
+   "address": 246
+  },
+  {
+   "id": "signal_n3",
+   "type": "signal",
+   "bus": "loconet",
+   "address": 123,
+   "aspects": [
+    "hp0",
+    "hp1",
+    "hp2"
+   ]
+  },
+  {
+   "id": "sensor_w_1_4",
+   "type": "occupancy",
+   "bus": "loconet",
+   "address": 247
+  }
+ ]
+}

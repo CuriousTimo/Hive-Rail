@@ -7,7 +7,7 @@
 #   M5StickC  the Node-Lite on the M5StickC (firmware/node-lite), if it is on the Wi-Fi;
 #             it finds a lite server by scouting and fetches its part of the layout
 #
-# The layout simulator (examples/layout/bench-m5.json) runs the trains and joins the mesh:
+# The layout simulator (examples/layout/bench-m5.json, modules drawn from tiles) runs the trains and joins the mesh:
 # district power and the fast clock come from the nodes, the trains go into the loco
 # register, and each block's occupancy goes to its district's node.
 #

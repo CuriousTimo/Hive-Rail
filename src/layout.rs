@@ -60,6 +60,9 @@ pub struct ModuleFile {
     pub crossings: Vec<Crossing>,
     #[serde(default)]
     pub geometry: Option<Geometry>,
+    /// A module drawn from tiles (schema version 3): its grid of tiles, for the map.
+    #[serde(skip)]
+    pub tiles: Option<crate::tile_module::TileGrid>,
 }
 
 /// A building on the module, with the lights in it (devices of type `light`).
@@ -310,7 +313,7 @@ pub fn load(path: &Path, modules_dir: &Path) -> Result<Layout, LayoutError> {
     for listed in &file.modules {
         let module_path: PathBuf = modules_dir.join(format!("{}.json", listed.module_id));
         match fs::read(&module_path) {
-            Ok(bytes) => match serde_json::from_slice::<ModuleFile>(&bytes) {
+            Ok(bytes) => match parse_module(&bytes) {
                 Ok(module) => {
                     modules.insert(listed.module_id.clone(), (module, checksum(&bytes)));
                 }
@@ -332,7 +335,24 @@ pub fn load(path: &Path, modules_dir: &Path) -> Result<Layout, LayoutError> {
 
 /// Loads one module file.
 pub fn load_module(path: &Path) -> Result<ModuleFile, LayoutError> {
-    read_json(path)
+    let bytes = fs::read(path).map_err(|source| LayoutError::Read {
+        path: path.display().to_string(),
+        source,
+    })?;
+    parse_module(&bytes).map_err(|message| LayoutError::Read {
+        path: path.display().to_string(),
+        source: std::io::Error::new(std::io::ErrorKind::InvalidData, message),
+    })
+}
+
+/// A module file of either schema: version 2 as it is, version 3 (drawn from tiles) read
+/// into the same form.
+fn parse_module(bytes: &[u8]) -> Result<ModuleFile, String> {
+    if crate::tile_module::is_v3(bytes) {
+        crate::tile_module::read(bytes)
+    } else {
+        serde_json::from_slice::<ModuleFile>(bytes).map_err(|e| e.to_string())
+    }
 }
 
 fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T, LayoutError> {
@@ -375,6 +395,9 @@ impl Report {
 }
 
 const TURNOUT_LEGS: [&str; 3] = ["trunk", "straight", "diverging"];
+/// The end profile of a terminus's back side: an end without tracks, which no module joins,
+/// named so that directions such as "B>A" (towards the buffer stops) keep their meaning.
+pub(crate) const BACK_PROFILE: &str = "back";
 const DEVICE_TYPES: [&str; 9] = [
     "turnout",
     "signal",
@@ -505,7 +528,9 @@ impl ModuleFile {
             }
         }
         for end in &self.ends {
-            if end.tracks.is_empty() {
+            // The back of a terminus (profile "back") has no tracks: only a side to name
+            // directions by.
+            if end.tracks.is_empty() && end.profile != BACK_PROFILE {
                 error(report, format!("end {} has no tracks", end.id));
             }
             let mut seen = BTreeSet::new();
@@ -1151,7 +1176,7 @@ mod tests {
     use super::*;
 
     fn example() -> Layout {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/layout");
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("backup/examples-layout-v2");
         load(&dir.join("bench-double-track.json"), &dir).unwrap()
     }
 

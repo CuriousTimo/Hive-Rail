@@ -175,7 +175,7 @@ mod tests {
 
     #[test]
     fn the_m5stickc_gets_its_two_modules_and_both_borders() {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/layout");
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("backup/examples-layout-v2");
         let layout = layout::load(&dir.join("bench-m5.json"), &dir).unwrap();
         let packages = district_packages(&layout);
         let m5 = &packages["M5StickC"];

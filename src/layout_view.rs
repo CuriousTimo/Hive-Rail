@@ -65,6 +65,50 @@ pub struct ModuleView {
     pub outline: Vec<Point>,
     /// Where the module's name is written.
     pub label: Point,
+    /// A module drawn from tiles: its tiles, drawn in place of its track.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tiles: Option<TilesView>,
+}
+
+/// A module's tiles on the map: the transform from tile units (32 per cell, y down, as the
+/// tiles are drawn) to the map's drawing (millimetres, y down), as an SVG matrix, and each
+/// tile with the keys of what it shows in the live state (`module/name`).
+#[derive(Debug, Serialize)]
+pub struct TilesView {
+    pub matrix: [f64; 6],
+    pub tiles: Vec<crate::tile_module::PlacedTile>,
+}
+
+/// The tile units of one cell, as the tiles are drawn (assets/spdrs60).
+const TILE_UNITS: f64 = 32.0;
+
+impl TilesView {
+    fn new(module_id: &str, grid: &crate::tile_module::TileGrid, placement: &Placement) -> Self {
+        // A tile point (px, py) is (px / 32 cells, py / 32 cells) on the module's grid; on
+        // the module that is x = cells across * cell width, y = depth - cells down * cell
+        // depth (the module's y runs up from its front edge); the placement turns and moves
+        // it; the map draws y downwards.
+        let (sin, cos) = placement.angle.to_radians().sin_cos();
+        let a1 = grid.size_mm[0] / f64::from(grid.cells[0]) / TILE_UNITS;
+        let b1 = grid.size_mm[1] / f64::from(grid.cells[1]) / TILE_UNITS;
+        let depth = grid.size_mm[1];
+        let [ox, oy] = placement.offset;
+        let matrix = [cos * a1, -sin * a1, sin * b1, cos * b1, ox - sin * depth, -(oy + cos * depth)];
+        let key = |name: &String| format!("{module_id}/{name}");
+        let tiles = grid
+            .tiles
+            .iter()
+            .map(|t| crate::tile_module::PlacedTile {
+                pieces: t.pieces.iter().map(key).collect(),
+                block: t.block.as_ref().map(key),
+                turnouts: t.turnouts.iter().map(key).collect(),
+                signal: t.signal.as_ref().map(key),
+                crossing: t.crossing.as_ref().map(key),
+                ..t.clone()
+            })
+            .collect();
+        TilesView { matrix, tiles }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -414,8 +458,11 @@ impl ViewBuilder {
                 outline,
                 // Below the front edge, outside the module, so it covers nothing.
                 label: placement.apply([cx, -60.0]),
+                tiles: module.tiles.as_ref().map(|grid| TilesView::new(id, grid, placement)),
             });
-            for (name, points) in &geometry.platforms {
+            // A module drawn from tiles draws its platforms and track numbers with its tiles.
+            let drawn = module.tiles.is_none();
+            for (name, points) in geometry.platforms.iter().filter(|_| drawn) {
                 if let [a, b] = points[..] {
                     view.platforms
                         .push(place(&[a, [b[0], a[1]], b, [a[0], b[1]]]));
@@ -450,7 +497,7 @@ impl ViewBuilder {
                 }
                 // Each track's number near the far end of its piece (the buffer end of a
                 // terminus platform), on the track itself.
-                for track in &station.tracks {
+                for track in station.tracks.iter().filter(|_| drawn) {
                     let piece = PieceId::new(id, &track.track);
                     let length = self.pieces.get(&piece).map_or(0.0, |(_, l)| *l);
                     let along = (length - 150.0).max(length / 2.0);
@@ -646,7 +693,7 @@ mod tests {
     use std::path::Path;
 
     fn layout() -> Layout {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/layout");
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("backup/examples-layout-v2");
         crate::layout::load(&dir.join("bench-double-track.json"), &dir).unwrap()
     }
 

@@ -17,6 +17,7 @@ mod power;
 mod profile;
 mod rocnet;
 mod simulation;
+mod tile_module;
 mod topology;
 mod turnouts;
 mod ui;

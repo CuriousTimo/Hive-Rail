@@ -734,12 +734,16 @@ impl<'a> LayoutSim<'a> {
     }
 
     /// The signal at the exit of the piece a train's head is on, in its direction: where
-    /// it stands when it waits. Its name, without the module.
+    /// it stands when it waits. Its name, without the module: the device id of a module
+    /// drawn from tiles (signal_n3) gives the signal's own name (N3).
     pub fn signal_ahead(&self, train: &Train) -> Option<String> {
         self.signals
             .iter()
             .find(|s| s.piece == train.head.piece && s.heading == train.head.heading)
-            .map(|s| s.key.rsplit('/').next().unwrap_or(&s.key).to_owned())
+            .map(|s| {
+                let id = s.key.rsplit('/').next().unwrap_or(&s.key);
+                id.strip_prefix("signal_").map_or_else(|| id.to_owned(), str::to_uppercase)
+            })
     }
 
     /// Where a train stands at its stop: the stop, with the track at a station
@@ -1899,7 +1903,7 @@ mod tests {
     use std::path::Path;
 
     fn layout() -> Layout {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/layout");
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("backup/examples-layout-v2");
         crate::layout::load(&dir.join("bench-double-track.json"), &dir).unwrap()
     }
 
@@ -2233,7 +2237,7 @@ mod tests {
     /// to let faster ones by.
     #[test]
     fn six_trains_run_an_hour_on_the_bench_with_sidings() {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/layout");
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("backup/examples-layout-v2");
         let layout = crate::layout::load(&dir.join("bench-m5.json"), &dir).unwrap();
         let topology = Topology::build(&layout);
         let mut sim = LayoutSim::new(&layout, &topology);

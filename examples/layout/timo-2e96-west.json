@@ -1,0 +1,483 @@
+{
+ "schema_version": 3,
+ "module_id": "timo-2e96-west",
+ "friendly_name": "Double track, west",
+ "owner": "Timo",
+ "scale": "H0",
+ "size_mm": [
+  900,
+  546
+ ],
+ "ends": [
+  {
+   "id": "A",
+   "side": "left",
+   "profile": "2E96",
+   "tracks": [
+    "2",
+    "1"
+   ]
+  },
+  {
+   "id": "B",
+   "side": "right",
+   "profile": "2E96",
+   "tracks": [
+    "2",
+    "1"
+   ]
+  }
+ ],
+ "tracks": [
+  {
+   "name": "1",
+   "direction": "A>B"
+  },
+  {
+   "name": "2",
+   "direction": "B>A"
+  }
+ ],
+ "tiles": [
+  {
+   "tile": "track-straight",
+   "x": 0,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "line_2"
+  },
+  {
+   "tile": "signal-hv-main-distant",
+   "x": 1,
+   "y": 5,
+   "turn": 2,
+   "mirror": false,
+   "id": "12",
+   "track": "2",
+   "block": "line_2",
+   "device": "signal_12",
+   "distant": "f"
+  },
+  {
+   "tile": "track-straight",
+   "x": 3,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "line_2"
+  },
+  {
+   "tile": "track-straight",
+   "x": 4,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "line_2"
+  },
+  {
+   "tile": "track-straight",
+   "x": 5,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "line_2"
+  },
+  {
+   "tile": "sensor",
+   "x": 6,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "id": "ASK 2",
+   "track": "2",
+   "block": "line_2",
+   "device": "sensor_ask_2"
+  },
+  {
+   "tile": "track-straight",
+   "x": 7,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "line_2"
+  },
+  {
+   "tile": "track-straight",
+   "x": 8,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "line_2"
+  },
+  {
+   "tile": "level-crossing",
+   "x": 9,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "id": "BÜ Feldweg",
+   "track": "2",
+   "block": "line_2",
+   "device": "crossing_lc"
+  },
+  {
+   "tile": "track-straight",
+   "x": 10,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "line_2"
+  },
+  {
+   "tile": "track-straight",
+   "x": 11,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "line_2"
+  },
+  {
+   "tile": "track-straight",
+   "x": 12,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "line_2"
+  },
+  {
+   "tile": "sensor",
+   "x": 13,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "id": "2 S",
+   "track": "2",
+   "block": "line_2",
+   "device": "sensor_2_s"
+  },
+  {
+   "tile": "track-straight",
+   "x": 14,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "line_2"
+  },
+  {
+   "tile": "track-straight",
+   "x": 15,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "line_2"
+  },
+  {
+   "tile": "sensor",
+   "x": 16,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "id": "ESK 2",
+   "track": "2",
+   "block": "line_2",
+   "device": "sensor_esk_2"
+  },
+  {
+   "tile": "track-straight",
+   "x": 17,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "line_2"
+  },
+  {
+   "tile": "track-straight",
+   "x": 0,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "line_1"
+  },
+  {
+   "tile": "track-straight",
+   "x": 1,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "line_1"
+  },
+  {
+   "tile": "sensor",
+   "x": 2,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "id": "ESK 1",
+   "track": "1",
+   "block": "line_1",
+   "device": "sensor_esk_1"
+  },
+  {
+   "tile": "track-straight",
+   "x": 3,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "line_1"
+  },
+  {
+   "tile": "sensor",
+   "x": 4,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "id": "1 S",
+   "track": "1",
+   "block": "line_1",
+   "device": "sensor_1_s"
+  },
+  {
+   "tile": "track-straight",
+   "x": 5,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "line_1"
+  },
+  {
+   "tile": "track-straight",
+   "x": 6,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "line_1"
+  },
+  {
+   "tile": "track-straight",
+   "x": 7,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "line_1"
+  },
+  {
+   "tile": "track-straight",
+   "x": 8,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "line_1"
+  },
+  {
+   "tile": "level-crossing",
+   "x": 9,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "id": "BÜ Feldweg",
+   "track": "1",
+   "block": "line_1",
+   "device": "crossing_lc"
+  },
+  {
+   "tile": "track-straight",
+   "x": 10,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "line_1"
+  },
+  {
+   "tile": "track-straight",
+   "x": 11,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "line_1"
+  },
+  {
+   "tile": "sensor",
+   "x": 12,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "id": "ASK 1",
+   "track": "1",
+   "block": "line_1",
+   "device": "sensor_ask_1"
+  },
+  {
+   "tile": "track-straight",
+   "x": 13,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "line_1"
+  },
+  {
+   "tile": "track-straight",
+   "x": 14,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "line_1"
+  },
+  {
+   "tile": "signal-hv-main-distant",
+   "x": 15,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "id": "11",
+   "track": "1",
+   "block": "line_1",
+   "device": "signal_11",
+   "distant": "a"
+  },
+  {
+   "tile": "track-straight",
+   "x": 17,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "line_1"
+  }
+ ],
+ "stations": [],
+ "passing_loops": [],
+ "blocks": [
+  {
+   "id": "line_1",
+   "track": "1",
+   "detected_rail": "outer",
+   "sections": [
+    {
+     "device": "sensor_1_s"
+    }
+   ]
+  },
+  {
+   "id": "line_2",
+   "track": "2",
+   "detected_rail": "outer",
+   "sections": [
+    {
+     "device": "sensor_2_s"
+    }
+   ]
+  }
+ ],
+ "crossings": [
+  {
+   "id": "lc",
+   "name": "Feldweg",
+   "device": "crossing_lc",
+   "close": [
+    "sensor_esk_1",
+    "sensor_esk_2"
+   ],
+   "open": [
+    "sensor_ask_1",
+    "sensor_ask_2"
+   ]
+  }
+ ],
+ "devices": [
+  {
+   "id": "signal_11",
+   "type": "signal",
+   "bus": "loconet",
+   "address": 127,
+   "aspects": [
+    "hp0",
+    "hp1",
+    "hp2",
+    "vr0",
+    "vr1",
+    "vr2"
+   ]
+  },
+  {
+   "id": "signal_12",
+   "type": "signal",
+   "bus": "loconet",
+   "address": 129,
+   "aspects": [
+    "hp0",
+    "hp1",
+    "hp2",
+    "vr0",
+    "vr1",
+    "vr2"
+   ]
+  },
+  {
+   "id": "sensor_1_s",
+   "type": "occupancy",
+   "bus": "loconet",
+   "address": 201
+  },
+  {
+   "id": "sensor_2_s",
+   "type": "occupancy",
+   "bus": "loconet",
+   "address": 202
+  },
+  {
+   "id": "sensor_esk_1",
+   "type": "sensor",
+   "bus": "loconet",
+   "address": 211
+  },
+  {
+   "id": "sensor_ask_1",
+   "type": "sensor",
+   "bus": "loconet",
+   "address": 212
+  },
+  {
+   "id": "sensor_esk_2",
+   "type": "sensor",
+   "bus": "loconet",
+   "address": 213
+  },
+  {
+   "id": "sensor_ask_2",
+   "type": "sensor",
+   "bus": "loconet",
+   "address": 214
+  },
+  {
+   "id": "crossing_lc",
+   "type": "crossing",
+   "bus": "loconet",
+   "address": 111,
+   "barriers": 112
+  }
+ ]
+}

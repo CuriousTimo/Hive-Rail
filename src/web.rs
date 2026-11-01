@@ -34,9 +34,11 @@ const LOG_LINES: usize = 40;
 struct Shared {
     layout_json: String,
     state: watch::Receiver<String>,
+    /// The folder of module files (schema version 3) the module editor opens and lists.
+    modules: std::path::PathBuf,
 }
 
-/// `--web-sim <layout.json> [--port 8080] [--speed 1]`.
+/// `--web-sim <layout.json> [--port 8080] [--speed 1] [--modules <dir>]`.
 pub async fn run_sim(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut args = args.into_iter();
     let path = args
@@ -46,6 +48,7 @@ pub async fn run_sim(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Syn
     let mut port = 8080_u16;
     let mut speed = 1.0_f64;
     let mut session = None;
+    let mut modules = std::path::PathBuf::from("examples/layout");
     while let Some(flag) = args.next() {
         let mut value = || {
             args.next()
@@ -55,6 +58,7 @@ pub async fn run_sim(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Syn
             "--port" => port = value()?.parse().map_err(|_| "invalid --port")?,
             "--speed" => speed = value()?.parse().map_err(|_| "invalid --speed")?,
             "--session" => session = Some(value()?),
+            "--modules" => modules = value()?.into(),
             _ => return Err(format!("unknown --web-sim option: {flag}").into()),
         }
     }
@@ -102,7 +106,11 @@ pub async fn run_sim(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Syn
     let mut published = std::collections::HashMap::new();
 
     let (publish, state) = watch::channel(String::new());
-    let shared = Arc::new(Shared { layout_json, state });
+    let shared = Arc::new(Shared {
+        layout_json,
+        state,
+        modules,
+    });
     let listener = TcpListener::bind(("0.0.0.0", port)).await?;
     println!("Hive-Rail web view of {} on http://localhost:{port} (and this computer's address on the network)", layout.file.meeting);
     let server = tokio::spawn(accept(listener, Arc::clone(&shared)));
@@ -269,6 +277,33 @@ async fn publish_event(
     publisher.event(&district, detail, text).await
 }
 
+/// The module files in the folder, as a JSON list of names: ["timo-adorf.json", ...].
+fn module_list(dir: &Path) -> String {
+    let mut names: Vec<String> = std::fs::read_dir(dir)
+        .map(|entries| {
+            entries
+                .filter_map(|entry| entry.ok()?.file_name().into_string().ok())
+                .filter(|name| name.ends_with(".json"))
+                .collect()
+        })
+        .unwrap_or_default();
+    names.sort();
+    serde_json::to_string(&names).unwrap_or_else(|_| "[]".into())
+}
+
+/// One module file by its name; only plain names (letters, digits, - and _) ending in
+/// .json, so a request cannot reach outside the folder.
+fn module_file(dir: &Path, name: &str) -> Option<String> {
+    let stem = name.strip_suffix(".json")?;
+    let plain = !stem.is_empty()
+        && stem
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    plain
+        .then(|| std::fs::read_to_string(dir.join(name)).ok())
+        .flatten()
+}
+
 async fn accept(listener: TcpListener, shared: Arc<Shared>) {
     while let Ok((stream, _)) = listener.accept().await {
         tokio::spawn(serve(stream, Arc::clone(&shared)));
@@ -372,6 +407,18 @@ async fn serve(mut stream: TcpStream, shared: Arc<Shared>) {
             respond(&mut stream, "200 OK", "application/json", &state).await
         }
         "/events" => events(&mut stream, shared.state.clone()).await,
+        // The module files, for the module editor: a list, and each file by its name.
+        "/modules" | "/modules/" => {
+            let list = module_list(&shared.modules);
+            respond(&mut stream, "200 OK", "application/json", &list).await
+        }
+        _ if path.starts_with("/modules/") => {
+            let name = &path["/modules/".len()..];
+            match module_file(&shared.modules, name) {
+                Some(text) => respond(&mut stream, "200 OK", "application/json", &text).await,
+                None => respond(&mut stream, "404 Not Found", "text/plain", "no such module").await,
+            }
+        }
         _ => respond(&mut stream, "404 Not Found", "text/plain", "not found").await,
     };
     let _ = result;

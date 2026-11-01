@@ -12,7 +12,7 @@ const LAMP = { red: "#ff4d4d", yellow: "#ffd34d", green: "#52d68a" };
 
 const svg = document.getElementById("map");
 const layer = (name) => document.getElementById(`layer-${name}`);
-const elements = { boards: new Map(), blocks: new Map(), pieces: new Map(), feeds: new Map(), turnouts: new Map(), crossings: new Map(), signals: new Map() };
+const elements = { tiles: [], boards: new Map(), blocks: new Map(), pieces: new Map(), feeds: new Map(), turnouts: new Map(), crossings: new Map(), signals: new Map() };
 let districtColour = () => "var(--muted)";
 let fit = { x: 0, y: 0, w: 1000, h: 500 };
 let view = { ...fit };
@@ -52,6 +52,19 @@ function drawLayout(layout) {
     title.textContent = `${module.name} (${module.id}${module.owner ? ", " + module.owner : ""}), district ${module.district}`;
     text(module.id, module.label, "module-label zoomable", layer("labels")).dataset.zoom = `module:${module.id}`;
   }
+  drawTiles(layout);
+  // A module drawn from tiles shows its track, signals, turnouts and crossings as tiles;
+  // the drawing from its geometry is left out.
+  const tiled = new Set(layout.modules.filter((m) => m.tiles).map((m) => m.id));
+  const ofTiled = (id) => tiled.has(String(id).slice(0, String(id).indexOf("/")));
+  layout = {
+    ...layout,
+    pieces: layout.pieces.filter((p) => !ofTiled(p.id)),
+    blocks: layout.blocks.filter((b) => !ofTiled(b.id)),
+    crossings: layout.crossings.filter((c) => !ofTiled(c.id)),
+    signals: layout.signals.filter((s) => !ofTiled(s.id)),
+    turnouts: layout.turnouts.filter((t) => !ofTiled(t.id)),
+  };
   // The district names, above the first module of each district.
   for (const district of layout.districts) {
     const first = layout.modules.find((m) => m.district === district);
@@ -321,7 +334,92 @@ function drawBoard(board, rows, clock) {
   });
 }
 
+// Modules drawn from tiles: their SpDrS60 tiles, placed where the module lies on the map.
+const TILE = SPDRS60_SIZE;
+
+function tilePlacement(t) {
+  const w = (SPDRS60_TILES[t.tile]?.cells || 1) * TILE;
+  const turn = ["", `translate(${TILE} 0) rotate(90)`, `translate(${w} ${TILE}) rotate(180)`, `translate(0 ${w}) rotate(270)`][t.turn % 4];
+  const mirror = t.mirror ? `translate(0 ${TILE}) scale(1 -1)` : "";
+  return `translate(${t.x * TILE} ${t.y * TILE}) ${turn} ${mirror}`.trim();
+}
+
+function drawTiles(layout) {
+  if (!layout.modules.some((m) => m.tiles)) return;
+  el("style", {}, layer("tiles")).textContent = SPDRS60_STYLE;
+  for (const module of layout.modules) {
+    if (!module.tiles) continue;
+    const group = el("g", { transform: `matrix(${module.tiles.matrix.join(" ")})` }, layer("tiles"));
+    for (const tile of module.tiles.tiles) {
+      // A name plate has no track to turn: it reads upright on its module.
+      const placed = tile.tile === "plate" ? { ...tile, turn: 0, mirror: false } : tile;
+      const g = el("g", { transform: tilePlacement(placed), class: (tile.options || []).join(" ") }, group);
+      g.innerHTML = SPDRS60_TILES[tile.tile].body;
+      for (const text of g.querySelectorAll("text")) {
+        if (tile.text) text.textContent = tile.text;
+        const [x, y] = [Number(text.getAttribute("x")), Number(text.getAttribute("y")) - 3];
+        if (placed.turn % 4 === 2) text.setAttribute("transform", `rotate(180 ${x} ${y})`);
+      }
+      if (tile.name) el("title", {}, g).textContent = `${tile.name} (${module.id})`;
+      elements.tiles.push({ g, tile });
+    }
+    for (const tile of module.tiles.tiles) {
+      const label = tileLabel(tile);
+      if (label) text(label.text, [label.x, -label.y], "tile-label", group, label.anchor);
+    }
+  }
+}
+
+// A tile's name in small text beside it, on the side away from what the tile draws there
+// (a signal's head, a turnout's diverging leg); in grid units (32 per cell).
+const LABEL_SIDE = {
+  "turnout-right": "N", "turnout-left": "S", "double-slip": "N", sensor: "N", "sensor-curve": "N",
+  ...Object.fromEntries(Object.keys(SPDRS60_TILES).filter((n) => n.startsWith("signal-")).map((n) => [n, "N"])),
+};
+
+function tileLabel(t) {
+  let side = LABEL_SIDE[t.tile];
+  if (!side || !(t.name ?? t.id)) return null;
+  if (t.mirror) side = { N: "S", S: "N" }[side] || side;
+  for (let k = 0; k < (t.turn || 0) % 4; k++) side = { W: "N", N: "E", E: "S", S: "W" }[side];
+  const cells = SPDRS60_TILES[t.tile]?.cells || 1;
+  const [w, h] = (t.turn || 0) % 2 === 0 ? [cells, 1] : [1, cells];
+  const [cx, cy] = [(t.x + w / 2) * 32, (t.y + h / 2) * 32];
+  const [hw, hh] = [(w * 32) / 2, (h * 32) / 2];
+  return {
+    text: t.name ?? t.id,
+    ...{ N: { x: cx, y: cy - hh + 6.5, anchor: "middle" }, S: { x: cx, y: cy + hh - 1.5, anchor: "middle" },
+      W: { x: cx - hw + 1.5, y: cy + 2, anchor: "start" }, E: { x: cx + hw - 1.5, y: cy + 2, anchor: "end" } }[side],
+  };
+}
+
+// A signal's aspect on its tile: the sim's red, yellow and green as the Ril 301 aspects
+// the tile shows (a shunting signal: Sh 0 or Sh 1).
+const ASPECT_CLASSES = { red: ["hp0"], yellow: ["hp1", "vr0", "ks2"], green: ["hp1", "vr1", "ks1"] };
+
+function updateTiles(state) {
+  const occupied = new Set(state.occupied);
+  const closed = new Set(state.crossings_closed);
+  for (const { g, tile } of elements.tiles) {
+    const classes = [...(tile.options || [])];
+    if ((tile.pieces || []).some((p) => state.reserved[p])) classes.push("route");
+    if (tile.block && occupied.has(tile.block)) classes.push("occupied");
+    if ((tile.turnouts || []).length) {
+      classes.push(tile.turnouts.every((id) => state.turnouts[id] !== false) ? "straight" : "diverging");
+    }
+    if (tile.signal) {
+      const aspect = state.signals[tile.signal] || "red";
+      if (tile.tile === "signal-sh") classes.push(aspect === "red" ? "sh0" : "sh1");
+      else classes.push(...ASPECT_CLASSES[aspect]);
+    }
+    if (tile.crossing && closed.has(tile.crossing)) classes.push("closed");
+    const value = classes.join(" ");
+    if (g.getAttribute("class") !== value) g.setAttribute("class", value);
+  }
+}
+
 function update(state) {
+  updateTiles(state);
   document.getElementById("time").textContent = formatTime(state.time_s);
   // The fast clock: only when the simulator runs on the mesh.
   const clock = state.clock;

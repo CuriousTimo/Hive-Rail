@@ -1,0 +1,437 @@
+{
+ "schema_version": 3,
+ "module_id": "m5-2e96-out",
+ "friendly_name": "M5 border out (to Bdorf side)",
+ "owner": "M5StickC test district",
+ "scale": "H0",
+ "size_mm": [
+  900,
+  546
+ ],
+ "ends": [
+  {
+   "id": "A",
+   "side": "left",
+   "profile": "2E96",
+   "tracks": [
+    "2",
+    "1"
+   ]
+  },
+  {
+   "id": "B",
+   "side": "right",
+   "profile": "2E96",
+   "tracks": [
+    "2",
+    "1"
+   ]
+  }
+ ],
+ "tracks": [
+  {
+   "name": "1",
+   "direction": "A>B"
+  },
+  {
+   "name": "2",
+   "direction": "B>A"
+  }
+ ],
+ "tiles": [
+  {
+   "tile": "track-straight",
+   "x": 0,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "t2"
+  },
+  {
+   "tile": "track-straight",
+   "x": 1,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "t2"
+  },
+  {
+   "tile": "track-straight",
+   "x": 2,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "t2"
+  },
+  {
+   "tile": "track-straight",
+   "x": 3,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "t2"
+  },
+  {
+   "tile": "sensor",
+   "x": 4,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "id": "2 T",
+   "track": "2",
+   "block": "t2",
+   "device": "sensor_2_t"
+  },
+  {
+   "tile": "track-straight",
+   "x": 5,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "t2"
+  },
+  {
+   "tile": "track-straight",
+   "x": 6,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "t2"
+  },
+  {
+   "tile": "track-straight",
+   "x": 7,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "t2"
+  },
+  {
+   "tile": "track-straight",
+   "x": 8,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "t2"
+  },
+  {
+   "tile": "district-border",
+   "x": 9,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "t2",
+   "device": "relay_t2"
+  },
+  {
+   "tile": "track-straight",
+   "x": 10,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "t2"
+  },
+  {
+   "tile": "track-straight",
+   "x": 11,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "t2"
+  },
+  {
+   "tile": "track-straight",
+   "x": 12,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "t2"
+  },
+  {
+   "tile": "track-straight",
+   "x": 13,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "t2"
+  },
+  {
+   "tile": "track-straight",
+   "x": 14,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "t2"
+  },
+  {
+   "tile": "track-straight",
+   "x": 15,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "t2"
+  },
+  {
+   "tile": "sensor",
+   "x": 16,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "id": "IR 2",
+   "track": "2",
+   "block": "t2",
+   "device": "sensor_ir_2"
+  },
+  {
+   "tile": "track-straight",
+   "x": 17,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "t2"
+  },
+  {
+   "tile": "track-straight",
+   "x": 0,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "edge_1"
+  },
+  {
+   "tile": "track-straight",
+   "x": 1,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "edge_1"
+  },
+  {
+   "tile": "track-straight",
+   "x": 2,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "edge_1"
+  },
+  {
+   "tile": "track-straight",
+   "x": 3,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "edge_1"
+  },
+  {
+   "tile": "sensor",
+   "x": 4,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "id": "1 R",
+   "track": "1",
+   "block": "edge_1",
+   "device": "sensor_1_r"
+  },
+  {
+   "tile": "track-straight",
+   "x": 5,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "edge_1"
+  },
+  {
+   "tile": "track-straight",
+   "x": 6,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "edge_1"
+  },
+  {
+   "tile": "track-straight",
+   "x": 7,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "edge_1"
+  },
+  {
+   "tile": "track-straight",
+   "x": 8,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "edge_1"
+  },
+  {
+   "tile": "track-straight",
+   "x": 9,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "edge_1"
+  },
+  {
+   "tile": "track-straight",
+   "x": 10,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "edge_1"
+  },
+  {
+   "tile": "track-straight",
+   "x": 11,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "edge_1"
+  },
+  {
+   "tile": "track-straight",
+   "x": 12,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "edge_1"
+  },
+  {
+   "tile": "track-straight",
+   "x": 13,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "edge_1"
+  },
+  {
+   "tile": "track-straight",
+   "x": 14,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "edge_1"
+  },
+  {
+   "tile": "signal-hv-main-distant",
+   "x": 15,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "id": "15",
+   "track": "1",
+   "block": "edge_1",
+   "device": "signal_15",
+   "distant": "17"
+  },
+  {
+   "tile": "track-straight",
+   "x": 17,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "edge_1"
+  }
+ ],
+ "stations": [],
+ "passing_loops": [],
+ "blocks": [
+  {
+   "id": "edge_1",
+   "track": "1",
+   "detected_rail": "outer",
+   "sections": [
+    {
+     "device": "sensor_1_r",
+     "role": "edge",
+     "for": "A>B"
+    }
+   ]
+  },
+  {
+   "id": "t2",
+   "track": "2",
+   "detected_rail": "both",
+   "sections": [
+    {
+     "device": "sensor_2_t",
+     "role": "transfer",
+     "for": "B>A"
+    }
+   ]
+  }
+ ],
+ "crossings": [],
+ "devices": [
+  {
+   "id": "signal_15",
+   "type": "signal",
+   "bus": "loconet",
+   "address": 133,
+   "aspects": [
+    "hp0",
+    "hp1",
+    "hp2",
+    "vr0",
+    "vr1",
+    "vr2"
+   ]
+  },
+  {
+   "id": "sensor_1_r",
+   "type": "occupancy",
+   "bus": "loconet",
+   "address": 206
+  },
+  {
+   "id": "sensor_2_t",
+   "type": "occupancy",
+   "bus": "loconet",
+   "address": 207
+  },
+  {
+   "id": "sensor_ir_2",
+   "type": "sensor",
+   "bus": "loconet",
+   "address": 18
+  },
+  {
+   "id": "relay_t2",
+   "type": "relay",
+   "bus": "loconet",
+   "address": 28
+  }
+ ]
+}

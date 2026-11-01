@@ -1,0 +1,964 @@
+{
+ "schema_version": 3,
+ "module_id": "timo-cdorf-west",
+ "friendly_name": "Cdorf west: passing station, sidings run on into Cdorf east",
+ "owner": "Timo",
+ "scale": "H0",
+ "size_mm": [
+  1200,
+  546
+ ],
+ "ends": [
+  {
+   "id": "A",
+   "side": "left",
+   "profile": "2E96",
+   "tracks": [
+    "2a",
+    "1a"
+   ]
+  },
+  {
+   "id": "B",
+   "side": "right",
+   "profile": "CDORF4",
+   "tracks": [
+    "4",
+    "2",
+    "1",
+    "3"
+   ]
+  }
+ ],
+ "tracks": [
+  {
+   "name": "1a",
+   "direction": "A>B"
+  },
+  {
+   "name": "1",
+   "direction": "A>B"
+  },
+  {
+   "name": "3",
+   "direction": "A>B"
+  },
+  {
+   "name": "2",
+   "direction": "B>A"
+  },
+  {
+   "name": "4",
+   "direction": "B>A"
+  },
+  {
+   "name": "2a",
+   "direction": "B>A"
+  }
+ ],
+ "tiles": [
+  {
+   "tile": "track-curve",
+   "x": 6,
+   "y": 4,
+   "turn": 3,
+   "mirror": false,
+   "track": "4",
+   "block": "cw_4"
+  },
+  {
+   "tile": "track-straight",
+   "x": 7,
+   "y": 4,
+   "turn": 0,
+   "mirror": false,
+   "track": "4",
+   "block": "cw_4"
+  },
+  {
+   "tile": "signal-hv-main",
+   "x": 8,
+   "y": 4,
+   "turn": 2,
+   "mirror": false,
+   "id": "P1",
+   "track": "4",
+   "block": "cw_4",
+   "device": "signal_p1"
+  },
+  {
+   "tile": "track-straight",
+   "x": 9,
+   "y": 4,
+   "turn": 0,
+   "mirror": false,
+   "track": "4",
+   "block": "cw_4"
+  },
+  {
+   "tile": "track-straight",
+   "x": 10,
+   "y": 4,
+   "turn": 0,
+   "mirror": false,
+   "track": "4",
+   "block": "cw_4"
+  },
+  {
+   "tile": "track-straight",
+   "x": 11,
+   "y": 4,
+   "turn": 0,
+   "mirror": false,
+   "track": "4",
+   "block": "cw_4"
+  },
+  {
+   "tile": "track-straight",
+   "x": 12,
+   "y": 4,
+   "turn": 0,
+   "mirror": false,
+   "track": "4",
+   "block": "cw_4"
+  },
+  {
+   "tile": "track-straight",
+   "x": 13,
+   "y": 4,
+   "turn": 0,
+   "mirror": false,
+   "track": "4",
+   "block": "cw_4"
+  },
+  {
+   "tile": "track-straight",
+   "x": 14,
+   "y": 4,
+   "turn": 0,
+   "mirror": false,
+   "track": "4",
+   "block": "cw_4"
+  },
+  {
+   "tile": "sensor",
+   "x": 15,
+   "y": 4,
+   "turn": 0,
+   "mirror": false,
+   "id": "1 H-A",
+   "track": "4",
+   "block": "cw_4",
+   "device": "sensor_1_h_a"
+  },
+  {
+   "tile": "track-straight",
+   "x": 16,
+   "y": 4,
+   "turn": 0,
+   "mirror": false,
+   "track": "4",
+   "block": "cw_4"
+  },
+  {
+   "tile": "track-straight",
+   "x": 17,
+   "y": 4,
+   "turn": 0,
+   "mirror": false,
+   "track": "4",
+   "block": "cw_4"
+  },
+  {
+   "tile": "track-straight",
+   "x": 18,
+   "y": 4,
+   "turn": 0,
+   "mirror": false,
+   "track": "4",
+   "block": "cw_4"
+  },
+  {
+   "tile": "track-straight",
+   "x": 19,
+   "y": 4,
+   "turn": 0,
+   "mirror": false,
+   "track": "4",
+   "block": "cw_4"
+  },
+  {
+   "tile": "track-straight",
+   "x": 20,
+   "y": 4,
+   "turn": 0,
+   "mirror": false,
+   "track": "4",
+   "block": "cw_4"
+  },
+  {
+   "tile": "track-straight",
+   "x": 21,
+   "y": 4,
+   "turn": 0,
+   "mirror": false,
+   "track": "4",
+   "block": "cw_4"
+  },
+  {
+   "tile": "track-straight",
+   "x": 22,
+   "y": 4,
+   "turn": 0,
+   "mirror": false,
+   "track": "4",
+   "block": "cw_4"
+  },
+  {
+   "tile": "track-straight",
+   "x": 23,
+   "y": 4,
+   "turn": 0,
+   "mirror": false,
+   "track": "4",
+   "block": "cw_4"
+  },
+  {
+   "tile": "track-straight",
+   "x": 0,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2a"
+  },
+  {
+   "tile": "track-straight",
+   "x": 1,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2a"
+  },
+  {
+   "tile": "track-straight",
+   "x": 2,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2a"
+  },
+  {
+   "tile": "track-straight",
+   "x": 3,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2a"
+  },
+  {
+   "tile": "track-straight",
+   "x": 4,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2a"
+  },
+  {
+   "tile": "track-straight",
+   "x": 5,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2a"
+  },
+  {
+   "tile": "turnout-left",
+   "x": 6,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "id": "2",
+   "device": "point_2"
+  },
+  {
+   "tile": "track-straight",
+   "x": 7,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "cw_2"
+  },
+  {
+   "tile": "signal-hv-main",
+   "x": 8,
+   "y": 5,
+   "turn": 2,
+   "mirror": false,
+   "id": "P2",
+   "track": "2",
+   "block": "cw_2",
+   "device": "signal_p2"
+  },
+  {
+   "tile": "track-straight",
+   "x": 9,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "cw_2"
+  },
+  {
+   "tile": "track-straight",
+   "x": 10,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "cw_2"
+  },
+  {
+   "tile": "track-straight",
+   "x": 11,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "cw_2"
+  },
+  {
+   "tile": "track-straight",
+   "x": 12,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "cw_2"
+  },
+  {
+   "tile": "track-straight",
+   "x": 13,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "cw_2"
+  },
+  {
+   "tile": "track-straight",
+   "x": 14,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "cw_2"
+  },
+  {
+   "tile": "sensor",
+   "x": 15,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "id": "2 H-A",
+   "track": "2",
+   "block": "cw_2",
+   "device": "sensor_2_h_a"
+  },
+  {
+   "tile": "track-straight",
+   "x": 16,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "cw_2"
+  },
+  {
+   "tile": "track-straight",
+   "x": 17,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "cw_2"
+  },
+  {
+   "tile": "track-straight",
+   "x": 18,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "cw_2"
+  },
+  {
+   "tile": "track-straight",
+   "x": 19,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "cw_2"
+  },
+  {
+   "tile": "track-straight",
+   "x": 20,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "cw_2"
+  },
+  {
+   "tile": "track-straight",
+   "x": 21,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "cw_2"
+  },
+  {
+   "tile": "track-straight",
+   "x": 22,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "cw_2"
+  },
+  {
+   "tile": "track-straight",
+   "x": 23,
+   "y": 5,
+   "turn": 0,
+   "mirror": false,
+   "track": "2",
+   "block": "cw_2"
+  },
+  {
+   "tile": "track-straight",
+   "x": 0,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1a"
+  },
+  {
+   "tile": "track-straight",
+   "x": 1,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1a"
+  },
+  {
+   "tile": "signal-hv-main-distant",
+   "x": 2,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "id": "A",
+   "track": "1a",
+   "device": "signal_a",
+   "distant": "n3/n4"
+  },
+  {
+   "tile": "track-straight",
+   "x": 4,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1a"
+  },
+  {
+   "tile": "track-straight",
+   "x": 5,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1a"
+  },
+  {
+   "tile": "turnout-right",
+   "x": 6,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "id": "1",
+   "device": "point_1"
+  },
+  {
+   "tile": "track-straight",
+   "x": 7,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "cw_1"
+  },
+  {
+   "tile": "track-straight",
+   "x": 8,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "cw_1"
+  },
+  {
+   "tile": "track-straight",
+   "x": 9,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "cw_1"
+  },
+  {
+   "tile": "track-straight",
+   "x": 10,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "cw_1"
+  },
+  {
+   "tile": "track-straight",
+   "x": 11,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "cw_1"
+  },
+  {
+   "tile": "track-straight",
+   "x": 12,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "cw_1"
+  },
+  {
+   "tile": "track-straight",
+   "x": 13,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "cw_1"
+  },
+  {
+   "tile": "track-straight",
+   "x": 14,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "cw_1"
+  },
+  {
+   "tile": "sensor",
+   "x": 15,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "id": "3 B",
+   "track": "1",
+   "block": "cw_1",
+   "device": "sensor_3_b"
+  },
+  {
+   "tile": "track-straight",
+   "x": 16,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "cw_1"
+  },
+  {
+   "tile": "track-straight",
+   "x": 17,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "cw_1"
+  },
+  {
+   "tile": "track-straight",
+   "x": 18,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "cw_1"
+  },
+  {
+   "tile": "track-straight",
+   "x": 19,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "cw_1"
+  },
+  {
+   "tile": "track-straight",
+   "x": 20,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "cw_1"
+  },
+  {
+   "tile": "track-straight",
+   "x": 21,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "cw_1"
+  },
+  {
+   "tile": "track-straight",
+   "x": 22,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "cw_1"
+  },
+  {
+   "tile": "track-straight",
+   "x": 23,
+   "y": 6,
+   "turn": 0,
+   "mirror": false,
+   "track": "1",
+   "block": "cw_1"
+  },
+  {
+   "tile": "track-curve",
+   "x": 6,
+   "y": 7,
+   "turn": 1,
+   "mirror": true,
+   "track": "3",
+   "block": "cw_3"
+  },
+  {
+   "tile": "track-straight",
+   "x": 7,
+   "y": 7,
+   "turn": 0,
+   "mirror": false,
+   "track": "3",
+   "block": "cw_3"
+  },
+  {
+   "tile": "track-straight",
+   "x": 8,
+   "y": 7,
+   "turn": 0,
+   "mirror": false,
+   "track": "3",
+   "block": "cw_3"
+  },
+  {
+   "tile": "track-straight",
+   "x": 9,
+   "y": 7,
+   "turn": 0,
+   "mirror": false,
+   "track": "3",
+   "block": "cw_3"
+  },
+  {
+   "tile": "track-straight",
+   "x": 10,
+   "y": 7,
+   "turn": 0,
+   "mirror": false,
+   "track": "3",
+   "block": "cw_3"
+  },
+  {
+   "tile": "track-straight",
+   "x": 11,
+   "y": 7,
+   "turn": 0,
+   "mirror": false,
+   "track": "3",
+   "block": "cw_3"
+  },
+  {
+   "tile": "track-straight",
+   "x": 12,
+   "y": 7,
+   "turn": 0,
+   "mirror": false,
+   "track": "3",
+   "block": "cw_3"
+  },
+  {
+   "tile": "track-straight",
+   "x": 13,
+   "y": 7,
+   "turn": 0,
+   "mirror": false,
+   "track": "3",
+   "block": "cw_3"
+  },
+  {
+   "tile": "track-straight",
+   "x": 14,
+   "y": 7,
+   "turn": 0,
+   "mirror": false,
+   "track": "3",
+   "block": "cw_3"
+  },
+  {
+   "tile": "sensor",
+   "x": 15,
+   "y": 7,
+   "turn": 0,
+   "mirror": false,
+   "id": "4 B",
+   "track": "3",
+   "block": "cw_3",
+   "device": "sensor_4_b"
+  },
+  {
+   "tile": "track-straight",
+   "x": 16,
+   "y": 7,
+   "turn": 0,
+   "mirror": false,
+   "track": "3",
+   "block": "cw_3"
+  },
+  {
+   "tile": "track-straight",
+   "x": 17,
+   "y": 7,
+   "turn": 0,
+   "mirror": false,
+   "track": "3",
+   "block": "cw_3"
+  },
+  {
+   "tile": "track-straight",
+   "x": 18,
+   "y": 7,
+   "turn": 0,
+   "mirror": false,
+   "track": "3",
+   "block": "cw_3"
+  },
+  {
+   "tile": "track-straight",
+   "x": 19,
+   "y": 7,
+   "turn": 0,
+   "mirror": false,
+   "track": "3",
+   "block": "cw_3"
+  },
+  {
+   "tile": "track-straight",
+   "x": 20,
+   "y": 7,
+   "turn": 0,
+   "mirror": false,
+   "track": "3",
+   "block": "cw_3"
+  },
+  {
+   "tile": "track-straight",
+   "x": 21,
+   "y": 7,
+   "turn": 0,
+   "mirror": false,
+   "track": "3",
+   "block": "cw_3"
+  },
+  {
+   "tile": "track-straight",
+   "x": 22,
+   "y": 7,
+   "turn": 0,
+   "mirror": false,
+   "track": "3",
+   "block": "cw_3"
+  },
+  {
+   "tile": "track-straight",
+   "x": 23,
+   "y": 7,
+   "turn": 0,
+   "mirror": false,
+   "track": "3",
+   "block": "cw_3"
+  }
+ ],
+ "stations": [],
+ "passing_loops": [
+  {
+   "name": "Cdorf",
+   "code": "Cd",
+   "tracks": [
+    {
+     "name": "1",
+     "track": "4",
+     "passing": true
+    },
+    {
+     "name": "2",
+     "track": "2"
+    },
+    {
+     "name": "3",
+     "track": "1"
+    },
+    {
+     "name": "4",
+     "track": "3",
+     "passing": true
+    }
+   ]
+  }
+ ],
+ "blocks": [
+  {
+   "id": "cw_1",
+   "track": "1",
+   "detected_rail": "outer",
+   "sections": [
+    {
+     "device": "sensor_3_b",
+     "role": "brake",
+     "for": "A>B"
+    }
+   ]
+  },
+  {
+   "id": "cw_3",
+   "track": "3",
+   "detected_rail": "outer",
+   "sections": [
+    {
+     "device": "sensor_4_b",
+     "role": "brake",
+     "for": "A>B"
+    }
+   ]
+  },
+  {
+   "id": "cw_2",
+   "track": "2",
+   "detected_rail": "outer",
+   "sections": [
+    {
+     "device": "sensor_2_h_a",
+     "role": "stop",
+     "for": "B>A"
+    }
+   ]
+  },
+  {
+   "id": "cw_4",
+   "track": "4",
+   "detected_rail": "outer",
+   "sections": [
+    {
+     "device": "sensor_1_h_a",
+     "role": "stop",
+     "for": "B>A"
+    }
+   ]
+  }
+ ],
+ "crossings": [],
+ "devices": [
+  {
+   "id": "signal_a",
+   "type": "signal",
+   "bus": "loconet",
+   "address": 133,
+   "aspects": [
+    "hp0",
+    "hp1",
+    "hp2",
+    "vr0",
+    "vr1",
+    "vr2"
+   ]
+  },
+  {
+   "id": "point_1",
+   "type": "turnout",
+   "bus": "loconet",
+   "address": 31
+  },
+  {
+   "id": "point_2",
+   "type": "turnout",
+   "bus": "loconet",
+   "address": 32
+  },
+  {
+   "id": "signal_p2",
+   "type": "signal",
+   "bus": "loconet",
+   "address": 137,
+   "aspects": [
+    "hp0",
+    "hp1",
+    "hp2"
+   ]
+  },
+  {
+   "id": "signal_p1",
+   "type": "signal",
+   "bus": "loconet",
+   "address": 138,
+   "aspects": [
+    "hp0",
+    "hp1",
+    "hp2"
+   ]
+  },
+  {
+   "id": "sensor_3_b",
+   "type": "occupancy",
+   "bus": "loconet",
+   "address": 221
+  },
+  {
+   "id": "sensor_4_b",
+   "type": "occupancy",
+   "bus": "loconet",
+   "address": 222
+  },
+  {
+   "id": "sensor_2_h_a",
+   "type": "occupancy",
+   "bus": "loconet",
+   "address": 223
+  },
+  {
+   "id": "sensor_1_h_a",
+   "type": "occupancy",
+   "bus": "loconet",
+   "address": 224
+  }
+ ]
+}

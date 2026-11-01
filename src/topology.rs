@@ -424,7 +424,7 @@ mod tests {
     use std::path::Path;
 
     fn example() -> Topology {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/layout");
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("backup/examples-layout-v2");
         let layout = crate::layout::load(&dir.join("bench-double-track.json"), &dir).unwrap();
         assert!(layout.check().errors.is_empty());
         Topology::build(&layout)
