@@ -290,6 +290,14 @@ impl LocoNetMessage {
         Self::with_checksum(&[OPC_INPUT_REP, ((wire >> 1) & 0x7F) as u8, in2])
     }
 
+    /// An `OPC_INPUT_REP`'s sensor (1 to 4096) and whether it is high (occupied).
+    pub fn input_report_of(&self) -> Option<(u16, bool)> {
+        let b = &self.bytes;
+        (b.len() == 4 && b[0] == OPC_INPUT_REP).then(|| {
+            ((eleven_bit_address(b[1], b[2]) << 1 | u16::from((b[2] >> 5) & 1)) + 1, b[2] & 0x10 != 0)
+        })
+    }
+
     fn with_checksum(body: &[u8]) -> Self {
         let checksum = body.iter().fold(0xFF, |sum, byte| sum ^ byte);
         let mut bytes = body.to_vec();

@@ -765,8 +765,10 @@ impl LocoPublisher {
         Ok(())
     }
 
-    /// A simulated occupancy detector in a district changed: its node reports it on its
-    /// LocoNet, as it would a real one.
+    /// A simulated occupancy detector in a district changed. This stands in for the
+    /// detector's wire to its node (Hive-Rail's simulated hardware, not the mesh protocol):
+    /// `{"address": 204, "occupied": true}` on `sim/<district>/sensor`. The node treats it
+    /// as its own detector: it reports it on its LocoNet and as a RocNet sensor report.
     pub async fn sim_sensor(
         &self,
         district: &str,

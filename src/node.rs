@@ -321,10 +321,17 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
     let observer_subscriber = session
         .declare_subscriber(format!("hive/{}/observer/hello", options.session))
         .await?;
-    // The simulator's occupancy detectors in this district, as real ones would report on
-    // its LocoNet: {"address": 204, "occupied": true}.
+    // The layout simulator standing in for this district's occupancy detectors: their wire
+    // to the node, {"address": 204, "occupied": true} (simulated hardware, not the mesh
+    // protocol). The node treats them as its own detectors.
     let sim_sensor_subscriber = session
         .declare_subscriber(format!("hive/{}/sim/{}/sensor", options.session, options.id))
+        .await?;
+    // The node's own sensors on the mesh, as a RocNet node reports them (group 8, the node
+    // as the sender, its port), for Rocrail and the other nodes: rn/node/{id}/sr (RocNet on
+    // the Mesh §5).
+    let sensor_publisher = session
+        .declare_publisher(format!("hive/{}/rn/node/{}/sr", options.session, options.id))
         .await?;
     // With --layout: each district's part of the layout, for lite nodes that ask.
     let layout_packages: BTreeMap<String, String> = match &options.layout {
@@ -867,6 +874,10 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                         let request = ThrottleRequest { address, node: options.id.clone() };
                         throttle_request_publisher.put(serde_json::to_vec(&request)?).attachment(options.id.clone()).await?;
                     }
+                    // A detector on the node's bus: its own sensor, reported on the mesh.
+                    if let (LocoNetSide::Bus, Some((address, occupied))) = (side, message.input_report_of()) {
+                        own_sensor(&loconet_ports, &mut turnouts, &options, &sensor_publisher, rocnet_id, address, occupied, false, &mut log).await?;
+                    }
                     if let Some(request) = message.power_request_kind() {
                         let origin = format!("{} LocoNet", options.id);
                         handle_power_request(request, RequestSource::LocoNet, &origin, &mut power, &outputs, &mut log).await?;
@@ -974,24 +985,11 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
             sample = sim_sensor_subscriber.recv_async() => {
                 let sample = sample?;
                 #[derive(Deserialize)]
-                struct SimSensor { address: u16, occupied: bool }
-                let Ok(sensor) = serde_json::from_slice::<SimSensor>(sample.payload().to_bytes().as_ref()) else {
+                struct Detector { address: u16, occupied: bool }
+                let Ok(detector) = serde_json::from_slice::<Detector>(sample.payload().to_bytes().as_ref()) else {
                     continue;
                 };
-                // On both LocoNet sides, as a detector on the bus would report it; and the
-                // panel turnouts that show it.
-                let mut messages = vec![LocoNetMessage::input_report(sensor.address, sensor.occupied)];
-                for (turnout, _) in options.show_sensors.iter().filter(|(_, s)| *s == sensor.address) {
-                    let free = !sensor.occupied;
-                    messages.push(LocoNetMessage::switch_request(*turnout, free, true));
-                    messages.push(LocoNetMessage::switch_request(*turnout, free, false));
-                }
-                for message in messages {
-                    // Remembered as the command station would, for a panel that asks.
-                    turnouts.receive(&message, false, false);
-                    send_to_side(&loconet_ports, LocoNetSide::Clients, vec![message.clone()], &mut log);
-                    send_to_side(&loconet_ports, LocoNetSide::Bus, vec![message], &mut log);
-                }
+                own_sensor(&loconet_ports, &mut turnouts, &options, &sensor_publisher, rocnet_id, detector.address, detector.occupied, true, &mut log).await?;
             }
             sample = observer_subscriber.recv_async() => {
                 let sample = sample?;
@@ -1502,6 +1500,48 @@ async fn publish_locos(
             .put(serde_json::to_vec(&locos)?)
             .attachment(node_id.to_owned())
             .await?;
+    }
+    Ok(())
+}
+
+/// One of the node's own sensors changed: from its detector on the bus, or from the
+/// layout simulator standing in for it. On the node's LocoNet (unless it came from there),
+/// on the panel turnouts that show it (--show-sensors), and on the mesh as a RocNet sensor
+/// report with the node as the sender; a RocNet port is 0 to 255, so a higher address is
+/// not reported there.
+#[allow(clippy::too_many_arguments)]
+async fn own_sensor(
+    ports: &LocoNetPorts,
+    turnouts: &mut Turnouts,
+    options: &NodeArgs,
+    publisher: &zenoh::pubsub::Publisher<'_>,
+    rocnet_id: u16,
+    address: u16,
+    occupied: bool,
+    to_bus: bool,
+    log: &mut CliLog,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let mut messages = Vec::new();
+    if to_bus {
+        messages.push(LocoNetMessage::input_report(address, occupied));
+    }
+    for (turnout, _) in options.show_sensors.iter().filter(|(_, s)| *s == address) {
+        messages.push(LocoNetMessage::switch_request(*turnout, !occupied, true));
+        messages.push(LocoNetMessage::switch_request(*turnout, !occupied, false));
+    }
+    for message in messages {
+        // Remembered as the command station would, for a panel that asks.
+        turnouts.receive(&message, false, false);
+        send_to_side(ports, LocoNetSide::Clients, vec![message.clone()], log);
+        send_to_side(ports, LocoNetSide::Bus, vec![message], log);
+    }
+    match u8::try_from(address) {
+        Ok(port) => {
+            let frame = RocNetFrame::sensor_report(rocnet_id, port, occupied);
+            log.line(format!("[rn  ] -> {}  {}", frame.to_hex(), frame.describe()));
+            publisher.put(frame.as_bytes().to_vec()).await?;
+        }
+        Err(_) => log.line(format!("[rn  ] sensor {address} not reported on RocNet: a port is 0 to 255")),
     }
     Ok(())
 }

@@ -11,6 +11,8 @@ const MOBILE_VELOCITY_ACTION: u8 = 2;
 const STATIONARY_GROUP: u8 = 3;
 const STATIONARY_IDENTIFY_ACTION: u8 = 8;
 const CLOCK_GROUP: u8 = 7;
+const SENSOR_GROUP: u8 = 8;
+const SENSOR_REPORT_ACTION: u8 = 1;
 const CLOCK_SET_ACTION: u8 = 1;
 const CLOCK_SYNC_ACTION: u8 = 2;
 
@@ -181,6 +183,29 @@ impl RocNetFrame {
         )
     }
 
+    /// Group 8 sensor report (an event): a sensor of the sending node is on (occupied) or
+    /// off. As Rocrail's RocNet node sends it and Rocrail reads it (rocnetnode.c,
+    /// rocnet.c): bytes 0 and 1 unused, byte 2 the state, byte 3 the port; the sender is
+    /// the feedback's bus (the node), so a port is one of the node's own, 0 to 255.
+    pub fn sensor_report(sender_id: u16, port: u8, occupied: bool) -> Self {
+        Self::new(
+            0,
+            0,
+            sender_id,
+            SENSOR_GROUP,
+            FrameType::Event,
+            SENSOR_REPORT_ACTION,
+            &[0, 0, u8::from(occupied), port],
+        )
+    }
+
+    /// A sensor report's port and state.
+    pub fn sensor_report_of(&self) -> Option<(u8, bool)> {
+        let data = self.data();
+        (self.group() == SENSOR_GROUP && self.action() == SENSOR_REPORT_ACTION && data.len() >= 4)
+            .then(|| (data[3], data[2] != 0))
+    }
+
     /// Group 7 clock: year (2 bytes), month, day, hour, minute, temperature, divider,
     /// brightness. Hive-Rail keeps no date, temperature or brightness, so those are 0.
     pub fn clock(sender_id: u16, update: ClockUpdate) -> Self {
@@ -298,6 +323,14 @@ impl RocNetFrame {
                 ),
                 None => format!("clock action {} {kind}", self.action()),
             },
+            (SENSOR_GROUP, SENSOR_REPORT_ACTION, _) => match self.sensor_report_of() {
+                Some((port, occupied)) => format!(
+                    "sensor {port} {} (node {})",
+                    if occupied { "occupied" } else { "free" },
+                    self.sender_id()
+                ),
+                None => format!("sensor report {kind} (too short)"),
+            },
             (STATIONARY_GROUP, STATIONARY_IDENTIFY_ACTION, _) => {
                 format!("stationary identify {kind}")
             }
@@ -357,6 +390,18 @@ fn describe_status(status: u8) -> String {
 #[cfg(test)]
 mod tests {
     use super::{ClockAction, ClockUpdate, FrameType, RocNetError, RocNetFrame};
+
+    /// A sensor report as Rocrail's RocNet node sends it: bytes 0 and 1 unused, the state
+    /// in byte 2, the port in byte 3, the node as the sender.
+    #[test]
+    fn sensor_reports_round_trip() {
+        let frame = RocNetFrame::sensor_report(101, 203, true);
+        assert_eq!(frame.to_hex(), "00 00 00 00 65 08 21 04 00 00 01 CB");
+        assert_eq!(frame.sensor_report_of(), Some((203, true)));
+        assert_eq!(RocNetFrame::sensor_report(102, 17, false).sensor_report_of(), Some((17, false)));
+        assert_eq!(frame.describe(), "sensor 203 occupied (node 101)");
+        assert_eq!(RocNetFrame::from_bytes(frame.as_bytes()).unwrap(), frame);
+    }
     use crate::power::PowerRequest;
 
     #[test]
