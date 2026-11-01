@@ -294,7 +294,10 @@ impl LocoNetMessage {
     pub fn input_report_of(&self) -> Option<(u16, bool)> {
         let b = &self.bytes;
         (b.len() == 4 && b[0] == OPC_INPUT_REP).then(|| {
-            ((eleven_bit_address(b[1], b[2]) << 1 | u16::from((b[2] >> 5) & 1)) + 1, b[2] & 0x10 != 0)
+            (
+                (eleven_bit_address(b[1], b[2]) << 1 | u16::from((b[2] >> 5) & 1)) + 1,
+                b[2] & 0x10 != 0,
+            )
         })
     }
 
@@ -485,15 +488,24 @@ mod tests {
     /// IB-Switch's turnout 137 and the sensors of the bench layout.
     #[test]
     fn switch_requests_and_sensor_reports_round_trip() {
-        assert_eq!(LocoNetMessage::switch_request(111, true, true).to_hex(), "B0 6E 30 11");
+        assert_eq!(
+            LocoNetMessage::switch_request(111, true, true).to_hex(),
+            "B0 6E 30 11"
+        );
         let thrown = LocoNetMessage::switch_request(137, false, false);
-        assert!(thrown.describe().contains("switch 137 thrown off"), "{}", thrown.describe());
+        assert!(
+            thrown.describe().contains("switch 137 thrown off"),
+            "{}",
+            thrown.describe()
+        );
         for sensor in [1, 2, 204, 227, 4096] {
             for high in [true, false] {
                 let report = LocoNetMessage::input_report(sensor, high);
                 let level = if high { "high" } else { "low" };
                 assert!(
-                    report.describe().contains(&format!("sensor {sensor} {level}")),
+                    report
+                        .describe()
+                        .contains(&format!("sensor {sensor} {level}")),
                     "{}",
                     report.describe()
                 );

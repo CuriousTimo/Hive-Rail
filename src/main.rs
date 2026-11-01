@@ -201,14 +201,14 @@ fn print_help() {
          cargo run -- --mode node --session <name> --id <id> --plain\n\
          cargo run -- --mode node --session <name> --id <id> --layout <layout.json>   (share each district's part with lite nodes)\n\
          cargo run -- --mode node --session <name> --id <id> --lite-server   (serve lite nodes: a Zenoh router they find by scouting)\n\
-         cargo run -- --mode dispatcher --session <name> [--plain]\n\
+         cargo run -- --mode dispatcher --session <name> [--plain] [--listen <endpoint> | --connect <endpoint>] [--lite-server]\n\
          cargo run -- --show-locos --session <name>\n\
          cargo run -- --sim-hw <district> <power_on|power_off|short|global_stop|global_go> --session <name>   (fake hardware of a lite node)\n\
          cargo run -- --transfer-loco <address> --to <node> --session <name> [--speed 0-126] [--forward|--reverse] [--lights|--no-lights]\n\
          cargo run -- --validate-profile <path>\n\
          cargo run -- --check-layout <layout.json> [--modules <dir>]\n\
          cargo run -- --simulate-layout <layout.json> [--seconds N]\n\
-         cargo run -- --web-sim <layout.json> [--port 8080] [--speed 1] [--session <name>]   (web view: http://localhost:8080)\n\
+         cargo run -- --web-sim <layout.json> [--port 8080] [--speed 1] [--session <name>] [--modules <dir>]   (web view: http://localhost:8080)\n\
          cargo run -- --config <file.toml> [more options]\n\
          cargo run -- --help\n\n\
          --config reads the options from a TOML file: each key is a flag without its dashes, a [table] a flag\n\

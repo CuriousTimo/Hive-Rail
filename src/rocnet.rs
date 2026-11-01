@@ -398,7 +398,10 @@ mod tests {
         let frame = RocNetFrame::sensor_report(101, 203, true);
         assert_eq!(frame.to_hex(), "00 00 00 00 65 08 21 04 00 00 01 CB");
         assert_eq!(frame.sensor_report_of(), Some((203, true)));
-        assert_eq!(RocNetFrame::sensor_report(102, 17, false).sensor_report_of(), Some((17, false)));
+        assert_eq!(
+            RocNetFrame::sensor_report(102, 17, false).sensor_report_of(),
+            Some((17, false))
+        );
         assert_eq!(frame.describe(), "sensor 203 occupied (node 101)");
         assert_eq!(RocNetFrame::from_bytes(frame.as_bytes()).unwrap(), frame);
     }

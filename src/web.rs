@@ -372,9 +372,7 @@ async fn serve(mut stream: TcpStream, shared: Arc<Shared>) {
             )
             .await
         }
-        "/panel.css" => {
-            respond(&mut stream, "200 OK", "text/css; charset=utf-8", PANEL_CSS).await
-        }
+        "/panel.css" => respond(&mut stream, "200 OK", "text/css; charset=utf-8", PANEL_CSS).await,
         "/signal-faces.js" => {
             respond(
                 &mut stream,

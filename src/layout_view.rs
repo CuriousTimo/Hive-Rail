@@ -93,7 +93,14 @@ impl TilesView {
         let b1 = grid.size_mm[1] / f64::from(grid.cells[1]) / TILE_UNITS;
         let depth = grid.size_mm[1];
         let [ox, oy] = placement.offset;
-        let matrix = [cos * a1, -sin * a1, sin * b1, cos * b1, ox - sin * depth, -(oy + cos * depth)];
+        let matrix = [
+            cos * a1,
+            -sin * a1,
+            sin * b1,
+            cos * b1,
+            ox - sin * depth,
+            -(oy + cos * depth),
+        ];
         let key = |name: &String| format!("{module_id}/{name}");
         let tiles = grid
             .tiles
@@ -458,7 +465,10 @@ impl ViewBuilder {
                 outline,
                 // Below the front edge, outside the module, so it covers nothing.
                 label: placement.apply([cx, -60.0]),
-                tiles: module.tiles.as_ref().map(|grid| TilesView::new(id, grid, placement)),
+                tiles: module
+                    .tiles
+                    .as_ref()
+                    .map(|grid| TilesView::new(id, grid, placement)),
             });
             // A module drawn from tiles draws its platforms and track numbers with its tiles.
             let drawn = module.tiles.is_none();

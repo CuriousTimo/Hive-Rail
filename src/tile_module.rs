@@ -324,6 +324,9 @@ struct Walk {
     tiles: Vec<(usize, f64, bool)>,
 }
 
+/// A piece inside a double slip, between its halves: point a, point b, length, line.
+type InnerPiece = (usize, usize, f64, Vec<(f64, f64)>);
+
 /// Reads a module file of schema version 3 into a `ModuleFile`.
 pub fn read(bytes: &[u8]) -> Result<ModuleFile, String> {
     let set: TileSet = serde_json::from_str(TILES_JSON).map_err(|e| e.to_string())?;
@@ -343,7 +346,10 @@ pub fn read(bytes: &[u8]) -> Result<ModuleFile, String> {
             return Err(format!("unknown tile '{}' at {}, {}", t.tile, t.x, t.y));
         }
         if t.tile == "crossing" {
-            return Err(format!("crossing at {}, {}: plain crossings are not supported yet", t.x, t.y));
+            return Err(format!(
+                "crossing at {}, {}: plain crossings are not supported yet",
+                t.x, t.y
+            ));
         }
     }
 
@@ -352,10 +358,13 @@ pub fn read(bytes: &[u8]) -> Result<ModuleFile, String> {
     let mut things: HashMap<Edge, Vec<Thing>> = HashMap::new();
     let mut turnouts: Vec<Turnout> = Vec::new();
     let mut geometry_points: BTreeMap<String, [f64; 2]> = BTreeMap::new();
-    // Pieces inside a double slip, between its halves: (point a, point b, length, line).
-    let mut inner: Vec<(usize, usize, f64, Vec<(f64, f64)>)> = Vec::new();
+    // Pieces inside a double slip, between its halves.
+    let mut inner: Vec<InnerPiece> = Vec::new();
     let mut extra_devices: Vec<Device> = Vec::new();
-    let device_of = |id: &Option<String>| id.as_ref().and_then(|id| module.devices.iter().find(|d| &d.id == id));
+    let device_of = |id: &Option<String>| {
+        id.as_ref()
+            .and_then(|id| module.devices.iter().find(|d| &d.id == id))
+    };
     for (index, t) in module.tiles.iter().enumerate() {
         let k = kind(t).expect("checked");
         let center_of = |cell: i32| {
@@ -370,43 +379,100 @@ pub fn read(bytes: &[u8]) -> Result<ModuleFile, String> {
                 let center = center_of(0);
                 let straight = &k.paths["straight"];
                 let diverging = &k.paths["diverging"];
-                let trunk = straight.iter().find(|p| diverging.contains(p)).cloned().unwrap_or_default();
-                let leg = |ports: &Vec<String>| ports.iter().find(|p| **p != trunk).cloned().unwrap_or_default();
-                for (name, port) in [("trunk", trunk.clone()), ("straight", leg(straight)), ("diverging", leg(diverging))] {
-                    add_point(&mut points, &mut things, format!("{id}.{name}"), port_on_grid(t, k.cells, &port), center);
+                let trunk = straight
+                    .iter()
+                    .find(|p| diverging.contains(p))
+                    .cloned()
+                    .unwrap_or_default();
+                let leg = |ports: &Vec<String>| {
+                    ports
+                        .iter()
+                        .find(|p| **p != trunk)
+                        .cloned()
+                        .unwrap_or_default()
+                };
+                for (name, port) in [
+                    ("trunk", trunk.clone()),
+                    ("straight", leg(straight)),
+                    ("diverging", leg(diverging)),
+                ] {
+                    add_point(
+                        &mut points,
+                        &mut things,
+                        format!("{id}.{name}"),
+                        port_on_grid(t, k.cells, &port),
+                        center,
+                    );
                 }
                 geometry_points.insert(id.clone(), scale.mm(center));
-                turnouts.push(Turnout { id, device: t.device.clone() });
+                turnouts.push(Turnout {
+                    id,
+                    device: t.device.clone(),
+                });
             }
             "double-slip" => {
                 // The halves: a on the first cell (straight W0, diverging S0), b on the
                 // second (straight E1, diverging N1), their trunks joined inside the tile.
-                let id = t.id.clone().unwrap_or_else(|| format!("DKW{}_{}", t.x, t.y));
+                let id =
+                    t.id.clone()
+                        .unwrap_or_else(|| format!("DKW{}_{}", t.x, t.y));
                 let device = device_of(&t.device);
                 let mut trunks = Vec::new();
-                for (half, cell, straight, diverging) in [("a", 0, "W0", "S0"), ("b", 1, "E1", "N1")] {
+                for (half, cell, straight, diverging) in
+                    [("a", 0, "W0", "S0"), ("b", 1, "E1", "N1")]
+                {
                     let name = format!("{id}{half}");
                     let center = center_of(cell);
-                    add_point(&mut points, &mut things, format!("{name}.straight"), port_on_grid(t, k.cells, straight), center);
-                    add_point(&mut points, &mut things, format!("{name}.diverging"), port_on_grid(t, k.cells, diverging), center);
-                    points.push(Point { name: format!("{name}.trunk"), edge: Edge::Vertical(-1, -1), anchor: center, port_at: center });
+                    add_point(
+                        &mut points,
+                        &mut things,
+                        format!("{name}.straight"),
+                        port_on_grid(t, k.cells, straight),
+                        center,
+                    );
+                    add_point(
+                        &mut points,
+                        &mut things,
+                        format!("{name}.diverging"),
+                        port_on_grid(t, k.cells, diverging),
+                        center,
+                    );
+                    points.push(Point {
+                        name: format!("{name}.trunk"),
+                        edge: Edge::Vertical(-1, -1),
+                        anchor: center,
+                        port_at: center,
+                    });
                     trunks.push((points.len() - 1, center));
                     geometry_points.insert(name.clone(), scale.mm(center));
                     // Each half switches on its own address: a on the device's address, b
                     // on its second address.
                     let half_device = device.map(|d| {
-                        let address = if half == "a" { d.address } else { d.second_address.or(d.address.map(|a| a + 1)) };
+                        let address = if half == "a" {
+                            d.address
+                        } else {
+                            d.second_address.or(d.address.map(|a| a + 1))
+                        };
                         extra_devices.push(Device {
                             id: format!("{}_{half}", d.id),
                             kind: "turnout".into(),
                             bus: d.bus.clone(),
                             address: address.unwrap_or(0),
-                            block: None, track: None, at_mm: None, at: None, role: None, direction: None,
-                            aspects: None, functions: None,
+                            block: None,
+                            track: None,
+                            at_mm: None,
+                            at: None,
+                            role: None,
+                            direction: None,
+                            aspects: None,
+                            functions: None,
                         });
                         format!("{}_{half}", d.id)
                     });
-                    turnouts.push(Turnout { id: name, device: half_device });
+                    turnouts.push(Turnout {
+                        id: name,
+                        device: half_device,
+                    });
                 }
                 let ((a, ca), (b, cb)) = (trunks[0], trunks[1]);
                 inner.push((a, b, scale.length(ca, cb), vec![ca, cb]));
@@ -419,7 +485,10 @@ pub fn read(bytes: &[u8]) -> Result<ModuleFile, String> {
                 for (path_ports, _) in k.paths.values().zip(0..) {
                     for (i, port) in path_ports.iter().enumerate() {
                         let p = port_on_grid(t, k.cells, port);
-                        things.entry(p.edge()).or_default().push(Thing::Plain { tile: index, port: i });
+                        things.entry(p.edge()).or_default().push(Thing::Plain {
+                            tile: index,
+                            port: i,
+                        });
                     }
                 }
             }
@@ -442,7 +511,9 @@ pub fn read(bytes: &[u8]) -> Result<ModuleFile, String> {
         if here.len() == 1 {
             if let Some(side) = side_of(edge) {
                 let track = match here[0] {
-                    Thing::Plain { tile, .. } => module.tiles[tile].track.clone().unwrap_or_default(),
+                    Thing::Plain { tile, .. } => {
+                        module.tiles[tile].track.clone().unwrap_or_default()
+                    }
                     Thing::Point(p) => points[p].name.clone(),
                 };
                 end_edges.entry(side).or_default().push((edge, track));
@@ -456,16 +527,17 @@ pub fn read(bytes: &[u8]) -> Result<ModuleFile, String> {
     }
     if !open.is_empty() {
         open.sort();
-        return Err(format!("open track ends (track that meets no other tile) at {}", open.join("; ")));
+        return Err(format!(
+            "open track ends (track that meets no other tile) at {}",
+            open.join("; ")
+        ));
     }
     let mut ends = Vec::new();
     let mut end_places = BTreeMap::new();
     for (side, mut found) in end_edges {
-        let end = module
-            .ends
-            .iter()
-            .find(|e| e.side == side)
-            .ok_or_else(|| format!("track leaves the grid at the {side} edge, but the module has no end there"))?;
+        let end = module.ends.iter().find(|e| e.side == side).ok_or_else(|| {
+            format!("track leaves the grid at the {side} edge, but the module has no end there")
+        })?;
         // Ordered as seen standing on the module looking out of the end, left to right.
         found.sort_by_key(|(edge, _)| match edge {
             Edge::Vertical(_, y) => *y,
@@ -478,15 +550,35 @@ pub fn read(bytes: &[u8]) -> Result<ModuleFile, String> {
         for (edge, track) in &found {
             let at = edge_at(*edge);
             sum = (sum.0 + at.0, sum.1 + at.1);
-            points.push(Point { name: format!("{}.{track}", end.id), edge: *edge, anchor: at, port_at: at });
-            things.entry(*edge).or_default().push(Thing::Point(points.len() - 1));
+            points.push(Point {
+                name: format!("{}.{track}", end.id),
+                edge: *edge,
+                anchor: at,
+                port_at: at,
+            });
+            things
+                .entry(*edge)
+                .or_default()
+                .push(Thing::Point(points.len() - 1));
         }
         let n = found.len() as f64;
-        end_places.insert(end.id.clone(), EndPlace {
-            at: scale.mm((sum.0 / n, sum.1 / n)),
-            facing: match side { "left" => 180.0, "right" => 0.0, "top" => 90.0, _ => 270.0 },
+        end_places.insert(
+            end.id.clone(),
+            EndPlace {
+                at: scale.mm((sum.0 / n, sum.1 / n)),
+                facing: match side {
+                    "left" => 180.0,
+                    "right" => 0.0,
+                    "top" => 90.0,
+                    _ => 270.0,
+                },
+            },
+        );
+        ends.push(End {
+            id: end.id.clone(),
+            profile: end.profile.clone(),
+            tracks: found.into_iter().map(|(_, t)| t).collect(),
         });
-        ends.push(End { id: end.id.clone(), profile: end.profile.clone(), tracks: found.into_iter().map(|(_, t)| t).collect() });
     }
 
     // A module with a single end (a terminus: every other track ends at a buffer stop)
@@ -498,8 +590,18 @@ pub fn read(bytes: &[u8]) -> Result<ModuleFile, String> {
         let at = end_places[&only.id].at;
         let opposite = [module.size_mm[0] - at[0], module.size_mm[1] - at[1]];
         let facing = (end_places[&only.id].facing + 180.0) % 360.0;
-        end_places.insert(other.to_owned(), EndPlace { at: opposite, facing });
-        let back = End { id: other.to_owned(), profile: crate::layout::BACK_PROFILE.to_owned(), tracks: Vec::new() };
+        end_places.insert(
+            other.to_owned(),
+            EndPlace {
+                at: opposite,
+                facing,
+            },
+        );
+        let back = End {
+            id: other.to_owned(),
+            profile: crate::layout::BACK_PROFILE.to_owned(),
+            tracks: Vec::new(),
+        };
         if other == "A" {
             ends.insert(0, back);
         } else {
@@ -512,7 +614,10 @@ pub fn read(bytes: &[u8]) -> Result<ModuleFile, String> {
         let t = &module.tiles[tile];
         let k = kind(t).expect("checked");
         let path = k.paths.values().next().expect("a plain tile has a path");
-        let (a, b) = (port_on_grid(t, k.cells, &path[port]), port_on_grid(t, k.cells, &path[1 - port]));
+        let (a, b) = (
+            port_on_grid(t, k.cells, &path[port]),
+            port_on_grid(t, k.cells, &path[1 - port]),
+        );
         (1 - port, a, b)
     };
     let mut walks: Vec<Walk> = Vec::new();
@@ -550,17 +655,38 @@ pub fn read(bytes: &[u8]) -> Result<ModuleFile, String> {
         };
         let key = (start.min(end), start.max(end));
         if done.insert(key) {
-            walks.push(Walk { from: start, to: end, length, line, tiles });
+            walks.push(Walk {
+                from: start,
+                to: end,
+                length,
+                line,
+                tiles,
+            });
         }
     }
     for (a, b, length, line) in inner {
-        walks.push(Walk { from: a, to: b, length, line, tiles: Vec::new() });
+        walks.push(Walk {
+            from: a,
+            to: b,
+            length,
+            line,
+            tiles: Vec::new(),
+        });
     }
     // A piece between a turnout and a module end or buffer stop runs from the turnout, as
     // in schema version 2 (so a train set on a platform track heading back leaves it).
     let end_ids_v3: Vec<&str> = module.ends.iter().map(|e| e.id.as_str()).collect();
-    let is_turnout = |p: usize| ["trunk", "straight", "diverging"].iter().any(|leg| points[p].name.ends_with(&format!(".{leg}")));
-    let is_end = |p: usize| points[p].name == "end" || end_ids_v3.iter().any(|id| points[p].name.starts_with(&format!("{id}.")));
+    let is_turnout = |p: usize| {
+        ["trunk", "straight", "diverging"]
+            .iter()
+            .any(|leg| points[p].name.ends_with(&format!(".{leg}")))
+    };
+    let is_end = |p: usize| {
+        points[p].name == "end"
+            || end_ids_v3
+                .iter()
+                .any(|id| points[p].name.starts_with(&format!("{id}.")))
+    };
     for walk in &mut walks {
         if is_end(walk.from) && is_turnout(walk.to) {
             std::mem::swap(&mut walk.from, &mut walk.to);
@@ -573,17 +699,28 @@ pub fn read(bytes: &[u8]) -> Result<ModuleFile, String> {
     }
 
     // --- pieces: named after their tiles' track, else after their points ---
-    let directions: HashMap<&str, &str> = module.tracks.iter().filter_map(|t| Some((t.name.as_str(), t.direction.as_deref()?))).collect();
+    let directions: HashMap<&str, &str> = module
+        .tracks
+        .iter()
+        .filter_map(|t| Some((t.name.as_str(), t.direction.as_deref()?)))
+        .collect();
     let mut piece_ids: Vec<String> = Vec::new();
     let mut track = Vec::new();
     let mut geometry_track = BTreeMap::new();
     let point_label = |p: usize| points[p].name.split('.').next().unwrap_or("").to_string();
     for walk in &walks {
-        let named = walk.tiles.iter().find_map(|(tile, _, _)| module.tiles[*tile].track.clone());
-        let mut id = named.unwrap_or_else(|| format!("{}-{}", point_label(walk.from), point_label(walk.to)));
+        let named = walk
+            .tiles
+            .iter()
+            .find_map(|(tile, _, _)| module.tiles[*tile].track.clone());
+        let mut id =
+            named.unwrap_or_else(|| format!("{}-{}", point_label(walk.from), point_label(walk.to)));
         if piece_ids.contains(&id) {
             let base = id.clone();
-            id = (2..).map(|n| format!("{base}_{n}")).find(|c| !piece_ids.contains(c)).expect("a free name");
+            id = (2..)
+                .map(|n| format!("{base}_{n}"))
+                .find(|c| !piece_ids.contains(c))
+                .expect("a free name");
         }
         piece_ids.push(id.clone());
         track.push(TrackPiece {
@@ -593,7 +730,10 @@ pub fn read(bytes: &[u8]) -> Result<ModuleFile, String> {
             length_mm: walk.length.round().max(1.0) as u32,
             direction: directions.get(id.as_str()).map(|d| (*d).to_string()),
         });
-        geometry_track.insert(id, walk.line.iter().map(|p| scale.mm(*p)).collect::<Vec<_>>());
+        geometry_track.insert(
+            id,
+            walk.line.iter().map(|p| scale.mm(*p)).collect::<Vec<_>>(),
+        );
     }
 
     // Where each tile lies on the track: its piece, how far along, and whether it faces
@@ -614,7 +754,11 @@ pub fn read(bytes: &[u8]) -> Result<ModuleFile, String> {
         let (first, last): (&[f64; 2], &[f64; 2]) = (line.first()?, line.last()?);
         let along = (last[0] - first[0]) * (pb[0] - pa[0]) + (last[1] - first[1]) * (pb[1] - pa[1]);
         let a_to_b = (along >= 0.0) == forward;
-        Some(if a_to_b { format!("{a}>{b}") } else { format!("{b}>{a}") })
+        Some(if a_to_b {
+            format!("{a}>{b}")
+        } else {
+            format!("{b}>{a}")
+        })
     };
 
     // --- devices, placed by their tiles ---
@@ -623,8 +767,16 @@ pub fn read(bytes: &[u8]) -> Result<ModuleFile, String> {
         if d.kind == "crossing" {
             continue; // as a light and an animation, with the level crossings below
         }
-        let tile = module.tiles.iter().enumerate().find(|(_, t)| t.device.as_ref() == Some(&d.id) && t.tile != "double-slip");
-        if module.tiles.iter().any(|t| t.device.as_ref() == Some(&d.id) && t.tile == "double-slip") {
+        let tile = module
+            .tiles
+            .iter()
+            .enumerate()
+            .find(|(_, t)| t.device.as_ref() == Some(&d.id) && t.tile != "double-slip");
+        if module
+            .tiles
+            .iter()
+            .any(|t| t.device.as_ref() == Some(&d.id) && t.tile == "double-slip")
+        {
             continue; // its halves are in extra_devices
         }
         let place = tile.and_then(|(index, _)| on_track.get(&index));
@@ -635,19 +787,34 @@ pub fn read(bytes: &[u8]) -> Result<ModuleFile, String> {
             bus: d.bus.clone(),
             address: d.address.unwrap_or(0),
             block: None,
-            track: place.filter(|_| signal || d.kind == "sensor").map(|(p, _, _)| p.clone()),
-            at_mm: place.filter(|_| signal || d.kind == "sensor").map(|(_, along, _)| along.round().max(0.0) as u32),
+            track: place
+                .filter(|_| signal || d.kind == "sensor")
+                .map(|(p, _, _)| p.clone()),
+            at_mm: place
+                .filter(|_| signal || d.kind == "sensor")
+                .map(|(_, along, _)| along.round().max(0.0) as u32),
             at: None,
             role: None,
-            direction: place.filter(|_| signal).and_then(|(p, _, forward)| direction_of(p, *forward)),
-            aspects: if signal { Some(signal_colours(d.aspects.as_ref())) } else { d.aspects.clone() },
+            direction: place
+                .filter(|_| signal)
+                .and_then(|(p, _, forward)| direction_of(p, *forward)),
+            aspects: if signal {
+                Some(signal_colours(d.aspects.as_ref()))
+            } else {
+                d.aspects.clone()
+            },
             functions: None,
         });
     }
     devices.extend(extra_devices);
 
     // --- blocks: one per occupancy section ---
-    let length_of = |piece: &str| track.iter().find(|p| p.id == piece).map_or(0.0, |p| f64::from(p.length_mm));
+    let length_of = |piece: &str| {
+        track
+            .iter()
+            .find(|p| p.id == piece)
+            .map_or(0.0, |p| f64::from(p.length_mm))
+    };
     let mut blocks = Vec::new();
     for block in &module.blocks {
         // Each section's sensor tile: its piece and place.
@@ -655,7 +822,11 @@ pub fn read(bytes: &[u8]) -> Result<ModuleFile, String> {
             .sections
             .iter()
             .filter_map(|s| {
-                let (index, _) = module.tiles.iter().enumerate().find(|(_, t)| t.device.as_ref() == Some(&s.device))?;
+                let (index, _) = module
+                    .tiles
+                    .iter()
+                    .enumerate()
+                    .find(|(_, t)| t.device.as_ref() == Some(&s.device))?;
                 let (piece, along, _) = on_track.get(&index)?;
                 Some((s, piece.clone(), *along))
             })
@@ -667,7 +838,9 @@ pub fn read(bytes: &[u8]) -> Result<ModuleFile, String> {
             // between their sensors.
             let span: Vec<f64> = on_track
                 .iter()
-                .filter(|(tile, (p, _, _))| p == piece && module.tiles[**tile].block.as_ref() == Some(&block.id))
+                .filter(|(tile, (p, _, _))| {
+                    p == piece && module.tiles[**tile].block.as_ref() == Some(&block.id)
+                })
                 .map(|(_, (_, along, _))| *along)
                 .collect();
             let half = scale.cell_x / 2.0;
@@ -675,22 +848,46 @@ pub fn read(bytes: &[u8]) -> Result<ModuleFile, String> {
                 span.iter().copied().fold(*along, f64::min) - half,
                 span.iter().copied().fold(*along, f64::max) + half,
             );
-            let same_piece: Vec<f64> = sections.iter().filter(|(_, p, _)| p == piece).map(|(_, _, a)| *a).collect();
-            if let Some(prev) = same_piece.iter().copied().filter(|a| a < along).fold(None, |m: Option<f64>, a| Some(m.map_or(a, |m| m.max(a)))) {
+            let same_piece: Vec<f64> = sections
+                .iter()
+                .filter(|(_, p, _)| p == piece)
+                .map(|(_, _, a)| *a)
+                .collect();
+            if let Some(prev) = same_piece
+                .iter()
+                .copied()
+                .filter(|a| a < along)
+                .fold(None, |m: Option<f64>, a| Some(m.map_or(a, |m| m.max(a))))
+            {
                 start = start.max((prev + along) / 2.0);
             }
-            if let Some(next) = same_piece.iter().copied().filter(|a| a > along).fold(None, |m: Option<f64>, a| Some(m.map_or(a, |m| m.min(a)))) {
+            if let Some(next) = same_piece
+                .iter()
+                .copied()
+                .filter(|a| a > along)
+                .fold(None, |m: Option<f64>, a| Some(m.map_or(a, |m| m.min(a))))
+            {
                 end = end.min((next + along) / 2.0);
             }
             let total = length_of(piece);
             let (start, end) = (start.clamp(0.0, total), end.clamp(0.0, total));
             blocks.push(Block {
-                id: if several { format!("{}_{}", block.id, i + 1) } else { block.id.clone() },
+                id: if several {
+                    format!("{}_{}", block.id, i + 1)
+                } else {
+                    block.id.clone()
+                },
                 track: piece.clone(),
-                cuts_mm: [start.round() as u32, end.round().max(start.round() + 1.0) as u32],
+                cuts_mm: [
+                    start.round() as u32,
+                    end.round().max(start.round() + 1.0) as u32,
+                ],
                 detected_rail: block.detected_rail.clone(),
                 occupancy: Some(section.device.clone()),
-                role: section.role.clone().filter(|r| ["edge", "transfer", "entry"].contains(&r.as_str())),
+                role: section
+                    .role
+                    .clone()
+                    .filter(|r| ["edge", "transfer", "entry"].contains(&r.as_str())),
                 direction: section.direction.clone(),
             });
         }
@@ -707,12 +904,17 @@ pub fn read(bytes: &[u8]) -> Result<ModuleFile, String> {
                 .map(|t| {
                     let length = length_of(&t.track);
                     if length == 0.0 {
-                        return Err(format!("station {} track {}: no track '{}'", s.name, t.name, t.track));
+                        return Err(format!(
+                            "station {} track {}: no track '{}'",
+                            s.name, t.name, t.track
+                        ));
                     }
                     Ok(StationTrack {
                         name: t.name.clone(),
                         track: t.track.clone(),
-                        usable_mm: t.usable_mm.unwrap_or((length - 2.0 * scale.cell_x).max(scale.cell_x) as u32),
+                        usable_mm: t
+                            .usable_mm
+                            .unwrap_or((length - 2.0 * scale.cell_x).max(scale.cell_x) as u32),
                         platform: t.platform,
                         passing: t.passing,
                     })
@@ -720,8 +922,16 @@ pub fn read(bytes: &[u8]) -> Result<ModuleFile, String> {
                 .collect::<Result<_, _>>()?,
         })
     };
-    let stations = module.stations.iter().map(station).collect::<Result<Vec<_>, _>>()?;
-    let passing_loops = module.passing_loops.iter().map(station).collect::<Result<Vec<_>, _>>()?;
+    let stations = module
+        .stations
+        .iter()
+        .map(station)
+        .collect::<Result<Vec<_>, _>>()?;
+    let passing_loops = module
+        .passing_loops
+        .iter()
+        .map(station)
+        .collect::<Result<Vec<_>, _>>()?;
 
     // --- level crossings: lights and barriers from the crossing's device ---
     let mut crossings = Vec::new();
@@ -733,20 +943,41 @@ pub fn read(bytes: &[u8]) -> Result<ModuleFile, String> {
             .enumerate()
             .filter(|(_, t)| t.tile == "level-crossing" && t.device.as_ref() == Some(&c.device))
             .filter_map(|(index, _)| on_track.get(&index))
-            .map(|(piece, along, _)| CrossingTrack { track: piece.clone(), at_mm: along.round() as u32 })
+            .map(|(piece, along, _)| CrossingTrack {
+                track: piece.clone(),
+                at_mm: along.round() as u32,
+            })
             .collect();
         let (mut lights, mut barriers) = (None, None);
         if let Some(d) = device {
             if let Some(address) = d.address {
-                devices.push(device_named(&format!("{}_lights", d.id), "light", &d.bus, address));
+                devices.push(device_named(
+                    &format!("{}_lights", d.id),
+                    "light",
+                    &d.bus,
+                    address,
+                ));
                 lights = Some(format!("{}_lights", d.id));
             }
             if let Some(address) = d.barriers {
-                devices.push(device_named(&format!("{}_barriers", d.id), "animation", &d.bus, address));
+                devices.push(device_named(
+                    &format!("{}_barriers", d.id),
+                    "animation",
+                    &d.bus,
+                    address,
+                ));
                 barriers = Some(format!("{}_barriers", d.id));
             }
         }
-        crossings.push(Crossing { id: c.id.clone(), name: c.name.clone(), tracks, lights, barriers, close: c.close.clone(), open: c.open.clone() });
+        crossings.push(Crossing {
+            id: c.id.clone(),
+            name: c.name.clone(),
+            tracks,
+            lights,
+            barriers,
+            close: c.close.clone(),
+            open: c.open.clone(),
+        });
     }
 
     // --- the drawing: the module's outline, ends, turnouts, track and platforms ---
@@ -769,11 +1000,20 @@ pub fn read(bytes: &[u8]) -> Result<ModuleFile, String> {
         }
         for (y, x0, x1) in runs {
             // A tile turned round has its top band below the track.
-            let (v0, v1) = if top { (f64::from(y), f64::from(y) + 0.33) } else { (f64::from(y) + 0.67, f64::from(y) + 1.0) };
+            let (v0, v1) = if top {
+                (f64::from(y), f64::from(y) + 0.33)
+            } else {
+                (f64::from(y) + 0.67, f64::from(y) + 1.0)
+            };
             let (u0, u1) = (f64::from(x0), f64::from(x1) + 1.0);
             platforms.insert(
                 format!("platform {} {y} {x0}", if top { "top" } else { "bottom" }),
-                vec![scale.mm((u0, v1)), scale.mm((u1, v1)), scale.mm((u1, v0)), scale.mm((u0, v0))],
+                vec![
+                    scale.mm((u0, v1)),
+                    scale.mm((u1, v1)),
+                    scale.mm((u1, v0)),
+                    scale.mm((u0, v0)),
+                ],
             );
         }
     }
@@ -792,7 +1032,8 @@ pub fn read(bytes: &[u8]) -> Result<ModuleFile, String> {
                     vec![id]
                 };
                 for piece in &track {
-                    let touches = |point: &str| halves.iter().any(|h| point.starts_with(&format!("{h}.")));
+                    let touches =
+                        |point: &str| halves.iter().any(|h| point.starts_with(&format!("{h}.")));
                     if touches(&piece.from) || touches(&piece.to) {
                         pieces.push(piece.id.clone());
                     }
@@ -806,13 +1047,23 @@ pub fn read(bytes: &[u8]) -> Result<ModuleFile, String> {
                     pieces.push(piece.clone());
                     block = blocks
                         .iter()
-                        .find(|b| &b.track == piece && f64::from(b.cuts_mm[0]) <= *along && *along <= f64::from(b.cuts_mm[1]))
+                        .find(|b| {
+                            &b.track == piece
+                                && f64::from(b.cuts_mm[0]) <= *along
+                                && *along <= f64::from(b.cuts_mm[1])
+                        })
                         .map(|b| b.id.clone());
                 }
             }
         }
         let crossing = (t.tile == "level-crossing")
-            .then(|| module.crossings.iter().find(|c| Some(&c.device) == t.device.as_ref()).map(|c| c.id.clone()))
+            .then(|| {
+                module
+                    .crossings
+                    .iter()
+                    .find(|c| Some(&c.device) == t.device.as_ref())
+                    .map(|c| c.id.clone())
+            })
             .flatten();
         placed.push(PlacedTile {
             tile: t.tile.clone(),
@@ -826,11 +1077,19 @@ pub fn read(bytes: &[u8]) -> Result<ModuleFile, String> {
             pieces,
             block,
             turnouts: turnout_ids,
-            signal: t.tile.starts_with("signal-").then(|| t.device.clone()).flatten(),
+            signal: t
+                .tile
+                .starts_with("signal-")
+                .then(|| t.device.clone())
+                .flatten(),
             crossing,
         });
     }
-    let tile_grid = TileGrid { cells: [w, h], size_mm: module.size_mm, tiles: placed };
+    let tile_grid = TileGrid {
+        cells: [w, h],
+        size_mm: module.size_mm,
+        tiles: placed,
+    };
 
     let geometry = Geometry {
         outline: vec![[0.0, 0.0], [length, 0.0], [length, depth], [0.0, depth]],
@@ -866,9 +1125,23 @@ pub fn read(bytes: &[u8]) -> Result<ModuleFile, String> {
 }
 
 /// Adds a point where pieces end, at a tile port.
-fn add_point(points: &mut Vec<Point>, things: &mut HashMap<Edge, Vec<Thing>>, name: String, port: Port, anchor: (f64, f64)) {
-    points.push(Point { name, edge: port.edge(), anchor, port_at: port.at() });
-    things.entry(port.edge()).or_default().push(Thing::Point(points.len() - 1));
+fn add_point(
+    points: &mut Vec<Point>,
+    things: &mut HashMap<Edge, Vec<Thing>>,
+    name: String,
+    port: Port,
+    anchor: (f64, f64),
+) {
+    points.push(Point {
+        name,
+        edge: port.edge(),
+        anchor,
+        port_at: port.at(),
+    });
+    things
+        .entry(port.edge())
+        .or_default()
+        .push(Thing::Point(points.len() - 1));
 }
 
 /// The middle of a tile edge, in cells.
@@ -901,9 +1174,15 @@ fn device_named(id: &str, kind: &str, bus: &str, address: u16) -> Device {
 fn signal_colours(aspects: Option<&serde_json::Value>) -> serde_json::Value {
     let names: Vec<String> = aspects
         .and_then(|a| a.as_array())
-        .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_owned)).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(str::to_owned))
+                .collect()
+        })
         .unwrap_or_default();
-    let announces = names.iter().any(|a| a.starts_with("vr") || a == "ks2" || a == "yellow");
+    let announces = names
+        .iter()
+        .any(|a| a.starts_with("vr") || a == "ks2" || a == "yellow");
     if announces {
         serde_json::json!(["red", "yellow", "green"])
     } else {
@@ -926,7 +1205,9 @@ mod tests {
     use std::path::Path;
 
     fn module(name: &str) -> ModuleFile {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/layout").join(format!("{name}.json"));
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("examples/layout")
+            .join(format!("{name}.json"));
         read(&std::fs::read(path).unwrap()).unwrap()
     }
 
@@ -935,7 +1216,17 @@ mod tests {
     #[test]
     fn adorf_reads_from_its_tiles() {
         let m = module("timo-adorf");
-        let piece = |id: &str| m.track.iter().find(|p| p.id == id).unwrap_or_else(|| panic!("no piece {id}: {:?}", m.track.iter().map(|p| (&p.id, &p.from, &p.to)).collect::<Vec<_>>()));
+        let piece = |id: &str| {
+            m.track.iter().find(|p| p.id == id).unwrap_or_else(|| {
+                panic!(
+                    "no piece {id}: {:?}",
+                    m.track
+                        .iter()
+                        .map(|p| (&p.id, &p.from, &p.to))
+                        .collect::<Vec<_>>()
+                )
+            })
+        };
         let ends = |id: &str| {
             let p = piece(id);
             let mut e = [p.from.clone(), p.to.clone()];
@@ -950,15 +1241,30 @@ mod tests {
         assert_eq!(ends("out"), ["2.trunk", "B.out"]);
         assert!(m.turnouts.iter().any(|t| t.id == "4a") && m.turnouts.iter().any(|t| t.id == "4b"));
         // Track 1 runs the module's length up to turnout 3: about 26 cells of 50 mm.
-        assert!((1250..=1350).contains(&piece("1").length_mm), "{}", piece("1").length_mm);
+        assert!(
+            (1250..=1350).contains(&piece("1").length_mm),
+            "{}",
+            piece("1").length_mm
+        );
         // Three sections on each platform track, each its own block.
         let on_1: Vec<_> = m.blocks.iter().filter(|b| b.track == "1").collect();
-        assert_eq!(on_1.len(), 3, "{:?}", m.blocks.iter().map(|b| (&b.id, &b.track)).collect::<Vec<_>>());
+        assert_eq!(
+            on_1.len(),
+            3,
+            "{:?}",
+            m.blocks
+                .iter()
+                .map(|b| (&b.id, &b.track))
+                .collect::<Vec<_>>()
+        );
         // The exit signals face east (towards B), the entry signal west.
         let signal = |id: &str| m.devices.iter().find(|d| d.id == id).unwrap();
         assert_eq!(signal("signal_n1").direction.as_deref(), Some("A>B"));
         assert_eq!(signal("signal_f").direction.as_deref(), Some("B>A"));
-        assert_eq!(m.ends.iter().find(|e| e.id == "B").unwrap().tracks, ["in", "out"]);
+        assert_eq!(
+            m.ends.iter().find(|e| e.id == "B").unwrap().tracks,
+            ["in", "out"]
+        );
     }
 
     /// Every converted example module reads without an open end.

@@ -325,13 +325,19 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
     // to the node, {"address": 204, "occupied": true} (simulated hardware, not the mesh
     // protocol). The node treats them as its own detectors.
     let sim_sensor_subscriber = session
-        .declare_subscriber(format!("hive/{}/sim/{}/sensor", options.session, options.id))
+        .declare_subscriber(format!(
+            "hive/{}/sim/{}/sensor",
+            options.session, options.id
+        ))
         .await?;
     // The node's own sensors on the mesh, as a RocNet node reports them (group 8, the node
     // as the sender, its port), for Rocrail and the other nodes: rn/node/{id}/sr (RocNet on
     // the Mesh §5).
     let sensor_publisher = session
-        .declare_publisher(format!("hive/{}/rn/node/{}/sr", options.session, options.id))
+        .declare_publisher(format!(
+            "hive/{}/rn/node/{}/sr",
+            options.session, options.id
+        ))
         .await?;
     // With --layout: each district's part of the layout, for lite nodes that ask.
     let layout_packages: BTreeMap<String, String> = match &options.layout {
@@ -418,7 +424,11 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
     // Panel turnouts that show sensors start green (free), so a panel asking at start-up
     // lights up before the first report.
     for (turnout, _) in &options.show_sensors {
-        turnouts.receive(&LocoNetMessage::switch_request(*turnout, true, false), false, false);
+        turnouts.receive(
+            &LocoNetMessage::switch_request(*turnout, true, false),
+            false,
+            false,
+        );
     }
     // Loco addresses this node asked the allocator a throttle number for, and since when.
     let mut throttle_requests: HashMap<u16, Instant> = HashMap::new();
@@ -1538,10 +1548,16 @@ async fn own_sensor(
     match u8::try_from(address) {
         Ok(port) => {
             let frame = RocNetFrame::sensor_report(rocnet_id, port, occupied);
-            log.line(format!("[rn  ] -> {}  {}", frame.to_hex(), frame.describe()));
+            log.line(format!(
+                "[rn  ] -> {}  {}",
+                frame.to_hex(),
+                frame.describe()
+            ));
             publisher.put(frame.as_bytes().to_vec()).await?;
         }
-        Err(_) => log.line(format!("[rn  ] sensor {address} not reported on RocNet: a port is 0 to 255")),
+        Err(_) => log.line(format!(
+            "[rn  ] sensor {address} not reported on RocNet: a port is 0 to 255"
+        )),
     }
     Ok(())
 }
@@ -1719,7 +1735,10 @@ fn parse_args(args: Vec<String>) -> Result<NodeArgs, Box<dyn Error + Send + Sync
                 let value = next_value(&mut args, &flag)?;
                 for pair in value.split(',').filter(|p| !p.is_empty()) {
                     let parsed = pair.split_once('=').and_then(|(turnout, sensor)| {
-                        Some((turnout.trim().parse::<u16>().ok()?, sensor.trim().parse::<u16>().ok()?))
+                        Some((
+                            turnout.trim().parse::<u16>().ok()?,
+                            sensor.trim().parse::<u16>().ok()?,
+                        ))
                     });
                     show_sensors.push(parsed.ok_or_else(|| {
                         format!("invalid {flag} '{pair}'; expected turnout=sensor, such as 111=204")

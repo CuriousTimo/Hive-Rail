@@ -652,7 +652,10 @@ impl<'a> LayoutSim<'a> {
     /// little for the length of both; less for a track that has stood empty longer.
     fn rank_platforms(&self, index: usize, all_targets: bool) -> Vec<(f64, PieceId, bool)> {
         let train = &self.trains[index];
-        let Some(platforms) = train.plan.get(train.next_stop).and_then(|s| self.stations.get(s))
+        let Some(platforms) = train
+            .plan
+            .get(train.next_stop)
+            .and_then(|s| self.stations.get(s))
         else {
             return Vec::new();
         };
@@ -742,7 +745,8 @@ impl<'a> LayoutSim<'a> {
             .find(|s| s.piece == train.head.piece && s.heading == train.head.heading)
             .map(|s| {
                 let id = s.key.rsplit('/').next().unwrap_or(&s.key);
-                id.strip_prefix("signal_").map_or_else(|| id.to_owned(), str::to_uppercase)
+                id.strip_prefix("signal_")
+                    .map_or_else(|| id.to_owned(), str::to_uppercase)
             })
     }
 
@@ -803,7 +807,11 @@ impl<'a> LayoutSim<'a> {
                     let goal = train.target.clone().or_else(|| self.station_entry(train));
                     let distance = goal
                         .and_then(|goal| {
-                            self.find_way(&(train.head.piece.clone(), train.head.heading), &goal, None)
+                            self.find_way(
+                                &(train.head.piece.clone(), train.head.heading),
+                                &goal,
+                                None,
+                            )
                         })
                         .map_or(0.0, |way| {
                             way.iter().map(|(p, _)| self.piece_length(p)).sum::<f64>()
@@ -2288,4 +2296,3 @@ mod tests {
         assert!(yields > 0, "no slower train let a faster one by");
     }
 }
-
