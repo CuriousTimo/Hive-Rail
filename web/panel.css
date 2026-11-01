@@ -45,3 +45,11 @@ kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line); border-
 .properties .aspect-buttons { flex-wrap: wrap; }
 .properties .aspect-buttons button.chosen { border-color: var(--accent); color: var(--accent); }
 .properties .signal-face { display: block; background: #dfe3e6; border-radius: 6px; padding: 6px; }
+.properties h3 { margin: 14px 0 6px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.properties dl.end { margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.properties .warn { color: #e2271c; }
+#board .open-end { fill: #e2271c; stroke: #ffffff; stroke-width: 1; pointer-events: none; }
+#board .end-label { fill: #ffffff; font: bold 9px system-ui, sans-serif; pointer-events: none; }
+.properties .placing { border-left: 3px solid var(--accent); padding-left: 8px; }
+.properties .muted { color: var(--muted); font-size: 12px; }
+#board .tile-label { fill: #1d1d1d; font: 5.5px system-ui, sans-serif; pointer-events: none; }

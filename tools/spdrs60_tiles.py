@@ -34,6 +34,10 @@ OUT = Path(__file__).resolve().parent.parent / "assets" / "spdrs60"
 OUT.mkdir(parents=True, exist_ok=True)
 
 W, H = 32, 32  # a square tile, as in Rocrail's editor; the track runs along y = 16
+# One cell is 50 mm of the real module (H0: about the 46 mm between the tracks of a double
+# track line, so parallel tracks lie one cell apart); a module's grid is its real size
+# divided by this, rounded to the nearest cell.
+CELL_MM = 50
 
 STYLE = """
   .tile { fill: #c8c8c8; stroke: #a4a4a4; stroke-width: 0.4; }
@@ -57,6 +61,10 @@ STYLE = """
   .joint { stroke: #c8c8c8; stroke-width: 1.2; }
   .district-a { fill: var(--district-a, #20c5b5); }
   .district-b { fill: var(--district-b, #a77bff); }
+  .pf { display: none; fill: #e9e6dc; }
+  .pf-edge { display: none; stroke: #f5f1e6; stroke-width: 1.1; stroke-dasharray: 3 2; }
+  .platform-top .pf.pf-top, .platform-bottom .pf.pf-bottom,
+  .platform-top .pf-edge.pf-top, .platform-bottom .pf-edge.pf-bottom { display: inline; }
   .plate { fill: #f6f6f6; stroke: #8e8e8e; stroke-width: 0.4; }
   .plate-text { fill: #141414; font: 7.5px sans-serif; text-anchor: middle; }
   .number-box { fill: #111111; stroke: #3c3c3c; stroke-width: 0.8; }
@@ -75,7 +83,7 @@ BODIES = {}
 
 # The tiles' own parts get an "sp-" prefix, so a page's styles (such as the layout view's
 # .road and .lamp) never reach them; the state classes a page sets stay plain.
-PARTS = ["tile", "bar", "band", "lamp", "pos", "point", "head", "mast", "foot", "road", "lc-lamp", "joint", "district-a", "district-b", "plate", "sensor-free",
+PARTS = ["pf", "pf-edge", "pf-top", "pf-bottom", "tile", "bar", "band", "lamp", "pos", "point", "head", "mast", "foot", "road", "lc-lamp", "joint", "district-a", "district-b", "plate", "sensor-free",
          "sensor-on", "sensor-glow", "sensor-core", "sensor-hot",
          "plate-text", "number-box", "number", "option", "white", "zs1-triangle"]
 
@@ -158,9 +166,18 @@ def signal_tile(name, face, cells, title):
     return tile(name, f"{title}: {info['title']}", body, cells=cells)
 
 
+# A platform (Bahnsteig) along a straight track: bands from the track to the tile's top and
+# bottom edges, shown with the classes platform-top and platform-bottom, so platforms of
+# neighbouring rows meet: two tracks a row apart with their facing halves form an island.
+PLATFORM = """  <rect class="pf pf-top" x="0" y="0" width="32" height="10.5"/>
+  <rect class="pf pf-bottom" x="0" y="21.5" width="32" height="10.5"/>
+  <path class="pf-edge pf-top" d="M0 9.5 H32"/>
+  <path class="pf-edge pf-bottom" d="M0 22.5 H32"/>
+"""
+
 TILES = [
-    tile("track-straight", "Track, straight",
-         """  <path class="bar" d="M0 16 H32"/>
+    tile("track-straight", "Track, straight; with platform above, below or both (platform-top, platform-bottom)",
+         PLATFORM + """  <path class="bar" d="M0 16 H32"/>
   <path class="lamp" d="M9 16 H23"/>"""),
     tile("track-curve", "Track, 45-degree curve: from the middle of the left edge to the middle of the bottom edge",
          f"""  {CURVE_DOWN}
@@ -199,8 +216,8 @@ TILES = [
          """  <path class="bar" d="M0 16 H25"/>
   <rect class="head" x="25" y="9.5" width="3.5" height="13"/>
   <path class="lamp" d="M7 16 H20"/>"""),
-    tile("sensor", "Track with an occupancy sensor (Rückmelder): a green dot while free, red while occupied",
-         """  <path class="bar" d="M0 16 H32"/>
+    tile("sensor", "Track with an occupancy sensor (Rückmelder): a green dot while free, red while occupied; it can lie along a platform",
+         PLATFORM + """  <path class="bar" d="M0 16 H32"/>
   <path class="lamp" d="M4 16 H10 M22 16 H28"/>
   <circle class="sensor-free" cx="16" cy="16" r="3.6"/>
   <g class="sensor-on">
@@ -235,8 +252,8 @@ TILES = [
   <path class="joint" d="M16 12 V20"/>
   <rect class="district-a" x="3" y="22.5" width="10" height="3"/>
   <rect class="district-b" x="19" y="22.5" width="10" height="3"/>"""),
-    tile("train-number", "Train number field (Zugnummernmelder) on the track; the page sets its number",
-         """  <path class="bar" d="M0 16 H32"/>
+    tile("train-number", "Train number field (Zugnummernmelder) on the track; the page sets its number; it can lie along a platform",
+         PLATFORM + """  <path class="bar" d="M0 16 H32"/>
   <rect class="number-box" x="2" y="11" width="28" height="10" rx="1.2"/>
   <text class="number" x="16" y="18.8"></text>"""),
     tile("plate", "Name plate (track, signal or turnout name) in its own cell; the page sets its text",
@@ -256,10 +273,11 @@ STATES = {
     "signal-ks-multi": ["hp0", "ks1", "ks2", "route ks2", "sh-lamp hp0 sh1"],
     "signal-ks-distant": ["ks1", "ks2"],
     "signal-sh": ["sh0", "sh1", "route sh1"],
-    "sensor": ["", "occupied", "route"],
     "sensor-curve": ["", "occupied", "route"],
     "level-crossing": ["", "closed", "occupied closed"],
-    "train-number": ["", "occupied"],
+    "train-number": ["", "occupied", "platform-top platform-bottom occupied"],
+    "track-straight": ["", "route", "occupied", "platform-top platform-bottom", "platform-top route", "platform-bottom occupied"],
+    "sensor": ["", "occupied", "route", "platform-top platform-bottom", "platform-top platform-bottom occupied"],
 }
 
 
@@ -331,12 +349,48 @@ def write_preview():
     (OUT / "preview.html").write_text(page)
 
 
+# Where each tile's track runs, for the track graph: a path joins two ports, a port being
+# a tile edge (W, N, E, S, as drawn: running right, diverging down) and the cell it is on
+# (0, or 1 for the right cell of a two-cell tile): "W0" is the left edge of the left cell.
+# A turnout has a path per leg; a buffer stop's path has one port, where the track ends.
+# The editor and the module loader turn and mirror the ports with the tile.
+STRAIGHT = {"through": ["W0", "E0"]}
+PATHS = {
+    "track-straight": STRAIGHT,
+    "track-curve": {"through": ["W0", "S0"]},
+    "turnout-right": {"straight": ["W0", "E0"], "diverging": ["W0", "S0"]},
+    "turnout-left": {"straight": ["W0", "E0"], "diverging": ["W0", "N0"]},
+    "crossing": {"straight": ["W0", "E1"], "diagonal": ["N1", "S0"]},
+    "double-slip": {"straight": ["W0", "E1"], "diagonal": ["N1", "S0"], "slip-up": ["W0", "N1"], "slip-down": ["S0", "E1"]},
+    "buffer-stop": {"end": ["W0"]},
+    "sensor": STRAIGHT,
+    "sensor-curve": {"through": ["W0", "S0"]},
+    "signal-hv-main": STRAIGHT,
+    "signal-hv-main-distant": {"through": ["W0", "E1"]},
+    "signal-hv-distant": STRAIGHT,
+    "signal-ks-main": STRAIGHT,
+    "signal-ks-multi": STRAIGHT,
+    "signal-ks-distant": STRAIGHT,
+    "signal-sh": STRAIGHT,
+    "level-crossing": STRAIGHT,
+    "district-border": STRAIGHT,
+    "train-number": STRAIGHT,
+    "plate": {},
+}
+
+
 def write_js():
     """The tiles for the web pages: their bodies, titles and the style, once."""
     import json
-    tiles = {name: {"title": title, "body": body.strip(), "cells": cells} for name, (title, body, cells) in BODIES.items()}
+    assert set(PATHS) == set(BODIES), set(PATHS) ^ set(BODIES)
+    tiles = {name: {"title": title, "body": body.strip(), "cells": cells, "paths": PATHS[name]} for name, (title, body, cells) in BODIES.items()}
+    # The same for the module loader (src/), without the drawings.
+    (OUT / "tiles.json").write_text(json.dumps(
+        {"cell_mm": CELL_MM, "tiles": {name: {"cells": t["cells"], "paths": t["paths"]} for name, t in tiles.items()}},
+        indent=1) + "\n")
     js = ("// Made by tools/spdrs60_tiles.py from assets/spdrs60; do not edit.\n"
           f"const SPDRS60_SIZE = {W};\n"
+          f"const SPDRS60_CELL_MM = {CELL_MM};\n"
           f"const SPDRS60_STYLE = {json.dumps(prefixed(STYLE))};\n"
           f"const SPDRS60_TILES = {json.dumps(tiles, indent=1, ensure_ascii=False)};\n")
     (OUT.parent.parent / "web" / "spdrs60-tiles.js").write_text(js)

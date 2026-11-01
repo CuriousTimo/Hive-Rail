@@ -3,16 +3,19 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Panel Editor</title>
+  <title>Module Editor</title>
   <link rel="stylesheet" href="app.css">
   <link rel="stylesheet" href="panel.css">
 </head>
 <body class="panel-editor">
   <header>
     <div class="brand">Hive-Rail</div>
-    <div class="meeting">Panel editor (SpDrS60)</div>
-    <label class="field">Name <input id="panel-name" type="text" value="Panel" size="14"></label>
-    <label class="field">Size <input id="panel-width" type="number" min="4" max="200" value="40"> × <input id="panel-height" type="number" min="4" max="120" value="24"></label>
+    <div class="meeting">Module editor</div>
+    <label class="field">Id <input id="module-id" type="text" size="14"></label>
+    <label class="field">Name <input id="module-name" type="text" size="16"></label>
+    <label class="field">Owner <input id="module-owner" type="text" size="8"></label>
+    <label class="field">Size <input id="module-length" type="number" min="50" step="10"> × <input id="module-depth" type="number" min="50" step="10"> mm</label>
+    <span id="grid-size" class="field"></span>
     <label class="field">Lamp test
       <select id="lamp-test">
         <option value="">off</option>
@@ -26,25 +29,26 @@
     </label>
     <button type="button" id="zoom-out" title="Zoom out">−</button>
     <button type="button" id="zoom-in" title="Zoom in">+</button>
-    <button type="button" id="export" title="Save the panel as a JSON file">Export</button>
-    <label class="button-like" title="Load a panel JSON file">Import<input id="import" type="file" accept="application/json,.json" hidden></label>
+    <label class="field">Modules <select id="server-modules" title="Open a module file from this computer's module folder"><option value="">open…</option></select></label>
+    <button type="button" id="new-module" title="Start a new module">New</button>
+    <label class="button-like" title="Open a module file (schema version 3)">Open<input id="import" type="file" accept="application/json,.json" hidden></label>
+    <button type="button" id="export" title="Save the module file">Save</button>
     <a class="button-like" href="./">Layout view</a>
   </header>
   <main>
     <aside class="palette" aria-label="Tiles">
       <h2>Tiles</h2>
       <div id="palette" class="palette-grid"></div>
-      <p class="hint-text">Click a tile, then click or drag on the panel to place it. <kbd>R</kbd> rotates, <kbd>M</kbd> mirrors, <kbd>Del</kbd> removes, <kbd>Esc</kbd> back to selecting.</p>
+      <p class="hint-text">Click a tile, then click or drag on the grid to place it. <kbd>R</kbd> turns, <kbd>M</kbd> mirrors, <kbd>Del</kbd> removes, <kbd>Esc</kbd> back to selecting.</p>
     </aside>
-    <section class="board" aria-label="Panel">
+    <section class="board" aria-label="Module">
       <svg id="board" xmlns="http://www.w3.org/2000/svg"></svg>
     </section>
-    <aside class="properties" aria-label="Selected tile">
-      <h2>Selected tile</h2>
-      <div id="properties"><p class="hint-text">Nothing selected. With no tile chosen in the palette, click a tile on the panel to select it.</p></div>
+    <aside class="properties" aria-label="Properties">
+      <h2 id="properties-title">Module</h2>
+      <div id="properties"></div>
     </aside>
   </main>
-  <datalist id="link-ids"></datalist>
   <script src="spdrs60-tiles.js"></script>
   <script src="signal-faces.js"></script>
   <script src="panel.js"></script>

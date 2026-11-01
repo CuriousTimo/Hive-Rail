@@ -1,0 +1,203 @@
+{
+ "cell_mm": 50,
+ "tiles": {
+  "track-straight": {
+   "cells": 1,
+   "paths": {
+    "through": [
+     "W0",
+     "E0"
+    ]
+   }
+  },
+  "track-curve": {
+   "cells": 1,
+   "paths": {
+    "through": [
+     "W0",
+     "S0"
+    ]
+   }
+  },
+  "turnout-right": {
+   "cells": 1,
+   "paths": {
+    "straight": [
+     "W0",
+     "E0"
+    ],
+    "diverging": [
+     "W0",
+     "S0"
+    ]
+   }
+  },
+  "turnout-left": {
+   "cells": 1,
+   "paths": {
+    "straight": [
+     "W0",
+     "E0"
+    ],
+    "diverging": [
+     "W0",
+     "N0"
+    ]
+   }
+  },
+  "crossing": {
+   "cells": 2,
+   "paths": {
+    "straight": [
+     "W0",
+     "E1"
+    ],
+    "diagonal": [
+     "N1",
+     "S0"
+    ]
+   }
+  },
+  "double-slip": {
+   "cells": 2,
+   "paths": {
+    "straight": [
+     "W0",
+     "E1"
+    ],
+    "diagonal": [
+     "N1",
+     "S0"
+    ],
+    "slip-up": [
+     "W0",
+     "N1"
+    ],
+    "slip-down": [
+     "S0",
+     "E1"
+    ]
+   }
+  },
+  "buffer-stop": {
+   "cells": 1,
+   "paths": {
+    "end": [
+     "W0"
+    ]
+   }
+  },
+  "sensor": {
+   "cells": 1,
+   "paths": {
+    "through": [
+     "W0",
+     "E0"
+    ]
+   }
+  },
+  "sensor-curve": {
+   "cells": 1,
+   "paths": {
+    "through": [
+     "W0",
+     "S0"
+    ]
+   }
+  },
+  "signal-hv-main": {
+   "cells": 1,
+   "paths": {
+    "through": [
+     "W0",
+     "E0"
+    ]
+   }
+  },
+  "signal-hv-main-distant": {
+   "cells": 2,
+   "paths": {
+    "through": [
+     "W0",
+     "E1"
+    ]
+   }
+  },
+  "signal-hv-distant": {
+   "cells": 1,
+   "paths": {
+    "through": [
+     "W0",
+     "E0"
+    ]
+   }
+  },
+  "signal-ks-main": {
+   "cells": 1,
+   "paths": {
+    "through": [
+     "W0",
+     "E0"
+    ]
+   }
+  },
+  "signal-ks-multi": {
+   "cells": 1,
+   "paths": {
+    "through": [
+     "W0",
+     "E0"
+    ]
+   }
+  },
+  "signal-ks-distant": {
+   "cells": 1,
+   "paths": {
+    "through": [
+     "W0",
+     "E0"
+    ]
+   }
+  },
+  "signal-sh": {
+   "cells": 1,
+   "paths": {
+    "through": [
+     "W0",
+     "E0"
+    ]
+   }
+  },
+  "level-crossing": {
+   "cells": 1,
+   "paths": {
+    "through": [
+     "W0",
+     "E0"
+    ]
+   }
+  },
+  "district-border": {
+   "cells": 1,
+   "paths": {
+    "through": [
+     "W0",
+     "E0"
+    ]
+   }
+  },
+  "train-number": {
+   "cells": 1,
+   "paths": {
+    "through": [
+     "W0",
+     "E0"
+    ]
+   }
+  },
+  "plate": {
+   "cells": 1,
+   "paths": {}
+  }
+ }
+}

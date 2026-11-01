@@ -22,6 +22,10 @@
   .sp-joint { stroke: #c8c8c8; stroke-width: 1.2; }
   .sp-district-a { fill: var(--district-a, #20c5b5); }
   .sp-district-b { fill: var(--district-b, #a77bff); }
+  .sp-pf { display: none; fill: #e9e6dc; }
+  .sp-pf-edge { display: none; stroke: #f5f1e6; stroke-width: 1.1; stroke-dasharray: 3 2; }
+  .platform-top .sp-pf.sp-pf-top, .platform-bottom .sp-pf.sp-pf-bottom,
+  .platform-top .sp-pf-edge.sp-pf-top, .platform-bottom .sp-pf-edge.sp-pf-bottom { display: inline; }
   .sp-plate { fill: #f6f6f6; stroke: #8e8e8e; stroke-width: 0.4; }
   .sp-plate-text { fill: #141414; font: 7.5px sans-serif; text-anchor: middle; }
   .sp-number-box { fill: #111111; stroke: #3c3c3c; stroke-width: 0.8; }

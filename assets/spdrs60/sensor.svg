@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" class="">
-  <title>Track with an occupancy sensor (Rückmelder): a green dot while free, red while occupied</title>
+  <title>Track with an occupancy sensor (Rückmelder): a green dot while free, red while occupied; it can lie along a platform</title>
   <style>
   .sp-tile { fill: #c8c8c8; stroke: #a4a4a4; stroke-width: 0.4; }
   .sp-bar { fill: none; stroke: #141414; stroke-width: 5; stroke-linecap: butt; stroke-linejoin: miter; }
@@ -22,6 +22,10 @@
   .sp-joint { stroke: #c8c8c8; stroke-width: 1.2; }
   .sp-district-a { fill: var(--district-a, #20c5b5); }
   .sp-district-b { fill: var(--district-b, #a77bff); }
+  .sp-pf { display: none; fill: #e9e6dc; }
+  .sp-pf-edge { display: none; stroke: #f5f1e6; stroke-width: 1.1; stroke-dasharray: 3 2; }
+  .platform-top .sp-pf.sp-pf-top, .platform-bottom .sp-pf.sp-pf-bottom,
+  .platform-top .sp-pf-edge.sp-pf-top, .platform-bottom .sp-pf-edge.sp-pf-bottom { display: inline; }
   .sp-plate { fill: #f6f6f6; stroke: #8e8e8e; stroke-width: 0.4; }
   .sp-plate-text { fill: #141414; font: 7.5px sans-serif; text-anchor: middle; }
   .sp-number-box { fill: #111111; stroke: #3c3c3c; stroke-width: 0.8; }
@@ -61,6 +65,10 @@
   @keyframes sf-blink { to { visibility: hidden; } }
   </style>
   <rect class="sp-tile" x="0" y="0" width="32" height="32"/>
+  <rect class="sp-pf sp-pf-top" x="0" y="0" width="32" height="10.5"/>
+  <rect class="sp-pf sp-pf-bottom" x="0" y="21.5" width="32" height="10.5"/>
+  <path class="sp-pf-edge sp-pf-top" d="M0 9.5 H32"/>
+  <path class="sp-pf-edge sp-pf-bottom" d="M0 22.5 H32"/>
   <path class="sp-bar" d="M0 16 H32"/>
   <path class="sp-lamp" d="M4 16 H10 M22 16 H28"/>
   <circle class="sp-sensor-free" cx="16" cy="16" r="3.6"/>
