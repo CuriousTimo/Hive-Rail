@@ -49,7 +49,7 @@
    "block": "line_2"
   },
   {
-   "tile": "signal-hv-main-distant",
+   "tile": "signal-hv-block-distant",
    "x": 1,
    "y": 5,
    "turn": 2,
@@ -347,7 +347,7 @@
    "block": "line_1"
   },
   {
-   "tile": "signal-hv-main-distant",
+   "tile": "signal-hv-block-distant",
    "x": 15,
    "y": 6,
    "turn": 0,
@@ -366,6 +366,15 @@
    "mirror": false,
    "track": "1",
    "block": "line_1"
+  },
+  {
+   "tile": "lamp",
+   "x": 4,
+   "y": 8,
+   "turn": 0,
+   "mirror": false,
+   "id": "Wohnhaus",
+   "device": "light_wohnhaus"
   }
  ],
  "stations": [],
@@ -478,6 +487,12 @@
    "bus": "loconet",
    "address": 111,
    "barriers": 112
+  },
+  {
+   "id": "light_wohnhaus",
+   "type": "light",
+   "bus": "loconet",
+   "address": 113
   }
  ]
 }

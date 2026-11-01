@@ -350,6 +350,9 @@ function drawTiles(layout) {
   for (const module of layout.modules) {
     if (!module.tiles) continue;
     const group = el("g", { transform: `matrix(${module.tiles.matrix.join(" ")})` }, layer("tiles"));
+    // Behind the tiles: each tile of a block, coloured by the district feeding the block
+    // while it is a transfer block that a district feeds (see updateTiles).
+    const underlays = el("g", {}, group);
     for (const tile of module.tiles.tiles) {
       // A name plate has no track to turn: it reads upright on its module.
       const placed = tile.tile === "plate" ? { ...tile, turn: 0, mirror: false } : tile;
@@ -361,7 +364,16 @@ function drawTiles(layout) {
         if (placed.turn % 4 === 2) text.setAttribute("transform", `rotate(180 ${x} ${y})`);
       }
       if (tile.name) el("title", {}, g).textContent = `${tile.name} (${module.id})`;
-      elements.tiles.push({ g, tile });
+      let feed = null;
+      if (tile.block) {
+        // A band along the track, a little narrower than the tile.
+        const cells = SPDRS60_TILES[tile.tile]?.cells || 1;
+        const along = tile.turn % 2 === 0;
+        const [x, y] = [tile.x * TILE + (along ? 0 : 4), tile.y * TILE + (along ? 4 : 0)];
+        const [width, height] = along ? [cells * TILE, TILE - 8] : [TILE - 8, cells * TILE];
+        feed = el("rect", { x, y, width, height, class: "feed-underlay" }, underlays);
+      }
+      elements.tiles.push({ g, tile, feed });
     }
     for (const tile of module.tiles.tiles) {
       const label = tileLabel(tile);
@@ -374,6 +386,7 @@ function drawTiles(layout) {
 // (a signal's head, a turnout's diverging leg); in grid units (32 per cell).
 const LABEL_SIDE = {
   "turnout-right": "N", "turnout-left": "S", "double-slip": "N", sensor: "N", "sensor-curve": "N",
+  lamp: "S", windmill: "S", action: "S",
   ...Object.fromEntries(Object.keys(SPDRS60_TILES).filter((n) => n.startsWith("signal-")).map((n) => [n, "N"])),
 };
 
@@ -397,10 +410,23 @@ function tileLabel(t) {
 // the tile shows (a shunting signal: Sh 0 or Sh 1).
 const ASPECT_CLASSES = { red: ["hp0"], yellow: ["hp1", "vr0", "ks2"], green: ["hp1", "vr1", "ks1"] };
 
+// Lamps are lit and windmills turn by the fast clock: lamps from 18:00 to 07:00, windmills
+// in daylight. Actions (eMotion scenes) run only when switched, which the simulator does not.
+function dark(clock) {
+  if (!clock || !clock.known) return false;
+  return clock.minute >= 18 * 60 || clock.minute < 7 * 60;
+}
+
 function updateTiles(state) {
+  const night = dark(state.clock);
   const occupied = new Set(state.occupied);
   const closed = new Set(state.crossings_closed);
-  for (const { g, tile } of elements.tiles) {
+  for (const { g, tile, feed } of elements.tiles) {
+    // A transfer block shows the colour of the district feeding it now.
+    if (feed) {
+      const district = (state.feeds || {})[tile.block];
+      feed.style.fill = district ? districtColour(district) : "none";
+    }
     const classes = [...(tile.options || [])];
     if ((tile.pieces || []).some((p) => state.reserved[p])) classes.push("route");
     if (tile.block && occupied.has(tile.block)) classes.push("occupied");
@@ -413,6 +439,7 @@ function updateTiles(state) {
       else classes.push(...ASPECT_CLASSES[aspect]);
     }
     if (tile.crossing && closed.has(tile.crossing)) classes.push("closed");
+    if ((tile.tile === "lamp" && night) || (tile.tile === "windmill" && !night)) classes.push("on");
     const value = classes.join(" ");
     if (g.getAttribute("class") !== value) g.setAttribute("class", value);
   }

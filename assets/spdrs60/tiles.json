@@ -105,7 +105,7 @@
     ]
    }
   },
-  "signal-hv-main": {
+  "signal-hv-block": {
    "cells": 1,
    "paths": {
     "through": [
@@ -114,7 +114,43 @@
     ]
    }
   },
-  "signal-hv-main-distant": {
+  "signal-hv-entry": {
+   "cells": 1,
+   "paths": {
+    "through": [
+     "W0",
+     "E0"
+    ]
+   }
+  },
+  "signal-hv-departure": {
+   "cells": 1,
+   "paths": {
+    "through": [
+     "W0",
+     "E0"
+    ]
+   }
+  },
+  "signal-hv-block-distant": {
+   "cells": 2,
+   "paths": {
+    "through": [
+     "W0",
+     "E1"
+    ]
+   }
+  },
+  "signal-hv-entry-distant": {
+   "cells": 2,
+   "paths": {
+    "through": [
+     "W0",
+     "E1"
+    ]
+   }
+  },
+  "signal-hv-departure-distant": {
    "cells": 2,
    "paths": {
     "through": [
@@ -194,6 +230,18 @@
      "E0"
     ]
    }
+  },
+  "lamp": {
+   "cells": 1,
+   "paths": {}
+  },
+  "windmill": {
+   "cells": 1,
+   "paths": {}
+  },
+  "action": {
+   "cells": 1,
+   "paths": {}
   },
   "plate": {
    "cells": 1,

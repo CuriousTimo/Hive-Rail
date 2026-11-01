@@ -76,7 +76,7 @@
    "block": "cw_4"
   },
   {
-   "tile": "signal-hv-main",
+   "tile": "signal-hv-entry",
    "x": 8,
    "y": 4,
    "turn": 2,
@@ -290,7 +290,7 @@
    "block": "cw_2"
   },
   {
-   "tile": "signal-hv-main",
+   "tile": "signal-hv-entry",
    "x": 8,
    "y": 5,
    "turn": 2,
@@ -454,7 +454,7 @@
    "track": "1a"
   },
   {
-   "tile": "signal-hv-main-distant",
+   "tile": "signal-hv-entry-distant",
    "x": 2,
    "y": 6,
    "turn": 0,

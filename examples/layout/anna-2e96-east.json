@@ -49,7 +49,7 @@
    "block": "line_2"
   },
   {
-   "tile": "signal-hv-main-distant",
+   "tile": "signal-hv-block-distant",
    "x": 1,
    "y": 5,
    "turn": 2,
@@ -312,6 +312,15 @@
    "block": "line_2"
   },
   {
+   "tile": "lamp",
+   "x": 4,
+   "y": 11,
+   "turn": 0,
+   "mirror": false,
+   "id": "Bauernhof",
+   "device": "light_bauernhof"
+  },
+  {
    "tile": "level-crossing",
    "x": 9,
    "y": 11,
@@ -352,6 +361,15 @@
    "block": "line_2"
   },
   {
+   "tile": "windmill",
+   "x": 3,
+   "y": 13,
+   "turn": 0,
+   "mirror": false,
+   "id": "Mühle",
+   "device": "animation_m_hle"
+  },
+  {
    "tile": "sensor",
    "x": 9,
    "y": 13,
@@ -372,7 +390,7 @@
    "block": "line_2"
   },
   {
-   "tile": "signal-hv-main-distant",
+   "tile": "signal-hv-block-distant",
    "x": 9,
    "y": 14,
    "turn": 1,
@@ -534,6 +552,18 @@
    "type": "sensor",
    "bus": "loconet",
    "address": 214
+  },
+  {
+   "id": "light_bauernhof",
+   "type": "light",
+   "bus": "loconet",
+   "address": 113
+  },
+  {
+   "id": "animation_m_hle",
+   "type": "animation",
+   "bus": "loconet",
+   "address": 114
   }
  ]
 }

@@ -16,29 +16,44 @@ const WITH_TEXT = new Set(["plate", "train-number"]);
 // The signal tiles: which real signal each shows, the aspects it can show (Ril 301) and
 // the lamps it may have. Combinations show both signals' aspects; the distant signal under
 // a main signal is dark while the main shows Hp 0.
+// viessmann: the Viessmann H0 models (LED) that look like the tile's signal.
 const SIGNALS = {
-  "signal-hv-main": { face: "hv-main", palette: "hp1", options: ["sh-lamp", "zs1-lamp"],
-    aspects: ["hp0", "hp1", "hp2", "hp0 sh1", "hp0 zs1"] },
-  "signal-hv-main-distant": { face: "hv-main-distant", palette: "hp1 vr1", options: ["sh-lamp", "zs1-lamp", "extra-lamp"],
-    aspects: ["hp0", "hp1 vr0", "hp1 vr1", "hp1 vr2", "hp2 vr0", "hp2 vr1", "hp2 vr2", "hp0 sh1", "hp0 zs1"] },
-  "signal-hv-distant": { face: "hv-distant", palette: "vr1", options: ["extra-lamp"], aspects: ["vr0", "vr1", "vr2"] },
-  "signal-ks-main": { face: "ks-main", palette: "ks1", options: ["sh-lamp", "zs1-lamp"], aspects: ["hp0", "ks1", "hp0 sh1", "hp0 zs1"] },
-  "signal-ks-multi": { face: "ks-multi", palette: "ks2", options: ["sh-lamp", "zs1-lamp"], aspects: ["hp0", "ks1", "ks2", "hp0 sh1", "hp0 zs1"] },
-  "signal-ks-distant": { face: "ks-distant", palette: "ks1", options: [], aspects: ["ks1", "ks2"] },
-  "signal-sh": { face: "sh-light", palette: "sh1", options: [], aspects: ["sh0", "sh1"] },
+  // H/V main signals, one per kind
+  "signal-hv-block": { face: "hv-block", viessmann: "4011, 4721 (multiplex)", palette: "hp1", options: [], aspects: ["hp0", "hp1"] },
+  "signal-hv-entry": { face: "hv-entry", viessmann: "4012, 4722 (multiplex)", palette: "hp2", options: [], aspects: ["hp0", "hp1", "hp2"] },
+  "signal-hv-departure": { face: "hv-departure", viessmann: "4013, 4723 (multiplex)", palette: "hp1", options: ["one-red"], aspects: ["hp0", "hp1", "hp2", "hp0 sh1"] },
+  "signal-hv-block-distant": { face: "hv-block-distant", viessmann: "4014, 4724 (multiplex)", palette: "hp1 vr1", options: [],
+    aspects: ["hp0", "hp1 vr0", "hp1 vr1", "hp1 vr2"] },
+  "signal-hv-entry-distant": { face: "hv-entry-distant", viessmann: "4015, 4725 (multiplex)", palette: "hp1 vr1", options: [],
+    aspects: ["hp0", "hp1 vr0", "hp1 vr1", "hp1 vr2", "hp2 vr0", "hp2 vr1", "hp2 vr2"] },
+  "signal-hv-departure-distant": { face: "hv-departure-distant", viessmann: "4016, 4726 (multiplex)", palette: "hp1 vr1", options: ["one-red"],
+    aspects: ["hp0", "hp1 vr0", "hp1 vr1", "hp1 vr2", "hp2 vr0", "hp2 vr1", "hp2 vr2", "hp0 sh1"] },
+  "signal-hv-distant": { face: "hv-distant", viessmann: "4010, 4720 (multiplex); with the marker light 4030, 4730 (multiplex)", palette: "vr1", options: ["extra-lamp"], aspects: ["vr0", "vr1", "vr2"] },
+  "signal-ks-main": { face: "ks-main", viessmann: "4042 entry, 4043 departure (Sh 1)", palette: "ks1", options: ["sh-lamp"], aspects: ["hp0", "ks1", "hp0 sh1"] },
+  "signal-ks-multi": { face: "ks-multi", viessmann: "4045 entry, 4046 departure (Sh 1)", palette: "ks2", options: ["sh-lamp", "extra-lamp"], aspects: ["hp0", "ks1", "ks2", "hp0 sh1"] },
+  "signal-ks-distant": { face: "ks-distant", viessmann: "4040", palette: "ks1", options: ["extra-lamp"], aspects: ["ks1", "ks2"] },
+  "signal-sh": { face: "sh-light", viessmann: "4017, 4727 (multiplex) high; 4018, 4728 (multiplex) low", palette: "sh1", options: [], aspects: ["sh0", "sh1"] },
 };
-const OPTION_NAMES = { "sh-lamp": "Sh 1 lamps (white)", "zs1-lamp": "Zs 1 lamps", "extra-lamp": "Zusatzlicht (short braking distance)" };
-const ASPECT_NAMES = { hp0: "Hp 0", hp1: "Hp 1", hp2: "Hp 2", ks1: "Ks 1", ks2: "Ks 2", vr0: "Vr 0", vr1: "Vr 1", vr2: "Vr 2", sh0: "Sh 0", sh1: "Sh 1", zs1: "Zs 1" };
+const OPTION_NAMES = {
+  "sh-lamp": "Sh 1 (departure signal)",
+  "one-red": "Hp 0 with one red (both reds on one output)",
+  "extra-lamp": "Upper white (Zusatzlicht, short braking distance)",
+};
+// The lamp an aspect needs, where a signal may be without it.
+const ASPECT_LAMPS = { sh1: "sh-lamp" };
+const ASPECT_NAMES = { hp0: "Hp 0", hp1: "Hp 1", hp2: "Hp 2", ks1: "Ks 1", ks2: "Ks 2", vr0: "Vr 0", vr1: "Vr 1", vr2: "Vr 2", sh0: "Sh 0", sh1: "Sh 1" };
 const aspectName = (aspect) => aspect.split(" ").map((a) => ASPECT_NAMES[a]).join(" + ");
 let faceAspect = null; // the aspect the selected signal's face shows
 // The device a tile switches or reports, by tile: its type in the module's device list.
 const DEVICE_TYPES = {
   "turnout-right": "turnout", "turnout-left": "turnout", "double-slip": "turnout",
   "sensor": "occupancy", "sensor-curve": "occupancy", "level-crossing": "crossing", "district-border": "relay",
+  lamp: "light", windmill: "animation", action: "animation",
   ...Object.fromEntries(Object.keys(SIGNALS).map((tile) => [tile, "signal"])),
 };
 // Tiles with a name of their own: turnouts, signals, level crossings.
-const NAMED = new Set(["turnout-right", "turnout-left", "double-slip", "level-crossing", "sensor", "sensor-curve", ...Object.keys(SIGNALS)]);
+const NAMED = new Set(["turnout-right", "turnout-left", "double-slip", "level-crossing", "sensor", "sensor-curve",
+  "lamp", "windmill", "action", ...Object.keys(SIGNALS)]);
 // Common accessory and feedback decoders, offered for a device's decoder type.
 const DECODERS = {
   turnout: ["Uhlenbrock 67300 (switch decoder)", "Viessmann 5229 (motor turnout decoder)", "ESU SwitchPilot", "ESU SwitchPilot Servo",
@@ -47,11 +62,13 @@ const DECODERS = {
   occupancy: ["Digikeijs DR4088LN-CS (current sensing)", "Uhlenbrock 63320", "Uhlenbrock 63340", "LDT RM-GB-8-N", "Blücher GBM16XN", "Arduino (own)"],
   crossing: ["Viessmann 5229", "MobaLedLib", "Arduino (own)"],
   relay: ["Hive-Rail node board relay", "Viessmann 5552 (relay module)", "Arduino (own)"],
+  light: ["Viessmann 5229", "MobaLedLib", "Uhlenbrock 67300", "Arduino (own)"],
+  animation: ["Viessmann eMotion", "Viessmann 5229", "MobaLedLib", "Arduino (own)"],
 };
 const BUSES = { loconet: "LocoNet", dcc: "DCC accessory" };
 // The palette, in the order a module is usually drawn.
 const PALETTE = ["track-straight", "track-curve", "sensor", "sensor-curve", "turnout-right", "turnout-left",
-  "buffer-stop", "crossing", "double-slip", ...Object.keys(SIGNALS), "level-crossing", "district-border", "platform-track", "train-number", "plate"];
+  "buffer-stop", "crossing", "double-slip", ...Object.keys(SIGNALS), "level-crossing", "district-border", "platform-track", "train-number", "lamp", "windmill", "action", "plate"];
 // Palette entries that place a tile with options already set.
 const PRESETS = { "platform-track": { tile: "track-straight", options: ["platform-top", "platform-bottom"] } };
 // Straight tiles that can lie along a platform, above, below or both.
@@ -112,6 +129,7 @@ function portOnGrid(t, port) {
 // (a signal's head, a turnout's diverging leg); in grid units (32 per cell).
 const LABEL_SIDE = {
   "turnout-right": "N", "turnout-left": "S", "double-slip": "N", sensor: "N", "sensor-curve": "N",
+  lamp: "S", windmill: "S", action: "S",
   ...Object.fromEntries(Object.keys(SPDRS60_TILES).filter((n) => n.startsWith("signal-")).map((n) => [n, "N"])),
 };
 
@@ -380,7 +398,7 @@ function buildPalette() {
     const button = document.createElement("button");
     button.type = "button";
     button.dataset.tile = name;
-    button.title = info.title;
+    button.title = info.title + (SIGNALS[name] ? `\nViessmann ${SIGNALS[name].viessmann}` : "");
     if (info.cells === 2) button.classList.add("wide");
     const w = info.cells * CELL;
     button.innerHTML = `<svg viewBox="0 0 ${w} ${CELL}" width="${(w * 40) / CELL}" height="40"><style>${SPDRS60_STYLE}</style>${
@@ -469,7 +487,7 @@ function showProperties() {
       <dt>Turned</dt><dd class="row-buttons"><button type="button" data-act="ccw" title="Shift+R">⟲</button><span>${t.turn * 90}°</span><button type="button" data-act="cw" title="R">⟳</button></dd>
       <dt>Mirrored</dt><dd><input type="checkbox" data-field="mirror" ${t.mirror ? "checked" : ""} style="width:auto"></dd>
       ${NAMED.has(t.tile) ? `<dt>Name</dt><dd><input type="text" data-field="id" value="${escapeHtml(t.id)}" placeholder="${{ turnout: "W1", signal: "A, N2", occupancy: "S12", crossing: "BÜ 1" }[type] || ""}"></dd>` : ""}
-      ${["signal-hv-main-distant", "signal-hv-distant"].includes(t.tile) ? `<dt>Distant for</dt><dd><input type="text" data-field="distant" value="${escapeHtml(t.distant)}" placeholder="a, f, n3/n4, 15"></dd>` : ""}
+      ${(t.tile.endsWith("-distant") && t.tile !== "signal-ks-distant") ? `<dt>Distant for</dt><dd><input type="text" data-field="distant" value="${escapeHtml(t.distant)}" placeholder="a, f, n3/n4, 15"></dd>` : ""}
       ${carriesTrack ? `<dt>Track</dt><dd><input type="text" data-field="track" value="${escapeHtml(t.track)}" placeholder="1, 2, siding"></dd>
       <dt>Block</dt><dd><input type="text" data-field="block" value="${escapeHtml(t.block)}" placeholder="adorf_1"></dd>` : ""}
       ${type ? `</dl><h3>Device (${escapeHtml(type)})</h3><dl>
@@ -515,13 +533,17 @@ function showProperties() {
 // below it.
 function signalFields(t) {
   const signal = SIGNALS[t.tile];
-  if (!signal.aspects.includes(faceAspect)) faceAspect = signal.aspects[0];
+  // only the aspects this signal has the lamps for
+  const fitted = (lamp) => !lamp || !signal.options.includes(lamp) || (t.options || []).includes(lamp);
+  const aspects = signal.aspects.filter((a) => a.split(" ").every((part) => fitted(ASPECT_LAMPS[part])));
+  if (!aspects.includes(faceAspect)) faceAspect = aspects[0];
   const face = SIGNAL_FACES[signal.face];
   const options = (t.options || []).join(" ");
   return `
+    <dt>Viessmann</dt><dd>${signal.viessmann}</dd>
     ${signal.options.map((option) => `<dt>${OPTION_NAMES[option]}</dt><dd><input type="checkbox" data-option="${option}" ${(t.options || []).includes(option) ? "checked" : ""} style="width:auto"></dd>`).join("")}
-    <dt>On the track</dt><dd><svg class="signal-face" viewBox="0 0 ${face.width} ${face.height}" height="${Math.min(170, face.height * 1.4)}"><style>${SIGNAL_FACE_STYLE}</style><g class="${options} ${faceAspect}${faceAspect.includes("vr") && options.includes("extra-lamp") ? " short" : ""}">${face.body}</g></svg></dd>
-    <dt>Aspect</dt><dd class="row-buttons aspect-buttons">${signal.aspects.map((a) => `<button type="button" data-aspect="${a}" class="${a === faceAspect ? "chosen" : ""}">${aspectName(a)}</button>`).join("")}</dd>`;
+    <dt>On the track</dt><dd><svg class="signal-face" viewBox="0 0 ${face.width} ${face.height}" height="${Math.min(170, face.height * 1.4)}"><style>${SIGNAL_FACE_STYLE}</style><g class="${options} ${faceAspect}${/vr|ks2/.test(faceAspect) && options.includes("extra-lamp") ? " short" : ""}">${face.body}</g></svg></dd>
+    <dt>Aspect</dt><dd class="row-buttons aspect-buttons">${aspects.map((a) => `<button type="button" data-aspect="${a}" class="${a === faceAspect ? "chosen" : ""}">${aspectName(a)}</button>`).join("")}</dd>`;
 }
 
 // The module itself: its ends (found on the grid), its tracks, blocks and devices.

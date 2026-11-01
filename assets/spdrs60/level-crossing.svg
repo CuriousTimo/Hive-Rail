@@ -30,6 +30,21 @@
   .sp-plate-text { fill: #141414; font: 7.5px sans-serif; text-anchor: middle; }
   .sp-number-box { fill: #111111; stroke: #3c3c3c; stroke-width: 0.8; }
   .sp-number { fill: #ff3b2f; font: bold 7.5px monospace; text-anchor: middle; }
+  .sp-post { fill: none; stroke: #3c3c3c; stroke-width: 1.4; stroke-linecap: round; }
+  .sp-bulb { fill: #e4e4e4; stroke: #3c3c3c; stroke-width: 0.8; }
+  .sp-glow { display: none; fill: #ffd34d; opacity: 0.35; }
+  .sp-socket { fill: #8e8e8e; stroke: #3c3c3c; stroke-width: 0.6; }
+  .sp-thread { fill: none; stroke: #3c3c3c; stroke-width: 0.6; }
+  .on .sp-bulb { fill: #ffd34d; }
+  .on .sp-glow { display: inline; }
+  .sp-mill { fill: #8b6b4a; stroke: #3c2e20; stroke-width: 0.8; }
+  .sp-sails { stroke: #3c2e20; stroke-width: 1; fill: #f3eee2; }
+  .on .sp-sails { animation: sp-spin 3s linear infinite; transform-origin: 16px 11px; }
+  .sp-action-box { fill: #1d2a3a; stroke: #5a6b80; stroke-width: 1; }
+  .sp-action-icon { fill: #8fa2b8; }
+  .on .sp-action-box { stroke: #ffd34d; stroke-width: 1.6; }
+  .on .sp-action-icon { fill: #ffd34d; }
+  @keyframes sp-spin { to { transform: rotate(360deg); } }
   .sp-sensor-free { fill: #34d058; stroke: #141414; stroke-width: 0.9; }
   .sp-sensor-on { display: none; }
   .occupied .sp-sensor-free { display: none; }
@@ -42,27 +57,24 @@
   .sf-mast { fill: #8a8a8a; }
   .sf-lamp { fill: #262626; stroke: #3c3c3c; stroke-width: 0.6; }
   .sf-option { display: none; }
-  .sh-lamp .sf-option.sh-lamp, .zs1-lamp .sf-option.zs1-lamp, .extra-lamp .sf-option.extra-lamp { display: inline; }
+  .sh-lamp .sf-option.sh-lamp, .extra-lamp .sf-option.extra-lamp { display: inline; }
   /* H/V main */
   .hp0 .sf-red1, .hp0 .sf-red2 { fill: #ff2a1f; }
-  .hp0.sh1 .sf-red2 { fill: #262626; }
+  .hp0.sh1 .sf-red2, .one-red.hp0 .sf-red2 { fill: #262626; }
   .hp1 .sf-green, .hp2 .sf-green { fill: #2fe05a; }
   .hp2 .sf-yellow { fill: #ffbf1a; }
   .sh1 .sf-white { fill: #f6f6f6; }
-  .zs1 .sf-zs1 { fill: #f6f6f6; }
   /* H/V distant */
-  .vr0 .sf-ll, .vr0 .sf-ur, .vr2 .sf-ll { fill: #ffbf1a; }
-  .vr1 .sf-ll, .vr1 .sf-ur, .vr2 .sf-ur { fill: #2fe05a; }
+  .vr0 .sf-ll.sf-vr-yellow, .vr0 .sf-ur.sf-vr-yellow, .vr2 .sf-ll.sf-vr-yellow { fill: #ffbf1a; }
+  .vr1 .sf-ll.sf-vr-green, .vr1 .sf-ur.sf-vr-green, .vr2 .sf-ur.sf-vr-green { fill: #2fe05a; }
   .short .sf-extra { fill: #f6f6f6; }
-  .hp0 .sf-on-main .sf-ll, .hp0 .sf-on-main .sf-ur { fill: #262626; }
+  .hp0 .sf-on-main .sf-vr-yellow, .hp0 .sf-on-main .sf-vr-green { fill: #262626; }
   /* Ks */
   .hp0 .sf-ks-red { fill: #ff2a1f; }
   .ks1 .sf-ks-green { fill: #2fe05a; }
   .ks2 .sf-ks-yellow { fill: #ffbf1a; }
-  .zs1 .sf-ks-zs1 { fill: #f6f6f6; animation: sf-blink 1s steps(2, start) infinite; }
   /* light shunting signal */
   .sh0 .sf-sh-red, .hp0 .sf-sh-red { fill: #ff2a1f; }
-  @keyframes sf-blink { to { visibility: hidden; } }
   </style>
   <rect class="sp-tile" x="0" y="0" width="32" height="32"/>
   <rect class="sp-road" x="11.5" y="0" width="9" height="32"/>

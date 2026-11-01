@@ -15,8 +15,8 @@ The tiles are squares on a grid, as in Rocrail's editor. A module's grid is its 
   "tracks": [ { "name": "in", "direction": "B>A" } ],
   "tiles": [ { "tile": "turnout-left", "x": 26, "y": 5, "turn": 2, "mirror": false,
                "id": "3", "block": "throat", "device": "point_3" },
-             { "tile": "signal-hv-main", "x": 24, "y": 5, "turn": 0, "id": "N1", "track": "1",
-               "block": "adorf_1_e", "device": "signal_n1", "options": ["sh-lamp"] } ],
+             { "tile": "signal-hv-departure", "x": 24, "y": 5, "turn": 0, "id": "N1", "track": "1",
+               "block": "adorf_1_e", "device": "signal_n1" } ],
   "stations": [ { "name": "Adorf", "code": "Ad", "tracks": [ { "name": "1", "track": "1", "platform": true } ] } ],
   "blocks": [ { "id": "adorf_1_e", "track": "1", "detected_rail": "outer",
                 "sections": [ { "device": "sensor_1_h_b", "role": "stop", "for": "A>B" } ] } ],
@@ -41,8 +41,8 @@ A tile has its place (`x`, `y`), `turn` (0 to 3 quarters clockwise) and `mirror`
 | `buffer-stop.svg` | Buffer stop at the right end |
 | `sensor.svg` | Track with an occupancy sensor: a green dot in the middle while free, a larger red dot while occupied; it can lie along a platform |
 | `sensor-curve.svg` | The curve with an occupancy sensor in its middle |
-| `signal-hv-main.svg` | H/V main signal |
-| `signal-hv-main-distant.svg` | H/V main signal with the H/V distant signal below it on the same mast, two tiles wide; the distant is dark while the main shows Hp 0 |
+| `signal-hv-block.svg`, `signal-hv-entry.svg`, `signal-hv-departure.svg` | H/V block, entry and departure signal, each as the Viessmann model has its lamps |
+| `signal-hv-block-distant.svg`, `signal-hv-entry-distant.svg`, `signal-hv-departure-distant.svg` | The same with the H/V distant signal below on the same mast, two tiles wide; the distant is dark while the main shows Hp 0 |
 | `signal-hv-distant.svg` | H/V distant signal |
 | `signal-ks-main.svg` | Ks main signal (red over green) |
 | `signal-ks-multi.svg` | Ks multi-section signal (red over green and yellow) |
@@ -53,6 +53,9 @@ The signal tiles show the real signal (`assets/signals/`, made by `tools/signal_
 | `level-crossing.svg` | Level crossing: the road across the track, lamps lit while closed |
 | `district-border.svg` | Hive-Rail's district border: a section joint with each side's district colour (`--district-a`, `--district-b`) |
 | `train-number.svg` | Train number field on the track (its text is set by the page); it can lie along a platform |
+| `lamp.svg` | Lamp (street or building light): lit while on (`on`) |
+| `windmill.svg` | Windmill: its sails turn while it runs (`on`) |
+| `action.svg` | Action, a Viessmann eMotion scene or another animated accessory: lit while it runs (`on`) |
 | `plate.svg` | Name plate in its own cell (track, signal or turnout name; its text is set by the page) |
 
 ## States
@@ -66,20 +69,20 @@ A tile's state is a class on its `<svg>` root (or on the group a page draws it i
 | `occupied` | Track occupied: lamps red |
 | `straight`, `diverging` | A turnout's or double slip's position: lights that leg and its position lamp |
 | `closed` | A level crossing is closed |
+| `on` | A lamp is lit, a windmill turns, an action runs (on the map: lamps from 18:00 to 07:00 on the fast clock, windmills in daylight) |
 | `locked` | A signal's locked lamp at its foot (yellow) |
 
 Signal aspects by their Ril 301 names; the signal tile lights the lamps the real signal shows:
 
 | Class | Aspect |
 | --- | --- |
-| `hp0` | Hp 0, stop (on the H/V main signal two reds side by side; a distant signal under it goes dark) |
+| `hp0` | Hp 0, stop (one red; two side by side on an H/V departure signal; a distant signal under it goes dark) |
 | `hp1`, `hp2` | Hp 1 proceed, Hp 2 proceed slowly (green; green over yellow) |
 | `ks1`, `ks2` | Ks 1 proceed, Ks 2 proceed, expect stop |
 | `vr0`, `vr1`, `vr2` | Vr 0 expect stop, Vr 1 expect proceed, Vr 2 expect proceed slowly |
 | `sh0`, `sh1` | Sh 0 stop, Sh 1 shunting allowed |
-| `zs1` | Zs 1, the substitute signal |
 
-Lamps a signal may or may not have are classes too: `sh-lamp` (Sh 1), `zs1-lamp` (Zs 1), `extra-lamp` (the distant signal's Zusatzlicht, lit with `short`). A combined signal takes both aspects, such as `hp1 vr0`.
+Lamps a signal may or may not have are classes too: `sh-lamp` (Sh 1 on a Ks signal), `one-red` (an H/V departure signal's Hp 0 with one red), `extra-lamp` (the upper white, the distant signal's Zusatzlicht, lit with `short`). A combined signal takes both aspects, such as `hp1 vr0`.
 
 Classes combine, for example `route diverging` or `sh-lamp hp0 sh1`. A straight track, sensor or train number along a platform also takes `platform-top`, `platform-bottom` or both: platform bands from the track to the tile's edge, so two tracks a row apart with their facing halves make an island platform. On the map and in the editor every turnout, signal and sensor has its name in small text beside it, on the side away from a signal's head or a turnout's diverging leg.
 

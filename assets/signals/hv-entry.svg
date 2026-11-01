@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 100" width="80" height="200" class="">
+  <title>H/V entry signal (Einfahrsignal): Hp 0 (one red), Hp 1, Hp 2</title>
+  <style>
+  .sf-screen { fill: #0d0d0d; stroke: #3a3a3a; stroke-width: 0.8; }
+  .sf-mast { fill: #8a8a8a; }
+  .sf-lamp { fill: #262626; stroke: #3c3c3c; stroke-width: 0.6; }
+  .sf-option { display: none; }
+  .sh-lamp .sf-option.sh-lamp, .extra-lamp .sf-option.extra-lamp { display: inline; }
+  /* H/V main */
+  .hp0 .sf-red1, .hp0 .sf-red2 { fill: #ff2a1f; }
+  .hp0.sh1 .sf-red2, .one-red.hp0 .sf-red2 { fill: #262626; }
+  .hp1 .sf-green, .hp2 .sf-green { fill: #2fe05a; }
+  .hp2 .sf-yellow { fill: #ffbf1a; }
+  .sh1 .sf-white { fill: #f6f6f6; }
+  /* H/V distant */
+  .vr0 .sf-ll.sf-vr-yellow, .vr0 .sf-ur.sf-vr-yellow, .vr2 .sf-ll.sf-vr-yellow { fill: #ffbf1a; }
+  .vr1 .sf-ll.sf-vr-green, .vr1 .sf-ur.sf-vr-green, .vr2 .sf-ur.sf-vr-green { fill: #2fe05a; }
+  .short .sf-extra { fill: #f6f6f6; }
+  .hp0 .sf-on-main .sf-vr-yellow, .hp0 .sf-on-main .sf-vr-green { fill: #262626; }
+  /* Ks */
+  .hp0 .sf-ks-red { fill: #ff2a1f; }
+  .ks1 .sf-ks-green { fill: #2fe05a; }
+  .ks2 .sf-ks-yellow { fill: #ffbf1a; }
+  /* light shunting signal */
+  .sh0 .sf-sh-red, .hp0 .sf-sh-red { fill: #ff2a1f; }
+  </style>
+  <rect class="sf-mast" x="18" y="76" width="4" height="24"/>
+  <path class="sf-screen" d="M6 0 H34 L40 6 V76 H0 V6 Z"/>
+  <circle class="sf-lamp sf-green" cx="25.5" cy="12" r="4.4"/>
+  <circle class="sf-lamp sf-red1" cx="11.5" cy="58" r="4.4"/>
+  <circle class="sf-lamp sf-yellow" cx="25.5" cy="58" r="4.4"/>
+
+</svg>

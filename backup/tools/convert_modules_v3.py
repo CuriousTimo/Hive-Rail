@@ -103,6 +103,11 @@ class Module:
         device = self.device(ident("sensor", name), type_, address)
         return self.put("sensor", x, y, turn, id=name, track=track, block=block, device=device)
 
+    def thing(self, tile, x, y, name, type_, address):
+        """A lamp, windmill or action tile with its device (a light or an animation)."""
+        device = self.device(ident({"light": "light", "animation": "animation"}[type_], name), type_, address)
+        return self.put(tile, x, y, id=name, device=device)
+
     def turnout(self, tile, x, y, turn, mirror, name, address, track=None, block=None):
         device = self.device(ident("point", name), "turnout", address)
         return self.put(tile, x, y, turn, mirror, id=name, track=track, block=block, device=device)
@@ -227,6 +232,10 @@ def adorf():
     # A terminus: every platform track ends at a buffer stop; the line leaves at B.
     m.ends = [{"id": "B", "side": "right", "profile": "2E96", "tracks": ["in", "out"]}]
     m.tracks = [{"name": "in", "direction": "B>A"}, {"name": "out", "direction": "A>B"}]
+    # Lights: the platform lamps above the house platform, the goods shed's lamp.
+    m.thing("lamp", 8, 4, "Bahnsteig 1", "light", 102)
+    m.thing("lamp", 16, 4, "Halle", "light", 101)
+    m.thing("lamp", 5, 9, "Güterschuppen", "light", 103)
     return m.write(stations=[{"name": "Adorf", "code": "Ad", "tracks": [
         {"name": "1", "track": "1", "platform": True}, {"name": "2", "track": "2", "platform": True},
         {"name": "3", "track": "3", "platform": True}]}])
@@ -247,6 +256,8 @@ def bdorf():
                 section["for"] = {"B>A": "A>B", "A>B": "B>A"}[section["for"]]
     m.ends = [{"id": "A", "side": "left", "profile": "2E96", "tracks": ["out", "in"]}]
     m.tracks = [{"name": "in", "direction": "A>B"}, {"name": "out", "direction": "B>A"}]
+    # A Viessmann eMotion scene on the platform: travellers waiting.
+    m.thing("action", 22, 8, "Reisende", "animation", 115)
     return m.write(stations=[{"name": "Bdorf", "code": "Bd", "tracks": [
         {"name": "1", "track": "1", "platform": True}, {"name": "2", "track": "2", "platform": True},
         {"name": "3", "track": "3", "platform": True}]}])
@@ -327,7 +338,7 @@ def cdorf_loop():
 
 
 # --- line modules -------------------------------------------------------------------------
-def line_module(v2_name, signals=(), sensors=(), borders=(), crossing=None, blocks=()):
+def line_module(v2_name, signals=(), sensors=(), borders=(), crossing=None, blocks=(), things=()):
     """A straight double track module: track 2 (westbound) on row 5, track 1 (eastbound) on
     row 6. signals: (name, x, track, address, distant); sensors: (name, x, track, address, type);
     borders: (track, x, relay address); crossing: (name, x, lights, barriers, sensors);
@@ -360,6 +371,8 @@ def line_module(v2_name, signals=(), sensors=(), borders=(), crossing=None, bloc
         m.blocks.append({"id": block, "track": track, "detected_rail": "both" if role == "transfer" else "outer",
                          "sections": [{"device": ident("sensor", sensor), **({"role": role} if role else {}),
                                        **({"for": direction} if direction else {})}]})
+    for tile, x, y, name, type_, address in things:
+        m.thing(tile, x, y, name, type_, address)
     ends_2e96(m)
     return m.write(crossings=crossings)
 
@@ -373,6 +386,7 @@ def line_modules():
                          ("ESK 1", 2, "1", 211, "sensor"), ("ASK 1", 12, "1", 212, "sensor"),
                          ("ESK 2", 16, "2", 213, "sensor"), ("ASK 2", 6, "2", 214, "sensor")),
                 crossing=("Feldweg", 9, 111, 112, {"close": ["ESK 1", "ESK 2"], "open": ["ASK 1", "ASK 2"]}),
+                things=(("lamp", 4, 8, "Wohnhaus", "light", 113),),
                 blocks=(("line_1", "1", "1 S", None, None), ("line_2", "2", "2 S", None, None)))
     # District borders: transfer sections (T) with their relays, edge sections (R), block
     # signals at the borders, and the handover detectors (IR).
@@ -427,6 +441,9 @@ def anna_curve():
         m.sensor(x, y, name, address, track, f"line_{track}", turn=1 if x in (9, 10) and y > 6 else 0, type_=type_)
     m.blocks = [{"id": "line_1", "track": "1", "detected_rail": "outer", "sections": [{"device": ident("sensor", "1 S"), "role": "entry", "for": "A>B"}]},
                 {"id": "line_2", "track": "2", "detected_rail": "outer", "sections": [{"device": ident("sensor", "2 S")}]}]
+    # The farm inside the curve: its lamp and its windmill.
+    m.thing("lamp", 4, 11, "Bauernhof", "light", 113)
+    m.thing("windmill", 3, 13, "Mühle", "animation", 114)
     m.ends = [{"id": "A", "side": "left", "profile": "2E96", "tracks": ["2", "1"]},
               {"id": "B", "side": "bottom", "profile": "2E96", "tracks": ["1", "2"]}]
     m.tracks = [{"name": "1", "direction": "A>B"}, {"name": "2", "direction": "B>A"}]

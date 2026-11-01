@@ -57,7 +57,7 @@
    "block": "bdorf_3_e"
   },
   {
-   "tile": "signal-hv-main",
+   "tile": "signal-hv-departure",
    "x": 12,
    "y": 4,
    "turn": 2,
@@ -65,10 +65,7 @@
    "id": "P3",
    "track": "3",
    "block": "bdorf_3_e",
-   "device": "signal_p3",
-   "options": [
-    "sh-lamp"
-   ]
+   "device": "signal_p3"
   },
   {
    "tile": "track-straight",
@@ -443,7 +440,7 @@
    "block": "bdorf_2_e"
   },
   {
-   "tile": "signal-hv-main",
+   "tile": "signal-hv-departure",
    "x": 12,
    "y": 5,
    "turn": 2,
@@ -451,10 +448,7 @@
    "id": "P2",
    "track": "2",
    "block": "bdorf_2_e",
-   "device": "signal_p2",
-   "options": [
-    "sh-lamp"
-   ]
+   "device": "signal_p2"
   },
   {
    "tile": "track-straight",
@@ -744,7 +738,7 @@
    "block": "throat"
   },
   {
-   "tile": "signal-hv-main",
+   "tile": "signal-hv-entry",
    "x": 2,
    "y": 6,
    "turn": 0,
@@ -829,7 +823,7 @@
    "block": "bdorf_1_e"
   },
   {
-   "tile": "signal-hv-main",
+   "tile": "signal-hv-departure",
    "x": 11,
    "y": 6,
    "turn": 2,
@@ -837,10 +831,7 @@
    "id": "P1",
    "track": "1",
    "block": "bdorf_1_e",
-   "device": "signal_p1",
-   "options": [
-    "sh-lamp"
-   ]
+   "device": "signal_p1"
   },
   {
    "tile": "track-straight",
@@ -1122,6 +1113,15 @@
    "turn": 0,
    "mirror": false,
    "text": "1"
+  },
+  {
+   "tile": "action",
+   "x": 22,
+   "y": 8,
+   "turn": 0,
+   "mirror": false,
+   "id": "Reisende",
+   "device": "animation_reisende"
   }
  ],
  "stations": [
@@ -1395,6 +1395,12 @@
    "type": "occupancy",
    "bus": "loconet",
    "address": 247
+  },
+  {
+   "id": "animation_reisende",
+   "type": "animation",
+   "bus": "loconet",
+   "address": 115
   }
  ]
 }

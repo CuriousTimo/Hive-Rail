@@ -344,7 +344,7 @@
    "block": "edge_1"
   },
   {
-   "tile": "signal-hv-main-distant",
+   "tile": "signal-hv-block-distant",
    "x": 15,
    "y": 6,
    "turn": 0,

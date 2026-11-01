@@ -31,6 +31,24 @@
  ],
  "tiles": [
   {
+   "tile": "lamp",
+   "x": 8,
+   "y": 4,
+   "turn": 0,
+   "mirror": false,
+   "id": "Bahnsteig 1",
+   "device": "light_bahnsteig_1"
+  },
+  {
+   "tile": "lamp",
+   "x": 16,
+   "y": 4,
+   "turn": 0,
+   "mirror": false,
+   "id": "Halle",
+   "device": "light_halle"
+  },
+  {
    "tile": "plate",
    "x": 0,
    "y": 5,
@@ -312,7 +330,7 @@
    "block": "adorf_1_e"
   },
   {
-   "tile": "signal-hv-main",
+   "tile": "signal-hv-departure",
    "x": 24,
    "y": 5,
    "turn": 0,
@@ -320,10 +338,7 @@
    "id": "N1",
    "track": "1",
    "block": "adorf_1_e",
-   "device": "signal_n1",
-   "options": [
-    "sh-lamp"
-   ]
+   "device": "signal_n1"
   },
   {
    "tile": "track-straight",
@@ -400,7 +415,7 @@
    "block": "throat"
   },
   {
-   "tile": "signal-hv-main",
+   "tile": "signal-hv-entry",
    "x": 33,
    "y": 5,
    "turn": 2,
@@ -698,7 +713,7 @@
    "block": "adorf_2_e"
   },
   {
-   "tile": "signal-hv-main",
+   "tile": "signal-hv-departure",
    "x": 23,
    "y": 6,
    "turn": 0,
@@ -706,10 +721,7 @@
    "id": "N2",
    "track": "2",
    "block": "adorf_2_e",
-   "device": "signal_n2",
-   "options": [
-    "sh-lamp"
-   ]
+   "device": "signal_n2"
   },
   {
    "tile": "track-straight",
@@ -1084,7 +1096,7 @@
    "block": "adorf_3_e"
   },
   {
-   "tile": "signal-hv-main",
+   "tile": "signal-hv-departure",
    "x": 23,
    "y": 7,
    "turn": 0,
@@ -1092,10 +1104,7 @@
    "id": "N3",
    "track": "3",
    "block": "adorf_3_e",
-   "device": "signal_n3",
-   "options": [
-    "sh-lamp"
-   ]
+   "device": "signal_n3"
   },
   {
    "tile": "track-straight",
@@ -1114,6 +1123,15 @@
    "mirror": false,
    "track": "3",
    "block": "throat"
+  },
+  {
+   "tile": "lamp",
+   "x": 5,
+   "y": 9,
+   "turn": 0,
+   "mirror": false,
+   "id": "Güterschuppen",
+   "device": "light_g_terschuppen"
   },
   {
    "tile": "plate",
@@ -1395,6 +1413,24 @@
    "type": "occupancy",
    "bus": "loconet",
    "address": 247
+  },
+  {
+   "id": "light_bahnsteig_1",
+   "type": "light",
+   "bus": "loconet",
+   "address": 102
+  },
+  {
+   "id": "light_halle",
+   "type": "light",
+   "bus": "loconet",
+   "address": 101
+  },
+  {
+   "id": "light_g_terschuppen",
+   "type": "light",
+   "bus": "loconet",
+   "address": 103
   }
  ]
 }

@@ -126,6 +126,7 @@ th { font-weight: 600; color: var(--muted); font-size: 12px; }
 /* The map. Sizes are in millimetres of the layout. */
 .module { fill: var(--module); stroke: var(--module-edge); stroke-width: 3; }
 .module-label { fill: var(--muted); font-size: 46px; }
+.feed-underlay { fill: none; opacity: 0.55; }
 .tile-label { fill: var(--text); font-size: 5.5px; opacity: 0.85; }
 .passing-loop-label { fill: var(--muted); font-size: 50px; font-style: italic; }
 /* Station information boards: white on blue, as on the platforms; changes in yellow. */

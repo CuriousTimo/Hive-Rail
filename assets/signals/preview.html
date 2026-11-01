@@ -11,238 +11,352 @@
   .sf-mast { fill: #8a8a8a; }
   .sf-lamp { fill: #262626; stroke: #3c3c3c; stroke-width: 0.6; }
   .sf-option { display: none; }
-  .sh-lamp .sf-option.sh-lamp, .zs1-lamp .sf-option.zs1-lamp, .extra-lamp .sf-option.extra-lamp { display: inline; }
+  .sh-lamp .sf-option.sh-lamp, .extra-lamp .sf-option.extra-lamp { display: inline; }
   /* H/V main */
   .hp0 .sf-red1, .hp0 .sf-red2 { fill: #ff2a1f; }
-  .hp0.sh1 .sf-red2 { fill: #262626; }
+  .hp0.sh1 .sf-red2, .one-red.hp0 .sf-red2 { fill: #262626; }
   .hp1 .sf-green, .hp2 .sf-green { fill: #2fe05a; }
   .hp2 .sf-yellow { fill: #ffbf1a; }
   .sh1 .sf-white { fill: #f6f6f6; }
-  .zs1 .sf-zs1 { fill: #f6f6f6; }
   /* H/V distant */
-  .vr0 .sf-ll, .vr0 .sf-ur, .vr2 .sf-ll { fill: #ffbf1a; }
-  .vr1 .sf-ll, .vr1 .sf-ur, .vr2 .sf-ur { fill: #2fe05a; }
+  .vr0 .sf-ll.sf-vr-yellow, .vr0 .sf-ur.sf-vr-yellow, .vr2 .sf-ll.sf-vr-yellow { fill: #ffbf1a; }
+  .vr1 .sf-ll.sf-vr-green, .vr1 .sf-ur.sf-vr-green, .vr2 .sf-ur.sf-vr-green { fill: #2fe05a; }
   .short .sf-extra { fill: #f6f6f6; }
-  .hp0 .sf-on-main .sf-ll, .hp0 .sf-on-main .sf-ur { fill: #262626; }
+  .hp0 .sf-on-main .sf-vr-yellow, .hp0 .sf-on-main .sf-vr-green { fill: #262626; }
   /* Ks */
   .hp0 .sf-ks-red { fill: #ff2a1f; }
   .ks1 .sf-ks-green { fill: #2fe05a; }
   .ks2 .sf-ks-yellow { fill: #ffbf1a; }
-  .zs1 .sf-ks-zs1 { fill: #f6f6f6; animation: sf-blink 1s steps(2, start) infinite; }
   /* light shunting signal */
   .sh0 .sf-sh-red, .hp0 .sf-sh-red { fill: #ff2a1f; }
-  @keyframes sf-blink { to { visibility: hidden; } }
 
 </style></head><body>
 <h1>Hive-Rail signal faces</h1>
 <p>German light signals as they look on the track (Ril 301), each drawn once, the aspect as a class.</p>
-<section><h2>hv-main</h2><p>H/V light main signal (Lichthauptsignal): Hp 0 (two reds), Hp 1, Hp 2; Sh 1 and Zs 1 as options</p><div class="row"><figure><svg viewBox="0 0 40 100" style="height:200px" class="hp0"><rect class="sf-mast" x="18" y="76" width="4" height="24"/>
+<section><h2>hv-block</h2><p>H/V block signal (Blocksignal): Hp 0 (one red), Hp 1</p><div class="row"><figure><svg viewBox="0 0 40 100" style="height:200px" class="hp0"><rect class="sf-mast" x="18" y="76" width="4" height="24"/>
+  <path class="sf-screen" d="M6 0 H34 L40 6 V76 H0 V6 Z"/>
+  <circle class="sf-lamp sf-red1" cx="11.5" cy="58" r="4.4"/>
+  <circle class="sf-lamp sf-green" cx="25.5" cy="58" r="4.4"/></svg><figcaption>hp0</figcaption></figure><figure><svg viewBox="0 0 40 100" style="height:200px" class="hp1"><rect class="sf-mast" x="18" y="76" width="4" height="24"/>
+  <path class="sf-screen" d="M6 0 H34 L40 6 V76 H0 V6 Z"/>
+  <circle class="sf-lamp sf-red1" cx="11.5" cy="58" r="4.4"/>
+  <circle class="sf-lamp sf-green" cx="25.5" cy="58" r="4.4"/></svg><figcaption>hp1</figcaption></figure><figure><svg viewBox="0 0 40 100" style="height:200px" class=""><rect class="sf-mast" x="18" y="76" width="4" height="24"/>
+  <path class="sf-screen" d="M6 0 H34 L40 6 V76 H0 V6 Z"/>
+  <circle class="sf-lamp sf-red1" cx="11.5" cy="58" r="4.4"/>
+  <circle class="sf-lamp sf-green" cx="25.5" cy="58" r="4.4"/></svg><figcaption>dark</figcaption></figure></div></section><section><h2>hv-entry</h2><p>H/V entry signal (Einfahrsignal): Hp 0 (one red), Hp 1, Hp 2</p><div class="row"><figure><svg viewBox="0 0 40 100" style="height:200px" class="hp0"><rect class="sf-mast" x="18" y="76" width="4" height="24"/>
+  <path class="sf-screen" d="M6 0 H34 L40 6 V76 H0 V6 Z"/>
+  <circle class="sf-lamp sf-green" cx="25.5" cy="12" r="4.4"/>
+  <circle class="sf-lamp sf-red1" cx="11.5" cy="58" r="4.4"/>
+  <circle class="sf-lamp sf-yellow" cx="25.5" cy="58" r="4.4"/></svg><figcaption>hp0</figcaption></figure><figure><svg viewBox="0 0 40 100" style="height:200px" class="hp1"><rect class="sf-mast" x="18" y="76" width="4" height="24"/>
+  <path class="sf-screen" d="M6 0 H34 L40 6 V76 H0 V6 Z"/>
+  <circle class="sf-lamp sf-green" cx="25.5" cy="12" r="4.4"/>
+  <circle class="sf-lamp sf-red1" cx="11.5" cy="58" r="4.4"/>
+  <circle class="sf-lamp sf-yellow" cx="25.5" cy="58" r="4.4"/></svg><figcaption>hp1</figcaption></figure><figure><svg viewBox="0 0 40 100" style="height:200px" class="hp2"><rect class="sf-mast" x="18" y="76" width="4" height="24"/>
+  <path class="sf-screen" d="M6 0 H34 L40 6 V76 H0 V6 Z"/>
+  <circle class="sf-lamp sf-green" cx="25.5" cy="12" r="4.4"/>
+  <circle class="sf-lamp sf-red1" cx="11.5" cy="58" r="4.4"/>
+  <circle class="sf-lamp sf-yellow" cx="25.5" cy="58" r="4.4"/></svg><figcaption>hp2</figcaption></figure></div></section><section><h2>hv-departure</h2><p>H/V departure signal (Ausfahrsignal): Hp 0 (two reds), Hp 1, Hp 2, Hp 0 + Sh 1</p><div class="row"><figure><svg viewBox="0 0 40 100" style="height:200px" class="hp0"><rect class="sf-mast" x="18" y="76" width="4" height="24"/>
   <path class="sf-screen" d="M6 0 H34 L40 6 V76 H0 V6 Z"/>
   <circle class="sf-lamp sf-green" cx="11.5" cy="15" r="4.4"/>
   <circle class="sf-lamp sf-red1" cx="11.5" cy="29" r="4.4"/>
   <circle class="sf-lamp sf-red2" cx="28.5" cy="29" r="4.4"/>
-  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="29" cy="41" r="2.6"/>
-  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="11" cy="55" r="2.6"/>
-  <circle class="sf-lamp sf-yellow" cx="11.5" cy="65" r="4.4"/>
-  <g class="sf-option zs1-lamp">
-    <rect class="sf-screen" x="8" y="78" width="24" height="14" rx="2"/>
-    <circle class="sf-lamp sf-zs1" cx="20" cy="82" r="2.2"/>
-    <circle class="sf-lamp sf-zs1" cx="13" cy="88" r="2.2"/>
-    <circle class="sf-lamp sf-zs1" cx="27" cy="88" r="2.2"/>
-  </g></svg><figcaption>hp0</figcaption></figure><figure><svg viewBox="0 0 40 100" style="height:200px" class="hp1"><rect class="sf-mast" x="18" y="76" width="4" height="24"/>
+  <circle class="sf-lamp sf-white" cx="29" cy="41" r="2.6"/>
+  <circle class="sf-lamp sf-white" cx="11" cy="55" r="2.6"/>
+  <circle class="sf-lamp sf-yellow" cx="11.5" cy="65" r="4.4"/></svg><figcaption>hp0</figcaption></figure><figure><svg viewBox="0 0 40 100" style="height:200px" class="one-red hp0"><rect class="sf-mast" x="18" y="76" width="4" height="24"/>
   <path class="sf-screen" d="M6 0 H34 L40 6 V76 H0 V6 Z"/>
   <circle class="sf-lamp sf-green" cx="11.5" cy="15" r="4.4"/>
   <circle class="sf-lamp sf-red1" cx="11.5" cy="29" r="4.4"/>
   <circle class="sf-lamp sf-red2" cx="28.5" cy="29" r="4.4"/>
-  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="29" cy="41" r="2.6"/>
-  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="11" cy="55" r="2.6"/>
-  <circle class="sf-lamp sf-yellow" cx="11.5" cy="65" r="4.4"/>
-  <g class="sf-option zs1-lamp">
-    <rect class="sf-screen" x="8" y="78" width="24" height="14" rx="2"/>
-    <circle class="sf-lamp sf-zs1" cx="20" cy="82" r="2.2"/>
-    <circle class="sf-lamp sf-zs1" cx="13" cy="88" r="2.2"/>
-    <circle class="sf-lamp sf-zs1" cx="27" cy="88" r="2.2"/>
-  </g></svg><figcaption>hp1</figcaption></figure><figure><svg viewBox="0 0 40 100" style="height:200px" class="hp2"><rect class="sf-mast" x="18" y="76" width="4" height="24"/>
+  <circle class="sf-lamp sf-white" cx="29" cy="41" r="2.6"/>
+  <circle class="sf-lamp sf-white" cx="11" cy="55" r="2.6"/>
+  <circle class="sf-lamp sf-yellow" cx="11.5" cy="65" r="4.4"/></svg><figcaption>(one red) hp0</figcaption></figure><figure><svg viewBox="0 0 40 100" style="height:200px" class="hp1"><rect class="sf-mast" x="18" y="76" width="4" height="24"/>
   <path class="sf-screen" d="M6 0 H34 L40 6 V76 H0 V6 Z"/>
   <circle class="sf-lamp sf-green" cx="11.5" cy="15" r="4.4"/>
   <circle class="sf-lamp sf-red1" cx="11.5" cy="29" r="4.4"/>
   <circle class="sf-lamp sf-red2" cx="28.5" cy="29" r="4.4"/>
-  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="29" cy="41" r="2.6"/>
-  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="11" cy="55" r="2.6"/>
-  <circle class="sf-lamp sf-yellow" cx="11.5" cy="65" r="4.4"/>
-  <g class="sf-option zs1-lamp">
-    <rect class="sf-screen" x="8" y="78" width="24" height="14" rx="2"/>
-    <circle class="sf-lamp sf-zs1" cx="20" cy="82" r="2.2"/>
-    <circle class="sf-lamp sf-zs1" cx="13" cy="88" r="2.2"/>
-    <circle class="sf-lamp sf-zs1" cx="27" cy="88" r="2.2"/>
-  </g></svg><figcaption>hp2</figcaption></figure><figure><svg viewBox="0 0 40 100" style="height:200px" class="sh-lamp hp0 sh1"><rect class="sf-mast" x="18" y="76" width="4" height="24"/>
+  <circle class="sf-lamp sf-white" cx="29" cy="41" r="2.6"/>
+  <circle class="sf-lamp sf-white" cx="11" cy="55" r="2.6"/>
+  <circle class="sf-lamp sf-yellow" cx="11.5" cy="65" r="4.4"/></svg><figcaption>hp1</figcaption></figure><figure><svg viewBox="0 0 40 100" style="height:200px" class="hp2"><rect class="sf-mast" x="18" y="76" width="4" height="24"/>
   <path class="sf-screen" d="M6 0 H34 L40 6 V76 H0 V6 Z"/>
   <circle class="sf-lamp sf-green" cx="11.5" cy="15" r="4.4"/>
   <circle class="sf-lamp sf-red1" cx="11.5" cy="29" r="4.4"/>
   <circle class="sf-lamp sf-red2" cx="28.5" cy="29" r="4.4"/>
-  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="29" cy="41" r="2.6"/>
-  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="11" cy="55" r="2.6"/>
-  <circle class="sf-lamp sf-yellow" cx="11.5" cy="65" r="4.4"/>
-  <g class="sf-option zs1-lamp">
-    <rect class="sf-screen" x="8" y="78" width="24" height="14" rx="2"/>
-    <circle class="sf-lamp sf-zs1" cx="20" cy="82" r="2.2"/>
-    <circle class="sf-lamp sf-zs1" cx="13" cy="88" r="2.2"/>
-    <circle class="sf-lamp sf-zs1" cx="27" cy="88" r="2.2"/>
-  </g></svg><figcaption>hp0 sh1</figcaption></figure><figure><svg viewBox="0 0 40 100" style="height:200px" class="zs1-lamp hp0 zs1"><rect class="sf-mast" x="18" y="76" width="4" height="24"/>
+  <circle class="sf-lamp sf-white" cx="29" cy="41" r="2.6"/>
+  <circle class="sf-lamp sf-white" cx="11" cy="55" r="2.6"/>
+  <circle class="sf-lamp sf-yellow" cx="11.5" cy="65" r="4.4"/></svg><figcaption>hp2</figcaption></figure><figure><svg viewBox="0 0 40 100" style="height:200px" class="hp0 sh1"><rect class="sf-mast" x="18" y="76" width="4" height="24"/>
   <path class="sf-screen" d="M6 0 H34 L40 6 V76 H0 V6 Z"/>
   <circle class="sf-lamp sf-green" cx="11.5" cy="15" r="4.4"/>
   <circle class="sf-lamp sf-red1" cx="11.5" cy="29" r="4.4"/>
   <circle class="sf-lamp sf-red2" cx="28.5" cy="29" r="4.4"/>
-  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="29" cy="41" r="2.6"/>
-  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="11" cy="55" r="2.6"/>
-  <circle class="sf-lamp sf-yellow" cx="11.5" cy="65" r="4.4"/>
-  <g class="sf-option zs1-lamp">
-    <rect class="sf-screen" x="8" y="78" width="24" height="14" rx="2"/>
-    <circle class="sf-lamp sf-zs1" cx="20" cy="82" r="2.2"/>
-    <circle class="sf-lamp sf-zs1" cx="13" cy="88" r="2.2"/>
-    <circle class="sf-lamp sf-zs1" cx="27" cy="88" r="2.2"/>
-  </g></svg><figcaption>hp0 zs1</figcaption></figure><figure><svg viewBox="0 0 40 100" style="height:200px" class="sh-lamp zs1-lamp"><rect class="sf-mast" x="18" y="76" width="4" height="24"/>
+  <circle class="sf-lamp sf-white" cx="29" cy="41" r="2.6"/>
+  <circle class="sf-lamp sf-white" cx="11" cy="55" r="2.6"/>
+  <circle class="sf-lamp sf-yellow" cx="11.5" cy="65" r="4.4"/></svg><figcaption>hp0 sh1</figcaption></figure></div></section><section><h2>hv-distant</h2><p>H/V light distant signal (Lichtvorsignal): Vr 0, Vr 1, Vr 2; the white Zusatzlicht as an option</p><div class="row"><figure><svg viewBox="0 0 64 64" style="height:128px" class="vr0"><rect class="sf-mast sf-own-mast" x="28" y="52" width="4" height="12"/>
+  <circle class="sf-screen sf-option extra-lamp" cx="22" cy="18" r="4.6"/>
+  <path class="sf-screen" d="M31 11 H56 L60 15 V23 L28 55 H4 L0 51 V42 Z"/>
+  <circle class="sf-lamp sf-ur sf-vr-yellow" cx="41" cy="17.5" r="4.2"/>
+  <circle class="sf-lamp sf-ur sf-vr-green" cx="51" cy="17.5" r="4.2"/>
+  <circle class="sf-lamp sf-ll sf-vr-yellow" cx="10" cy="48.5" r="4.2"/>
+  <circle class="sf-lamp sf-ll sf-vr-green" cx="20" cy="48.5" r="4.2"/>
+  <circle class="sf-lamp sf-extra sf-option extra-lamp" cx="22" cy="18" r="2.2"/></svg><figcaption>vr0</figcaption></figure><figure><svg viewBox="0 0 64 64" style="height:128px" class="vr1"><rect class="sf-mast sf-own-mast" x="28" y="52" width="4" height="12"/>
+  <circle class="sf-screen sf-option extra-lamp" cx="22" cy="18" r="4.6"/>
+  <path class="sf-screen" d="M31 11 H56 L60 15 V23 L28 55 H4 L0 51 V42 Z"/>
+  <circle class="sf-lamp sf-ur sf-vr-yellow" cx="41" cy="17.5" r="4.2"/>
+  <circle class="sf-lamp sf-ur sf-vr-green" cx="51" cy="17.5" r="4.2"/>
+  <circle class="sf-lamp sf-ll sf-vr-yellow" cx="10" cy="48.5" r="4.2"/>
+  <circle class="sf-lamp sf-ll sf-vr-green" cx="20" cy="48.5" r="4.2"/>
+  <circle class="sf-lamp sf-extra sf-option extra-lamp" cx="22" cy="18" r="2.2"/></svg><figcaption>vr1</figcaption></figure><figure><svg viewBox="0 0 64 64" style="height:128px" class="vr2"><rect class="sf-mast sf-own-mast" x="28" y="52" width="4" height="12"/>
+  <circle class="sf-screen sf-option extra-lamp" cx="22" cy="18" r="4.6"/>
+  <path class="sf-screen" d="M31 11 H56 L60 15 V23 L28 55 H4 L0 51 V42 Z"/>
+  <circle class="sf-lamp sf-ur sf-vr-yellow" cx="41" cy="17.5" r="4.2"/>
+  <circle class="sf-lamp sf-ur sf-vr-green" cx="51" cy="17.5" r="4.2"/>
+  <circle class="sf-lamp sf-ll sf-vr-yellow" cx="10" cy="48.5" r="4.2"/>
+  <circle class="sf-lamp sf-ll sf-vr-green" cx="20" cy="48.5" r="4.2"/>
+  <circle class="sf-lamp sf-extra sf-option extra-lamp" cx="22" cy="18" r="2.2"/></svg><figcaption>vr2</figcaption></figure><figure><svg viewBox="0 0 64 64" style="height:128px" class="extra-lamp vr0 short"><rect class="sf-mast sf-own-mast" x="28" y="52" width="4" height="12"/>
+  <circle class="sf-screen sf-option extra-lamp" cx="22" cy="18" r="4.6"/>
+  <path class="sf-screen" d="M31 11 H56 L60 15 V23 L28 55 H4 L0 51 V42 Z"/>
+  <circle class="sf-lamp sf-ur sf-vr-yellow" cx="41" cy="17.5" r="4.2"/>
+  <circle class="sf-lamp sf-ur sf-vr-green" cx="51" cy="17.5" r="4.2"/>
+  <circle class="sf-lamp sf-ll sf-vr-yellow" cx="10" cy="48.5" r="4.2"/>
+  <circle class="sf-lamp sf-ll sf-vr-green" cx="20" cy="48.5" r="4.2"/>
+  <circle class="sf-lamp sf-extra sf-option extra-lamp" cx="22" cy="18" r="2.2"/></svg><figcaption>vr0 short</figcaption></figure><figure><svg viewBox="0 0 64 64" style="height:128px" class=""><rect class="sf-mast sf-own-mast" x="28" y="52" width="4" height="12"/>
+  <circle class="sf-screen sf-option extra-lamp" cx="22" cy="18" r="4.6"/>
+  <path class="sf-screen" d="M31 11 H56 L60 15 V23 L28 55 H4 L0 51 V42 Z"/>
+  <circle class="sf-lamp sf-ur sf-vr-yellow" cx="41" cy="17.5" r="4.2"/>
+  <circle class="sf-lamp sf-ur sf-vr-green" cx="51" cy="17.5" r="4.2"/>
+  <circle class="sf-lamp sf-ll sf-vr-yellow" cx="10" cy="48.5" r="4.2"/>
+  <circle class="sf-lamp sf-ll sf-vr-green" cx="20" cy="48.5" r="4.2"/>
+  <circle class="sf-lamp sf-extra sf-option extra-lamp" cx="22" cy="18" r="2.2"/></svg><figcaption>dark</figcaption></figure></div></section><section><h2>ks-main</h2><p>Ks main signal: red, the green below it; Hp 0, Ks 1; Sh 1 (departure signals)</p><div class="row"><figure><svg viewBox="0 0 40 90" style="height:180px" class="hp0"><rect class="sf-mast" x="18" y="77.5" width="4" height="12.5"/>
+  <rect class="sf-screen" x="0" y="0" width="40" height="77.5" rx="1.5"/>
+  <circle class="sf-lamp sf-ks-red" cx="20" cy="20" r="4.7"/>
+  <circle class="sf-lamp sf-ks-green" cx="20" cy="35.8" r="4.7"/>
+  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="20" cy="50.6" r="2.3"/>
+  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="7.2" cy="61.7" r="2.3"/></svg><figcaption>hp0</figcaption></figure><figure><svg viewBox="0 0 40 90" style="height:180px" class="ks1"><rect class="sf-mast" x="18" y="77.5" width="4" height="12.5"/>
+  <rect class="sf-screen" x="0" y="0" width="40" height="77.5" rx="1.5"/>
+  <circle class="sf-lamp sf-ks-red" cx="20" cy="20" r="4.7"/>
+  <circle class="sf-lamp sf-ks-green" cx="20" cy="35.8" r="4.7"/>
+  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="20" cy="50.6" r="2.3"/>
+  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="7.2" cy="61.7" r="2.3"/></svg><figcaption>ks1</figcaption></figure><figure><svg viewBox="0 0 40 90" style="height:180px" class="sh-lamp hp0 sh1"><rect class="sf-mast" x="18" y="77.5" width="4" height="12.5"/>
+  <rect class="sf-screen" x="0" y="0" width="40" height="77.5" rx="1.5"/>
+  <circle class="sf-lamp sf-ks-red" cx="20" cy="20" r="4.7"/>
+  <circle class="sf-lamp sf-ks-green" cx="20" cy="35.8" r="4.7"/>
+  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="20" cy="50.6" r="2.3"/>
+  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="7.2" cy="61.7" r="2.3"/></svg><figcaption>hp0 sh1</figcaption></figure></div></section><section><h2>ks-multi</h2><p>Ks multi-section signal (Mehrabschnittssignal): Hp 0, Ks 1, Ks 2; Sh 1 (departure signals); the upper white</p><div class="row"><figure><svg viewBox="0 0 40 90" style="height:180px" class="hp0"><rect class="sf-mast" x="18" y="77.5" width="4" height="12.5"/>
+  <rect class="sf-screen" x="0" y="0" width="40" height="77.5" rx="1.5"/>
+  <circle class="sf-lamp sf-ks-red" cx="20" cy="20" r="4.7"/>
+  <circle class="sf-lamp sf-ks-green" cx="10.3" cy="35.8" r="4.7"/>
+  <circle class="sf-lamp sf-ks-yellow" cx="29.7" cy="35.8" r="4.7"/>
+  <circle class="sf-lamp sf-extra sf-option extra-lamp" cx="10.3" cy="9.1" r="2.3"/>
+  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="20" cy="50.6" r="2.3"/>
+  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="7.2" cy="61.7" r="2.3"/></svg><figcaption>hp0</figcaption></figure><figure><svg viewBox="0 0 40 90" style="height:180px" class="ks1"><rect class="sf-mast" x="18" y="77.5" width="4" height="12.5"/>
+  <rect class="sf-screen" x="0" y="0" width="40" height="77.5" rx="1.5"/>
+  <circle class="sf-lamp sf-ks-red" cx="20" cy="20" r="4.7"/>
+  <circle class="sf-lamp sf-ks-green" cx="10.3" cy="35.8" r="4.7"/>
+  <circle class="sf-lamp sf-ks-yellow" cx="29.7" cy="35.8" r="4.7"/>
+  <circle class="sf-lamp sf-extra sf-option extra-lamp" cx="10.3" cy="9.1" r="2.3"/>
+  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="20" cy="50.6" r="2.3"/>
+  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="7.2" cy="61.7" r="2.3"/></svg><figcaption>ks1</figcaption></figure><figure><svg viewBox="0 0 40 90" style="height:180px" class="ks2"><rect class="sf-mast" x="18" y="77.5" width="4" height="12.5"/>
+  <rect class="sf-screen" x="0" y="0" width="40" height="77.5" rx="1.5"/>
+  <circle class="sf-lamp sf-ks-red" cx="20" cy="20" r="4.7"/>
+  <circle class="sf-lamp sf-ks-green" cx="10.3" cy="35.8" r="4.7"/>
+  <circle class="sf-lamp sf-ks-yellow" cx="29.7" cy="35.8" r="4.7"/>
+  <circle class="sf-lamp sf-extra sf-option extra-lamp" cx="10.3" cy="9.1" r="2.3"/>
+  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="20" cy="50.6" r="2.3"/>
+  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="7.2" cy="61.7" r="2.3"/></svg><figcaption>ks2</figcaption></figure><figure><svg viewBox="0 0 40 90" style="height:180px" class="extra-lamp ks2 short"><rect class="sf-mast" x="18" y="77.5" width="4" height="12.5"/>
+  <rect class="sf-screen" x="0" y="0" width="40" height="77.5" rx="1.5"/>
+  <circle class="sf-lamp sf-ks-red" cx="20" cy="20" r="4.7"/>
+  <circle class="sf-lamp sf-ks-green" cx="10.3" cy="35.8" r="4.7"/>
+  <circle class="sf-lamp sf-ks-yellow" cx="29.7" cy="35.8" r="4.7"/>
+  <circle class="sf-lamp sf-extra sf-option extra-lamp" cx="10.3" cy="9.1" r="2.3"/>
+  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="20" cy="50.6" r="2.3"/>
+  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="7.2" cy="61.7" r="2.3"/></svg><figcaption>ks2 short</figcaption></figure><figure><svg viewBox="0 0 40 90" style="height:180px" class="sh-lamp hp0 sh1"><rect class="sf-mast" x="18" y="77.5" width="4" height="12.5"/>
+  <rect class="sf-screen" x="0" y="0" width="40" height="77.5" rx="1.5"/>
+  <circle class="sf-lamp sf-ks-red" cx="20" cy="20" r="4.7"/>
+  <circle class="sf-lamp sf-ks-green" cx="10.3" cy="35.8" r="4.7"/>
+  <circle class="sf-lamp sf-ks-yellow" cx="29.7" cy="35.8" r="4.7"/>
+  <circle class="sf-lamp sf-extra sf-option extra-lamp" cx="10.3" cy="9.1" r="2.3"/>
+  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="20" cy="50.6" r="2.3"/>
+  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="7.2" cy="61.7" r="2.3"/></svg><figcaption>hp0 sh1</figcaption></figure></div></section><section><h2>ks-distant</h2><p>Ks distant signal (Ks-Vorsignal): Ks 1 (green), Ks 2 (yellow); the upper white</p><div class="row"><figure><svg viewBox="0 0 40 90" style="height:180px" class="ks1"><rect class="sf-mast" x="18" y="77.5" width="4" height="12.5"/>
+  <rect class="sf-screen" x="0" y="0" width="40" height="77.5" rx="1.5"/>
+  <circle class="sf-lamp sf-ks-green" cx="10.3" cy="35.8" r="4.7"/>
+  <circle class="sf-lamp sf-ks-yellow" cx="29.7" cy="35.8" r="4.7"/>
+  <circle class="sf-lamp sf-extra sf-option extra-lamp" cx="10.3" cy="9.1" r="2.3"/></svg><figcaption>ks1</figcaption></figure><figure><svg viewBox="0 0 40 90" style="height:180px" class="ks2"><rect class="sf-mast" x="18" y="77.5" width="4" height="12.5"/>
+  <rect class="sf-screen" x="0" y="0" width="40" height="77.5" rx="1.5"/>
+  <circle class="sf-lamp sf-ks-green" cx="10.3" cy="35.8" r="4.7"/>
+  <circle class="sf-lamp sf-ks-yellow" cx="29.7" cy="35.8" r="4.7"/>
+  <circle class="sf-lamp sf-extra sf-option extra-lamp" cx="10.3" cy="9.1" r="2.3"/></svg><figcaption>ks2</figcaption></figure><figure><svg viewBox="0 0 40 90" style="height:180px" class="extra-lamp ks2 short"><rect class="sf-mast" x="18" y="77.5" width="4" height="12.5"/>
+  <rect class="sf-screen" x="0" y="0" width="40" height="77.5" rx="1.5"/>
+  <circle class="sf-lamp sf-ks-green" cx="10.3" cy="35.8" r="4.7"/>
+  <circle class="sf-lamp sf-ks-yellow" cx="29.7" cy="35.8" r="4.7"/>
+  <circle class="sf-lamp sf-extra sf-option extra-lamp" cx="10.3" cy="9.1" r="2.3"/></svg><figcaption>ks2 short</figcaption></figure><figure><svg viewBox="0 0 40 90" style="height:180px" class=""><rect class="sf-mast" x="18" y="77.5" width="4" height="12.5"/>
+  <rect class="sf-screen" x="0" y="0" width="40" height="77.5" rx="1.5"/>
+  <circle class="sf-lamp sf-ks-green" cx="10.3" cy="35.8" r="4.7"/>
+  <circle class="sf-lamp sf-ks-yellow" cx="29.7" cy="35.8" r="4.7"/>
+  <circle class="sf-lamp sf-extra sf-option extra-lamp" cx="10.3" cy="9.1" r="2.3"/></svg><figcaption>dark</figcaption></figure></div></section><section><h2>sh-light</h2><p>Light shunting signal (Lichtsperrsignal): Sh 0 (two reds), Sh 1 (two whites rising to the right)</p><div class="row"><figure><svg viewBox="0 0 48 34" style="height:68px" class="sh0"><rect class="sf-mast" x="22" y="28" width="4" height="6"/>
+  <path class="sf-screen" d="M7 0 H41 L48 7 V28 H0 V7 Z"/>
+  <circle class="sf-lamp sf-sh-red" cx="11" cy="8.5" r="4.2"/>
+  <circle class="sf-lamp sf-sh-red" cx="37" cy="8.5" r="4.2"/>
+  <circle class="sf-lamp sf-white" cx="24" cy="8.5" r="4.2"/>
+  <circle class="sf-lamp sf-white" cx="11" cy="20" r="4.2"/></svg><figcaption>sh0</figcaption></figure><figure><svg viewBox="0 0 48 34" style="height:68px" class="sh1"><rect class="sf-mast" x="22" y="28" width="4" height="6"/>
+  <path class="sf-screen" d="M7 0 H41 L48 7 V28 H0 V7 Z"/>
+  <circle class="sf-lamp sf-sh-red" cx="11" cy="8.5" r="4.2"/>
+  <circle class="sf-lamp sf-sh-red" cx="37" cy="8.5" r="4.2"/>
+  <circle class="sf-lamp sf-white" cx="24" cy="8.5" r="4.2"/>
+  <circle class="sf-lamp sf-white" cx="11" cy="20" r="4.2"/></svg><figcaption>sh1</figcaption></figure><figure><svg viewBox="0 0 48 34" style="height:68px" class=""><rect class="sf-mast" x="22" y="28" width="4" height="6"/>
+  <path class="sf-screen" d="M7 0 H41 L48 7 V28 H0 V7 Z"/>
+  <circle class="sf-lamp sf-sh-red" cx="11" cy="8.5" r="4.2"/>
+  <circle class="sf-lamp sf-sh-red" cx="37" cy="8.5" r="4.2"/>
+  <circle class="sf-lamp sf-white" cx="24" cy="8.5" r="4.2"/>
+  <circle class="sf-lamp sf-white" cx="11" cy="20" r="4.2"/></svg><figcaption>dark</figcaption></figure></div></section><section><h2>hv-block-distant</h2><p>H/V block signal with the distant signal below it on the same mast: the main signal's aspects, with Vr 0, Vr 1 or Vr 2 (dark at Hp 0)</p><div class="row"><figure><svg viewBox="0 0 48 150" style="height:300px" class="hp0 vr1"><rect class="sf-mast" x="22" y="76" width="4" height="74"/>
+  <g transform="translate(4 0)">
+
   <path class="sf-screen" d="M6 0 H34 L40 6 V76 H0 V6 Z"/>
-  <circle class="sf-lamp sf-green" cx="11.5" cy="15" r="4.4"/>
-  <circle class="sf-lamp sf-red1" cx="11.5" cy="29" r="4.4"/>
-  <circle class="sf-lamp sf-red2" cx="28.5" cy="29" r="4.4"/>
-  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="29" cy="41" r="2.6"/>
-  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="11" cy="55" r="2.6"/>
-  <circle class="sf-lamp sf-yellow" cx="11.5" cy="65" r="4.4"/>
-  <g class="sf-option zs1-lamp">
-    <rect class="sf-screen" x="8" y="78" width="24" height="14" rx="2"/>
-    <circle class="sf-lamp sf-zs1" cx="20" cy="82" r="2.2"/>
-    <circle class="sf-lamp sf-zs1" cx="13" cy="88" r="2.2"/>
-    <circle class="sf-lamp sf-zs1" cx="27" cy="88" r="2.2"/>
-  </g></svg><figcaption>dark</figcaption></figure></div></section><section><h2>hv-distant</h2><p>H/V light distant signal (Lichtvorsignal): Vr 0, Vr 1, Vr 2; the white Zusatzlicht as an option</p><div class="row"><figure><svg viewBox="0 0 64 64" style="height:128px" class="vr0"><g transform="rotate(-45 32 32)">
-    <circle class="sf-screen sf-option extra-lamp" cx="32" cy="14" r="5"/>
-    <path class="sf-screen" d="M8 19 H56 L62 25 V39 L56 45 H8 L2 39 V25 Z"/>
-    <circle class="sf-lamp sf-ll" cx="14" cy="32" r="4.6"/>
-    <circle class="sf-lamp sf-ur" cx="50" cy="32" r="4.6"/>
-    <circle class="sf-lamp sf-extra sf-option extra-lamp" cx="32" cy="14" r="2.4"/>
-  </g></svg><figcaption>vr0</figcaption></figure><figure><svg viewBox="0 0 64 64" style="height:128px" class="vr1"><g transform="rotate(-45 32 32)">
-    <circle class="sf-screen sf-option extra-lamp" cx="32" cy="14" r="5"/>
-    <path class="sf-screen" d="M8 19 H56 L62 25 V39 L56 45 H8 L2 39 V25 Z"/>
-    <circle class="sf-lamp sf-ll" cx="14" cy="32" r="4.6"/>
-    <circle class="sf-lamp sf-ur" cx="50" cy="32" r="4.6"/>
-    <circle class="sf-lamp sf-extra sf-option extra-lamp" cx="32" cy="14" r="2.4"/>
-  </g></svg><figcaption>vr1</figcaption></figure><figure><svg viewBox="0 0 64 64" style="height:128px" class="vr2"><g transform="rotate(-45 32 32)">
-    <circle class="sf-screen sf-option extra-lamp" cx="32" cy="14" r="5"/>
-    <path class="sf-screen" d="M8 19 H56 L62 25 V39 L56 45 H8 L2 39 V25 Z"/>
-    <circle class="sf-lamp sf-ll" cx="14" cy="32" r="4.6"/>
-    <circle class="sf-lamp sf-ur" cx="50" cy="32" r="4.6"/>
-    <circle class="sf-lamp sf-extra sf-option extra-lamp" cx="32" cy="14" r="2.4"/>
-  </g></svg><figcaption>vr2</figcaption></figure><figure><svg viewBox="0 0 64 64" style="height:128px" class="extra-lamp vr0 short"><g transform="rotate(-45 32 32)">
-    <circle class="sf-screen sf-option extra-lamp" cx="32" cy="14" r="5"/>
-    <path class="sf-screen" d="M8 19 H56 L62 25 V39 L56 45 H8 L2 39 V25 Z"/>
-    <circle class="sf-lamp sf-ll" cx="14" cy="32" r="4.6"/>
-    <circle class="sf-lamp sf-ur" cx="50" cy="32" r="4.6"/>
-    <circle class="sf-lamp sf-extra sf-option extra-lamp" cx="32" cy="14" r="2.4"/>
-  </g></svg><figcaption>vr0 short</figcaption></figure><figure><svg viewBox="0 0 64 64" style="height:128px" class=""><g transform="rotate(-45 32 32)">
-    <circle class="sf-screen sf-option extra-lamp" cx="32" cy="14" r="5"/>
-    <path class="sf-screen" d="M8 19 H56 L62 25 V39 L56 45 H8 L2 39 V25 Z"/>
-    <circle class="sf-lamp sf-ll" cx="14" cy="32" r="4.6"/>
-    <circle class="sf-lamp sf-ur" cx="50" cy="32" r="4.6"/>
-    <circle class="sf-lamp sf-extra sf-option extra-lamp" cx="32" cy="14" r="2.4"/>
-  </g></svg><figcaption>dark</figcaption></figure></div></section><section><h2>ks-main</h2><p>Ks main signal: red over green; Hp 0, Ks 1; Sh 1 and Zs 1 as options</p><div class="row"><figure><svg viewBox="0 0 40 66" style="height:132px" class="hp0"><rect class="sf-mast" x="18" y="52" width="4" height="14"/>
-  <rect class="sf-screen" x="0" y="0" width="40" height="52" rx="1.5"/>
-  <circle class="sf-lamp sf-ks-red" cx="20" cy="11" r="4.4"/>
-  <circle class="sf-lamp sf-ks-green" cx="20" cy="25" r="4.4"/>
-  <circle class="sf-lamp sf-white sf-ks-zs1 sf-option sh-lamp zs1-lamp" cx="20" cy="38" r="2.4"/>
-  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="7" cy="46" r="2.4"/></svg><figcaption>hp0</figcaption></figure><figure><svg viewBox="0 0 40 66" style="height:132px" class="ks1"><rect class="sf-mast" x="18" y="52" width="4" height="14"/>
-  <rect class="sf-screen" x="0" y="0" width="40" height="52" rx="1.5"/>
-  <circle class="sf-lamp sf-ks-red" cx="20" cy="11" r="4.4"/>
-  <circle class="sf-lamp sf-ks-green" cx="20" cy="25" r="4.4"/>
-  <circle class="sf-lamp sf-white sf-ks-zs1 sf-option sh-lamp zs1-lamp" cx="20" cy="38" r="2.4"/>
-  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="7" cy="46" r="2.4"/></svg><figcaption>ks1</figcaption></figure><figure><svg viewBox="0 0 40 66" style="height:132px" class="sh-lamp hp0 sh1"><rect class="sf-mast" x="18" y="52" width="4" height="14"/>
-  <rect class="sf-screen" x="0" y="0" width="40" height="52" rx="1.5"/>
-  <circle class="sf-lamp sf-ks-red" cx="20" cy="11" r="4.4"/>
-  <circle class="sf-lamp sf-ks-green" cx="20" cy="25" r="4.4"/>
-  <circle class="sf-lamp sf-white sf-ks-zs1 sf-option sh-lamp zs1-lamp" cx="20" cy="38" r="2.4"/>
-  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="7" cy="46" r="2.4"/></svg><figcaption>hp0 sh1</figcaption></figure><figure><svg viewBox="0 0 40 66" style="height:132px" class="zs1-lamp hp0 zs1"><rect class="sf-mast" x="18" y="52" width="4" height="14"/>
-  <rect class="sf-screen" x="0" y="0" width="40" height="52" rx="1.5"/>
-  <circle class="sf-lamp sf-ks-red" cx="20" cy="11" r="4.4"/>
-  <circle class="sf-lamp sf-ks-green" cx="20" cy="25" r="4.4"/>
-  <circle class="sf-lamp sf-white sf-ks-zs1 sf-option sh-lamp zs1-lamp" cx="20" cy="38" r="2.4"/>
-  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="7" cy="46" r="2.4"/></svg><figcaption>hp0 zs1</figcaption></figure></div></section><section><h2>ks-multi</h2><p>Ks multi-section signal (Mehrabschnittssignal): Hp 0, Ks 1, Ks 2; Sh 1 and Zs 1 as options</p><div class="row"><figure><svg viewBox="0 0 40 56" style="height:112px" class="hp0"><rect class="sf-mast" x="18" y="46" width="4" height="10"/>
-  <rect class="sf-screen" x="0" y="0" width="40" height="46" rx="1.5"/>
-  <circle class="sf-lamp sf-ks-red" cx="20" cy="10" r="4.4"/>
-  <circle class="sf-lamp sf-ks-green" cx="9" cy="24" r="4.4"/>
-  <circle class="sf-lamp sf-ks-yellow" cx="31" cy="24" r="4.4"/>
-  <circle class="sf-lamp sf-white sf-ks-zs1 sf-option sh-lamp zs1-lamp" cx="20" cy="33" r="2.4"/>
-  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="7" cy="41" r="2.4"/></svg><figcaption>hp0</figcaption></figure><figure><svg viewBox="0 0 40 56" style="height:112px" class="ks1"><rect class="sf-mast" x="18" y="46" width="4" height="10"/>
-  <rect class="sf-screen" x="0" y="0" width="40" height="46" rx="1.5"/>
-  <circle class="sf-lamp sf-ks-red" cx="20" cy="10" r="4.4"/>
-  <circle class="sf-lamp sf-ks-green" cx="9" cy="24" r="4.4"/>
-  <circle class="sf-lamp sf-ks-yellow" cx="31" cy="24" r="4.4"/>
-  <circle class="sf-lamp sf-white sf-ks-zs1 sf-option sh-lamp zs1-lamp" cx="20" cy="33" r="2.4"/>
-  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="7" cy="41" r="2.4"/></svg><figcaption>ks1</figcaption></figure><figure><svg viewBox="0 0 40 56" style="height:112px" class="ks2"><rect class="sf-mast" x="18" y="46" width="4" height="10"/>
-  <rect class="sf-screen" x="0" y="0" width="40" height="46" rx="1.5"/>
-  <circle class="sf-lamp sf-ks-red" cx="20" cy="10" r="4.4"/>
-  <circle class="sf-lamp sf-ks-green" cx="9" cy="24" r="4.4"/>
-  <circle class="sf-lamp sf-ks-yellow" cx="31" cy="24" r="4.4"/>
-  <circle class="sf-lamp sf-white sf-ks-zs1 sf-option sh-lamp zs1-lamp" cx="20" cy="33" r="2.4"/>
-  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="7" cy="41" r="2.4"/></svg><figcaption>ks2</figcaption></figure><figure><svg viewBox="0 0 40 56" style="height:112px" class="sh-lamp hp0 sh1"><rect class="sf-mast" x="18" y="46" width="4" height="10"/>
-  <rect class="sf-screen" x="0" y="0" width="40" height="46" rx="1.5"/>
-  <circle class="sf-lamp sf-ks-red" cx="20" cy="10" r="4.4"/>
-  <circle class="sf-lamp sf-ks-green" cx="9" cy="24" r="4.4"/>
-  <circle class="sf-lamp sf-ks-yellow" cx="31" cy="24" r="4.4"/>
-  <circle class="sf-lamp sf-white sf-ks-zs1 sf-option sh-lamp zs1-lamp" cx="20" cy="33" r="2.4"/>
-  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="7" cy="41" r="2.4"/></svg><figcaption>hp0 sh1</figcaption></figure><figure><svg viewBox="0 0 40 56" style="height:112px" class="zs1-lamp hp0 zs1"><rect class="sf-mast" x="18" y="46" width="4" height="10"/>
-  <rect class="sf-screen" x="0" y="0" width="40" height="46" rx="1.5"/>
-  <circle class="sf-lamp sf-ks-red" cx="20" cy="10" r="4.4"/>
-  <circle class="sf-lamp sf-ks-green" cx="9" cy="24" r="4.4"/>
-  <circle class="sf-lamp sf-ks-yellow" cx="31" cy="24" r="4.4"/>
-  <circle class="sf-lamp sf-white sf-ks-zs1 sf-option sh-lamp zs1-lamp" cx="20" cy="33" r="2.4"/>
-  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="7" cy="41" r="2.4"/></svg><figcaption>hp0 zs1</figcaption></figure></div></section><section><h2>ks-distant</h2><p>Ks distant signal (Ks-Vorsignal): Ks 1 (green), Ks 2 (yellow)</p><div class="row"><figure><svg viewBox="0 0 40 40" style="height:80px" class="ks1"><rect class="sf-mast" x="18" y="30" width="4" height="10"/>
-  <rect class="sf-screen" x="0" y="0" width="40" height="30" rx="1.5"/>
-  <circle class="sf-lamp sf-ks-green" cx="11" cy="15" r="4.4"/>
-  <circle class="sf-lamp sf-ks-yellow" cx="29" cy="15" r="4.4"/></svg><figcaption>ks1</figcaption></figure><figure><svg viewBox="0 0 40 40" style="height:80px" class="ks2"><rect class="sf-mast" x="18" y="30" width="4" height="10"/>
-  <rect class="sf-screen" x="0" y="0" width="40" height="30" rx="1.5"/>
-  <circle class="sf-lamp sf-ks-green" cx="11" cy="15" r="4.4"/>
-  <circle class="sf-lamp sf-ks-yellow" cx="29" cy="15" r="4.4"/></svg><figcaption>ks2</figcaption></figure><figure><svg viewBox="0 0 40 40" style="height:80px" class=""><rect class="sf-mast" x="18" y="30" width="4" height="10"/>
-  <rect class="sf-screen" x="0" y="0" width="40" height="30" rx="1.5"/>
-  <circle class="sf-lamp sf-ks-green" cx="11" cy="15" r="4.4"/>
-  <circle class="sf-lamp sf-ks-yellow" cx="29" cy="15" r="4.4"/></svg><figcaption>dark</figcaption></figure></div></section><section><h2>sh-light</h2><p>Light shunting signal (Lichtsperrsignal): Sh 0 (two reds), Sh 1 (two whites rising to the right)</p><div class="row"><figure><svg viewBox="0 0 32 36" style="height:72px" class="sh0"><rect class="sf-mast" x="14" y="28" width="4" height="8"/>
-  <path class="sf-screen" d="M4 0 H28 L32 4 V28 H0 V4 Z"/>
-  <circle class="sf-lamp sf-sh-red" cx="8" cy="9" r="3.4"/>
-  <circle class="sf-lamp sf-sh-red" cx="24" cy="9" r="3.4"/>
-  <circle class="sf-lamp sf-white" cx="23" cy="15" r="2.4"/>
-  <circle class="sf-lamp sf-white" cx="9" cy="23" r="2.4"/></svg><figcaption>sh0</figcaption></figure><figure><svg viewBox="0 0 32 36" style="height:72px" class="sh1"><rect class="sf-mast" x="14" y="28" width="4" height="8"/>
-  <path class="sf-screen" d="M4 0 H28 L32 4 V28 H0 V4 Z"/>
-  <circle class="sf-lamp sf-sh-red" cx="8" cy="9" r="3.4"/>
-  <circle class="sf-lamp sf-sh-red" cx="24" cy="9" r="3.4"/>
-  <circle class="sf-lamp sf-white" cx="23" cy="15" r="2.4"/>
-  <circle class="sf-lamp sf-white" cx="9" cy="23" r="2.4"/></svg><figcaption>sh1</figcaption></figure><figure><svg viewBox="0 0 32 36" style="height:72px" class=""><rect class="sf-mast" x="14" y="28" width="4" height="8"/>
-  <path class="sf-screen" d="M4 0 H28 L32 4 V28 H0 V4 Z"/>
-  <circle class="sf-lamp sf-sh-red" cx="8" cy="9" r="3.4"/>
-  <circle class="sf-lamp sf-sh-red" cx="24" cy="9" r="3.4"/>
-  <circle class="sf-lamp sf-white" cx="23" cy="15" r="2.4"/>
-  <circle class="sf-lamp sf-white" cx="9" cy="23" r="2.4"/></svg><figcaption>dark</figcaption></figure></div></section><section><h2>hv-main-distant</h2><p>H/V main signal with the distant signal below it on the same mast: Hp 0 (distant dark), Hp 1 or Hp 2 with Vr 0, Vr 1 or Vr 2</p><div class="row"><figure><svg viewBox="0 0 48 150" style="height:300px" class="hp0 vr1"><rect class="sf-mast" x="22" y="76" width="4" height="74"/>
+  <circle class="sf-lamp sf-red1" cx="11.5" cy="58" r="4.4"/>
+  <circle class="sf-lamp sf-green" cx="25.5" cy="58" r="4.4"/>
+  </g>
+  <g class="sf-on-main" transform="translate(2 94) scale(0.75)">
+
+  <circle class="sf-screen sf-option extra-lamp" cx="22" cy="18" r="4.6"/>
+  <path class="sf-screen" d="M31 11 H56 L60 15 V23 L28 55 H4 L0 51 V42 Z"/>
+  <circle class="sf-lamp sf-ur sf-vr-yellow" cx="41" cy="17.5" r="4.2"/>
+  <circle class="sf-lamp sf-ur sf-vr-green" cx="51" cy="17.5" r="4.2"/>
+  <circle class="sf-lamp sf-ll sf-vr-yellow" cx="10" cy="48.5" r="4.2"/>
+  <circle class="sf-lamp sf-ll sf-vr-green" cx="20" cy="48.5" r="4.2"/>
+  <circle class="sf-lamp sf-extra sf-option extra-lamp" cx="22" cy="18" r="2.2"/>
+  </g></svg><figcaption>hp0 vr1</figcaption></figure><figure><svg viewBox="0 0 48 150" style="height:300px" class="hp1 vr0"><rect class="sf-mast" x="22" y="76" width="4" height="74"/>
+  <g transform="translate(4 0)">
+
+  <path class="sf-screen" d="M6 0 H34 L40 6 V76 H0 V6 Z"/>
+  <circle class="sf-lamp sf-red1" cx="11.5" cy="58" r="4.4"/>
+  <circle class="sf-lamp sf-green" cx="25.5" cy="58" r="4.4"/>
+  </g>
+  <g class="sf-on-main" transform="translate(2 94) scale(0.75)">
+
+  <circle class="sf-screen sf-option extra-lamp" cx="22" cy="18" r="4.6"/>
+  <path class="sf-screen" d="M31 11 H56 L60 15 V23 L28 55 H4 L0 51 V42 Z"/>
+  <circle class="sf-lamp sf-ur sf-vr-yellow" cx="41" cy="17.5" r="4.2"/>
+  <circle class="sf-lamp sf-ur sf-vr-green" cx="51" cy="17.5" r="4.2"/>
+  <circle class="sf-lamp sf-ll sf-vr-yellow" cx="10" cy="48.5" r="4.2"/>
+  <circle class="sf-lamp sf-ll sf-vr-green" cx="20" cy="48.5" r="4.2"/>
+  <circle class="sf-lamp sf-extra sf-option extra-lamp" cx="22" cy="18" r="2.2"/>
+  </g></svg><figcaption>hp1 vr0</figcaption></figure><figure><svg viewBox="0 0 48 150" style="height:300px" class="hp1 vr1"><rect class="sf-mast" x="22" y="76" width="4" height="74"/>
+  <g transform="translate(4 0)">
+
+  <path class="sf-screen" d="M6 0 H34 L40 6 V76 H0 V6 Z"/>
+  <circle class="sf-lamp sf-red1" cx="11.5" cy="58" r="4.4"/>
+  <circle class="sf-lamp sf-green" cx="25.5" cy="58" r="4.4"/>
+  </g>
+  <g class="sf-on-main" transform="translate(2 94) scale(0.75)">
+
+  <circle class="sf-screen sf-option extra-lamp" cx="22" cy="18" r="4.6"/>
+  <path class="sf-screen" d="M31 11 H56 L60 15 V23 L28 55 H4 L0 51 V42 Z"/>
+  <circle class="sf-lamp sf-ur sf-vr-yellow" cx="41" cy="17.5" r="4.2"/>
+  <circle class="sf-lamp sf-ur sf-vr-green" cx="51" cy="17.5" r="4.2"/>
+  <circle class="sf-lamp sf-ll sf-vr-yellow" cx="10" cy="48.5" r="4.2"/>
+  <circle class="sf-lamp sf-ll sf-vr-green" cx="20" cy="48.5" r="4.2"/>
+  <circle class="sf-lamp sf-extra sf-option extra-lamp" cx="22" cy="18" r="2.2"/>
+  </g></svg><figcaption>hp1 vr1</figcaption></figure><figure><svg viewBox="0 0 48 150" style="height:300px" class="hp1 vr2"><rect class="sf-mast" x="22" y="76" width="4" height="74"/>
+  <g transform="translate(4 0)">
+
+  <path class="sf-screen" d="M6 0 H34 L40 6 V76 H0 V6 Z"/>
+  <circle class="sf-lamp sf-red1" cx="11.5" cy="58" r="4.4"/>
+  <circle class="sf-lamp sf-green" cx="25.5" cy="58" r="4.4"/>
+  </g>
+  <g class="sf-on-main" transform="translate(2 94) scale(0.75)">
+
+  <circle class="sf-screen sf-option extra-lamp" cx="22" cy="18" r="4.6"/>
+  <path class="sf-screen" d="M31 11 H56 L60 15 V23 L28 55 H4 L0 51 V42 Z"/>
+  <circle class="sf-lamp sf-ur sf-vr-yellow" cx="41" cy="17.5" r="4.2"/>
+  <circle class="sf-lamp sf-ur sf-vr-green" cx="51" cy="17.5" r="4.2"/>
+  <circle class="sf-lamp sf-ll sf-vr-yellow" cx="10" cy="48.5" r="4.2"/>
+  <circle class="sf-lamp sf-ll sf-vr-green" cx="20" cy="48.5" r="4.2"/>
+  <circle class="sf-lamp sf-extra sf-option extra-lamp" cx="22" cy="18" r="2.2"/>
+  </g></svg><figcaption>hp1 vr2</figcaption></figure></div></section><section><h2>hv-entry-distant</h2><p>H/V entry signal with the distant signal below it on the same mast: the main signal's aspects, with Vr 0, Vr 1 or Vr 2 (dark at Hp 0)</p><div class="row"><figure><svg viewBox="0 0 48 150" style="height:300px" class="hp0 vr1"><rect class="sf-mast" x="22" y="76" width="4" height="74"/>
+  <g transform="translate(4 0)">
+
+  <path class="sf-screen" d="M6 0 H34 L40 6 V76 H0 V6 Z"/>
+  <circle class="sf-lamp sf-green" cx="25.5" cy="12" r="4.4"/>
+  <circle class="sf-lamp sf-red1" cx="11.5" cy="58" r="4.4"/>
+  <circle class="sf-lamp sf-yellow" cx="25.5" cy="58" r="4.4"/>
+  </g>
+  <g class="sf-on-main" transform="translate(2 94) scale(0.75)">
+
+  <circle class="sf-screen sf-option extra-lamp" cx="22" cy="18" r="4.6"/>
+  <path class="sf-screen" d="M31 11 H56 L60 15 V23 L28 55 H4 L0 51 V42 Z"/>
+  <circle class="sf-lamp sf-ur sf-vr-yellow" cx="41" cy="17.5" r="4.2"/>
+  <circle class="sf-lamp sf-ur sf-vr-green" cx="51" cy="17.5" r="4.2"/>
+  <circle class="sf-lamp sf-ll sf-vr-yellow" cx="10" cy="48.5" r="4.2"/>
+  <circle class="sf-lamp sf-ll sf-vr-green" cx="20" cy="48.5" r="4.2"/>
+  <circle class="sf-lamp sf-extra sf-option extra-lamp" cx="22" cy="18" r="2.2"/>
+  </g></svg><figcaption>hp0 vr1</figcaption></figure><figure><svg viewBox="0 0 48 150" style="height:300px" class="hp1 vr1"><rect class="sf-mast" x="22" y="76" width="4" height="74"/>
+  <g transform="translate(4 0)">
+
+  <path class="sf-screen" d="M6 0 H34 L40 6 V76 H0 V6 Z"/>
+  <circle class="sf-lamp sf-green" cx="25.5" cy="12" r="4.4"/>
+  <circle class="sf-lamp sf-red1" cx="11.5" cy="58" r="4.4"/>
+  <circle class="sf-lamp sf-yellow" cx="25.5" cy="58" r="4.4"/>
+  </g>
+  <g class="sf-on-main" transform="translate(2 94) scale(0.75)">
+
+  <circle class="sf-screen sf-option extra-lamp" cx="22" cy="18" r="4.6"/>
+  <path class="sf-screen" d="M31 11 H56 L60 15 V23 L28 55 H4 L0 51 V42 Z"/>
+  <circle class="sf-lamp sf-ur sf-vr-yellow" cx="41" cy="17.5" r="4.2"/>
+  <circle class="sf-lamp sf-ur sf-vr-green" cx="51" cy="17.5" r="4.2"/>
+  <circle class="sf-lamp sf-ll sf-vr-yellow" cx="10" cy="48.5" r="4.2"/>
+  <circle class="sf-lamp sf-ll sf-vr-green" cx="20" cy="48.5" r="4.2"/>
+  <circle class="sf-lamp sf-extra sf-option extra-lamp" cx="22" cy="18" r="2.2"/>
+  </g></svg><figcaption>hp1 vr1</figcaption></figure><figure><svg viewBox="0 0 48 150" style="height:300px" class="hp2 vr0"><rect class="sf-mast" x="22" y="76" width="4" height="74"/>
+  <g transform="translate(4 0)">
+
+  <path class="sf-screen" d="M6 0 H34 L40 6 V76 H0 V6 Z"/>
+  <circle class="sf-lamp sf-green" cx="25.5" cy="12" r="4.4"/>
+  <circle class="sf-lamp sf-red1" cx="11.5" cy="58" r="4.4"/>
+  <circle class="sf-lamp sf-yellow" cx="25.5" cy="58" r="4.4"/>
+  </g>
+  <g class="sf-on-main" transform="translate(2 94) scale(0.75)">
+
+  <circle class="sf-screen sf-option extra-lamp" cx="22" cy="18" r="4.6"/>
+  <path class="sf-screen" d="M31 11 H56 L60 15 V23 L28 55 H4 L0 51 V42 Z"/>
+  <circle class="sf-lamp sf-ur sf-vr-yellow" cx="41" cy="17.5" r="4.2"/>
+  <circle class="sf-lamp sf-ur sf-vr-green" cx="51" cy="17.5" r="4.2"/>
+  <circle class="sf-lamp sf-ll sf-vr-yellow" cx="10" cy="48.5" r="4.2"/>
+  <circle class="sf-lamp sf-ll sf-vr-green" cx="20" cy="48.5" r="4.2"/>
+  <circle class="sf-lamp sf-extra sf-option extra-lamp" cx="22" cy="18" r="2.2"/>
+  </g></svg><figcaption>hp2 vr0</figcaption></figure><figure><svg viewBox="0 0 48 150" style="height:300px" class="hp2 vr2"><rect class="sf-mast" x="22" y="76" width="4" height="74"/>
+  <g transform="translate(4 0)">
+
+  <path class="sf-screen" d="M6 0 H34 L40 6 V76 H0 V6 Z"/>
+  <circle class="sf-lamp sf-green" cx="25.5" cy="12" r="4.4"/>
+  <circle class="sf-lamp sf-red1" cx="11.5" cy="58" r="4.4"/>
+  <circle class="sf-lamp sf-yellow" cx="25.5" cy="58" r="4.4"/>
+  </g>
+  <g class="sf-on-main" transform="translate(2 94) scale(0.75)">
+
+  <circle class="sf-screen sf-option extra-lamp" cx="22" cy="18" r="4.6"/>
+  <path class="sf-screen" d="M31 11 H56 L60 15 V23 L28 55 H4 L0 51 V42 Z"/>
+  <circle class="sf-lamp sf-ur sf-vr-yellow" cx="41" cy="17.5" r="4.2"/>
+  <circle class="sf-lamp sf-ur sf-vr-green" cx="51" cy="17.5" r="4.2"/>
+  <circle class="sf-lamp sf-ll sf-vr-yellow" cx="10" cy="48.5" r="4.2"/>
+  <circle class="sf-lamp sf-ll sf-vr-green" cx="20" cy="48.5" r="4.2"/>
+  <circle class="sf-lamp sf-extra sf-option extra-lamp" cx="22" cy="18" r="2.2"/>
+  </g></svg><figcaption>hp2 vr2</figcaption></figure></div></section><section><h2>hv-departure-distant</h2><p>H/V departure signal with the distant signal below it on the same mast: the main signal's aspects, with Vr 0, Vr 1 or Vr 2 (dark at Hp 0)</p><div class="row"><figure><svg viewBox="0 0 48 150" style="height:300px" class="hp0 vr1"><rect class="sf-mast" x="22" y="76" width="4" height="74"/>
   <g transform="translate(4 0)">
 
   <path class="sf-screen" d="M6 0 H34 L40 6 V76 H0 V6 Z"/>
   <circle class="sf-lamp sf-green" cx="11.5" cy="15" r="4.4"/>
   <circle class="sf-lamp sf-red1" cx="11.5" cy="29" r="4.4"/>
   <circle class="sf-lamp sf-red2" cx="28.5" cy="29" r="4.4"/>
-  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="29" cy="41" r="2.6"/>
-  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="11" cy="55" r="2.6"/>
+  <circle class="sf-lamp sf-white" cx="29" cy="41" r="2.6"/>
+  <circle class="sf-lamp sf-white" cx="11" cy="55" r="2.6"/>
   <circle class="sf-lamp sf-yellow" cx="11.5" cy="65" r="4.4"/>
-  <g class="sf-option zs1-lamp">
-    <rect class="sf-screen" x="8" y="78" width="24" height="14" rx="2"/>
-    <circle class="sf-lamp sf-zs1" cx="20" cy="82" r="2.2"/>
-    <circle class="sf-lamp sf-zs1" cx="13" cy="88" r="2.2"/>
-    <circle class="sf-lamp sf-zs1" cx="27" cy="88" r="2.2"/>
   </g>
-  </g>
-  <g class="sf-on-main" transform="translate(0 94) scale(0.75)">
-<g transform="rotate(-45 32 32)">
-    <circle class="sf-screen sf-option extra-lamp" cx="32" cy="14" r="5"/>
-    <path class="sf-screen" d="M8 19 H56 L62 25 V39 L56 45 H8 L2 39 V25 Z"/>
-    <circle class="sf-lamp sf-ll" cx="14" cy="32" r="4.6"/>
-    <circle class="sf-lamp sf-ur" cx="50" cy="32" r="4.6"/>
-    <circle class="sf-lamp sf-extra sf-option extra-lamp" cx="32" cy="14" r="2.4"/>
-  </g>
+  <g class="sf-on-main" transform="translate(2 94) scale(0.75)">
+
+  <circle class="sf-screen sf-option extra-lamp" cx="22" cy="18" r="4.6"/>
+  <path class="sf-screen" d="M31 11 H56 L60 15 V23 L28 55 H4 L0 51 V42 Z"/>
+  <circle class="sf-lamp sf-ur sf-vr-yellow" cx="41" cy="17.5" r="4.2"/>
+  <circle class="sf-lamp sf-ur sf-vr-green" cx="51" cy="17.5" r="4.2"/>
+  <circle class="sf-lamp sf-ll sf-vr-yellow" cx="10" cy="48.5" r="4.2"/>
+  <circle class="sf-lamp sf-ll sf-vr-green" cx="20" cy="48.5" r="4.2"/>
+  <circle class="sf-lamp sf-extra sf-option extra-lamp" cx="22" cy="18" r="2.2"/>
   </g></svg><figcaption>hp0 vr1</figcaption></figure><figure><svg viewBox="0 0 48 150" style="height:300px" class="hp1 vr0"><rect class="sf-mast" x="22" y="76" width="4" height="74"/>
   <g transform="translate(4 0)">
 
@@ -250,98 +364,58 @@
   <circle class="sf-lamp sf-green" cx="11.5" cy="15" r="4.4"/>
   <circle class="sf-lamp sf-red1" cx="11.5" cy="29" r="4.4"/>
   <circle class="sf-lamp sf-red2" cx="28.5" cy="29" r="4.4"/>
-  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="29" cy="41" r="2.6"/>
-  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="11" cy="55" r="2.6"/>
+  <circle class="sf-lamp sf-white" cx="29" cy="41" r="2.6"/>
+  <circle class="sf-lamp sf-white" cx="11" cy="55" r="2.6"/>
   <circle class="sf-lamp sf-yellow" cx="11.5" cy="65" r="4.4"/>
-  <g class="sf-option zs1-lamp">
-    <rect class="sf-screen" x="8" y="78" width="24" height="14" rx="2"/>
-    <circle class="sf-lamp sf-zs1" cx="20" cy="82" r="2.2"/>
-    <circle class="sf-lamp sf-zs1" cx="13" cy="88" r="2.2"/>
-    <circle class="sf-lamp sf-zs1" cx="27" cy="88" r="2.2"/>
   </g>
-  </g>
-  <g class="sf-on-main" transform="translate(0 94) scale(0.75)">
-<g transform="rotate(-45 32 32)">
-    <circle class="sf-screen sf-option extra-lamp" cx="32" cy="14" r="5"/>
-    <path class="sf-screen" d="M8 19 H56 L62 25 V39 L56 45 H8 L2 39 V25 Z"/>
-    <circle class="sf-lamp sf-ll" cx="14" cy="32" r="4.6"/>
-    <circle class="sf-lamp sf-ur" cx="50" cy="32" r="4.6"/>
-    <circle class="sf-lamp sf-extra sf-option extra-lamp" cx="32" cy="14" r="2.4"/>
-  </g>
-  </g></svg><figcaption>hp1 vr0</figcaption></figure><figure><svg viewBox="0 0 48 150" style="height:300px" class="hp1 vr1"><rect class="sf-mast" x="22" y="76" width="4" height="74"/>
+  <g class="sf-on-main" transform="translate(2 94) scale(0.75)">
+
+  <circle class="sf-screen sf-option extra-lamp" cx="22" cy="18" r="4.6"/>
+  <path class="sf-screen" d="M31 11 H56 L60 15 V23 L28 55 H4 L0 51 V42 Z"/>
+  <circle class="sf-lamp sf-ur sf-vr-yellow" cx="41" cy="17.5" r="4.2"/>
+  <circle class="sf-lamp sf-ur sf-vr-green" cx="51" cy="17.5" r="4.2"/>
+  <circle class="sf-lamp sf-ll sf-vr-yellow" cx="10" cy="48.5" r="4.2"/>
+  <circle class="sf-lamp sf-ll sf-vr-green" cx="20" cy="48.5" r="4.2"/>
+  <circle class="sf-lamp sf-extra sf-option extra-lamp" cx="22" cy="18" r="2.2"/>
+  </g></svg><figcaption>hp1 vr0</figcaption></figure><figure><svg viewBox="0 0 48 150" style="height:300px" class="hp2 vr2"><rect class="sf-mast" x="22" y="76" width="4" height="74"/>
   <g transform="translate(4 0)">
 
   <path class="sf-screen" d="M6 0 H34 L40 6 V76 H0 V6 Z"/>
   <circle class="sf-lamp sf-green" cx="11.5" cy="15" r="4.4"/>
   <circle class="sf-lamp sf-red1" cx="11.5" cy="29" r="4.4"/>
   <circle class="sf-lamp sf-red2" cx="28.5" cy="29" r="4.4"/>
-  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="29" cy="41" r="2.6"/>
-  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="11" cy="55" r="2.6"/>
+  <circle class="sf-lamp sf-white" cx="29" cy="41" r="2.6"/>
+  <circle class="sf-lamp sf-white" cx="11" cy="55" r="2.6"/>
   <circle class="sf-lamp sf-yellow" cx="11.5" cy="65" r="4.4"/>
-  <g class="sf-option zs1-lamp">
-    <rect class="sf-screen" x="8" y="78" width="24" height="14" rx="2"/>
-    <circle class="sf-lamp sf-zs1" cx="20" cy="82" r="2.2"/>
-    <circle class="sf-lamp sf-zs1" cx="13" cy="88" r="2.2"/>
-    <circle class="sf-lamp sf-zs1" cx="27" cy="88" r="2.2"/>
   </g>
-  </g>
-  <g class="sf-on-main" transform="translate(0 94) scale(0.75)">
-<g transform="rotate(-45 32 32)">
-    <circle class="sf-screen sf-option extra-lamp" cx="32" cy="14" r="5"/>
-    <path class="sf-screen" d="M8 19 H56 L62 25 V39 L56 45 H8 L2 39 V25 Z"/>
-    <circle class="sf-lamp sf-ll" cx="14" cy="32" r="4.6"/>
-    <circle class="sf-lamp sf-ur" cx="50" cy="32" r="4.6"/>
-    <circle class="sf-lamp sf-extra sf-option extra-lamp" cx="32" cy="14" r="2.4"/>
-  </g>
-  </g></svg><figcaption>hp1 vr1</figcaption></figure><figure><svg viewBox="0 0 48 150" style="height:300px" class="hp2 vr2"><rect class="sf-mast" x="22" y="76" width="4" height="74"/>
+  <g class="sf-on-main" transform="translate(2 94) scale(0.75)">
+
+  <circle class="sf-screen sf-option extra-lamp" cx="22" cy="18" r="4.6"/>
+  <path class="sf-screen" d="M31 11 H56 L60 15 V23 L28 55 H4 L0 51 V42 Z"/>
+  <circle class="sf-lamp sf-ur sf-vr-yellow" cx="41" cy="17.5" r="4.2"/>
+  <circle class="sf-lamp sf-ur sf-vr-green" cx="51" cy="17.5" r="4.2"/>
+  <circle class="sf-lamp sf-ll sf-vr-yellow" cx="10" cy="48.5" r="4.2"/>
+  <circle class="sf-lamp sf-ll sf-vr-green" cx="20" cy="48.5" r="4.2"/>
+  <circle class="sf-lamp sf-extra sf-option extra-lamp" cx="22" cy="18" r="2.2"/>
+  </g></svg><figcaption>hp2 vr2</figcaption></figure><figure><svg viewBox="0 0 48 150" style="height:300px" class="hp0 sh1"><rect class="sf-mast" x="22" y="76" width="4" height="74"/>
   <g transform="translate(4 0)">
 
   <path class="sf-screen" d="M6 0 H34 L40 6 V76 H0 V6 Z"/>
   <circle class="sf-lamp sf-green" cx="11.5" cy="15" r="4.4"/>
   <circle class="sf-lamp sf-red1" cx="11.5" cy="29" r="4.4"/>
   <circle class="sf-lamp sf-red2" cx="28.5" cy="29" r="4.4"/>
-  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="29" cy="41" r="2.6"/>
-  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="11" cy="55" r="2.6"/>
+  <circle class="sf-lamp sf-white" cx="29" cy="41" r="2.6"/>
+  <circle class="sf-lamp sf-white" cx="11" cy="55" r="2.6"/>
   <circle class="sf-lamp sf-yellow" cx="11.5" cy="65" r="4.4"/>
-  <g class="sf-option zs1-lamp">
-    <rect class="sf-screen" x="8" y="78" width="24" height="14" rx="2"/>
-    <circle class="sf-lamp sf-zs1" cx="20" cy="82" r="2.2"/>
-    <circle class="sf-lamp sf-zs1" cx="13" cy="88" r="2.2"/>
-    <circle class="sf-lamp sf-zs1" cx="27" cy="88" r="2.2"/>
   </g>
-  </g>
-  <g class="sf-on-main" transform="translate(0 94) scale(0.75)">
-<g transform="rotate(-45 32 32)">
-    <circle class="sf-screen sf-option extra-lamp" cx="32" cy="14" r="5"/>
-    <path class="sf-screen" d="M8 19 H56 L62 25 V39 L56 45 H8 L2 39 V25 Z"/>
-    <circle class="sf-lamp sf-ll" cx="14" cy="32" r="4.6"/>
-    <circle class="sf-lamp sf-ur" cx="50" cy="32" r="4.6"/>
-    <circle class="sf-lamp sf-extra sf-option extra-lamp" cx="32" cy="14" r="2.4"/>
-  </g>
-  </g></svg><figcaption>hp2 vr2</figcaption></figure><figure><svg viewBox="0 0 48 150" style="height:300px" class="extra-lamp hp1 vr0 short"><rect class="sf-mast" x="22" y="76" width="4" height="74"/>
-  <g transform="translate(4 0)">
+  <g class="sf-on-main" transform="translate(2 94) scale(0.75)">
 
-  <path class="sf-screen" d="M6 0 H34 L40 6 V76 H0 V6 Z"/>
-  <circle class="sf-lamp sf-green" cx="11.5" cy="15" r="4.4"/>
-  <circle class="sf-lamp sf-red1" cx="11.5" cy="29" r="4.4"/>
-  <circle class="sf-lamp sf-red2" cx="28.5" cy="29" r="4.4"/>
-  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="29" cy="41" r="2.6"/>
-  <circle class="sf-lamp sf-white sf-option sh-lamp" cx="11" cy="55" r="2.6"/>
-  <circle class="sf-lamp sf-yellow" cx="11.5" cy="65" r="4.4"/>
-  <g class="sf-option zs1-lamp">
-    <rect class="sf-screen" x="8" y="78" width="24" height="14" rx="2"/>
-    <circle class="sf-lamp sf-zs1" cx="20" cy="82" r="2.2"/>
-    <circle class="sf-lamp sf-zs1" cx="13" cy="88" r="2.2"/>
-    <circle class="sf-lamp sf-zs1" cx="27" cy="88" r="2.2"/>
-  </g>
-  </g>
-  <g class="sf-on-main" transform="translate(0 94) scale(0.75)">
-<g transform="rotate(-45 32 32)">
-    <circle class="sf-screen sf-option extra-lamp" cx="32" cy="14" r="5"/>
-    <path class="sf-screen" d="M8 19 H56 L62 25 V39 L56 45 H8 L2 39 V25 Z"/>
-    <circle class="sf-lamp sf-ll" cx="14" cy="32" r="4.6"/>
-    <circle class="sf-lamp sf-ur" cx="50" cy="32" r="4.6"/>
-    <circle class="sf-lamp sf-extra sf-option extra-lamp" cx="32" cy="14" r="2.4"/>
-  </g>
-  </g></svg><figcaption>hp1 vr0 short</figcaption></figure></div></section>
+  <circle class="sf-screen sf-option extra-lamp" cx="22" cy="18" r="4.6"/>
+  <path class="sf-screen" d="M31 11 H56 L60 15 V23 L28 55 H4 L0 51 V42 Z"/>
+  <circle class="sf-lamp sf-ur sf-vr-yellow" cx="41" cy="17.5" r="4.2"/>
+  <circle class="sf-lamp sf-ur sf-vr-green" cx="51" cy="17.5" r="4.2"/>
+  <circle class="sf-lamp sf-ll sf-vr-yellow" cx="10" cy="48.5" r="4.2"/>
+  <circle class="sf-lamp sf-ll sf-vr-green" cx="20" cy="48.5" r="4.2"/>
+  <circle class="sf-lamp sf-extra sf-option extra-lamp" cx="22" cy="18" r="2.2"/>
+  </g></svg><figcaption>hp0 sh1</figcaption></figure></div></section>
 </body></html>

@@ -15,8 +15,8 @@ it sets the class):
   straight | diverging  a turnout's position: lights that leg and its position lamp
   hp0 hp1 hp2 ks1 ks2   a signal's aspect by its Ril 301 name; the signal tiles show the real
   vr0 vr1 vr2           signal (tools/signal_faces.py) small, lying along the track, with its
-  sh0 sh1 zs1           lamps lit as on the track
-  sh-lamp zs1-lamp extra-lamp  which optional lamps a signal has (Sh 1, Zs 1, Zusatzlicht)
+  sh0 sh1               lamps lit as on the track
+  sh-lamp extra-lamp one-red  a signal's options (Sh 1, upper white, Hp 0 with one red)
   locked                a signal's locked lamp at its foot (yellow)
   closed                a level crossing is closed
 Mirror or rotate a tile with a transform for the other hand or direction.
@@ -69,6 +69,21 @@ STYLE = """
   .plate-text { fill: #141414; font: 7.5px sans-serif; text-anchor: middle; }
   .number-box { fill: #111111; stroke: #3c3c3c; stroke-width: 0.8; }
   .number { fill: #ff3b2f; font: bold 7.5px monospace; text-anchor: middle; }
+  .post { fill: none; stroke: #3c3c3c; stroke-width: 1.4; stroke-linecap: round; }
+  .bulb { fill: #e4e4e4; stroke: #3c3c3c; stroke-width: 0.8; }
+  .glow { display: none; fill: #ffd34d; opacity: 0.35; }
+  .socket { fill: #8e8e8e; stroke: #3c3c3c; stroke-width: 0.6; }
+  .thread { fill: none; stroke: #3c3c3c; stroke-width: 0.6; }
+  .on .bulb { fill: #ffd34d; }
+  .on .glow { display: inline; }
+  .mill { fill: #8b6b4a; stroke: #3c2e20; stroke-width: 0.8; }
+  .sails { stroke: #3c2e20; stroke-width: 1; fill: #f3eee2; }
+  .on .sails { animation: sp-spin 3s linear infinite; transform-origin: 16px 11px; }
+  .action-box { fill: #1d2a3a; stroke: #5a6b80; stroke-width: 1; }
+  .action-icon { fill: #8fa2b8; }
+  .on .action-box { stroke: #ffd34d; stroke-width: 1.6; }
+  .on .action-icon { fill: #ffd34d; }
+  @keyframes sp-spin { to { transform: rotate(360deg); } }
   .sensor-free { fill: #34d058; stroke: #141414; stroke-width: 0.9; }
   .sensor-on { display: none; }
   .occupied .sensor-free { display: none; }
@@ -83,9 +98,9 @@ BODIES = {}
 
 # The tiles' own parts get an "sp-" prefix, so a page's styles (such as the layout view's
 # .road and .lamp) never reach them; the state classes a page sets stay plain.
-PARTS = ["pf", "pf-edge", "pf-top", "pf-bottom", "tile", "bar", "band", "lamp", "pos", "point", "head", "mast", "foot", "road", "lc-lamp", "joint", "district-a", "district-b", "plate", "sensor-free",
+PARTS = ["post", "bulb", "socket", "thread", "glow", "mill", "sails", "action-box", "action-icon", "pf", "pf-edge", "pf-top", "pf-bottom", "tile", "bar", "band", "lamp", "pos", "point", "head", "mast", "foot", "road", "lc-lamp", "joint", "district-a", "district-b", "plate", "sensor-free",
          "sensor-on", "sensor-glow", "sensor-core", "sensor-hot",
-         "plate-text", "number-box", "number", "option", "white", "zs1-triangle"]
+         "plate-text", "number-box", "number", "option", "white"]
 
 
 def prefixed(text):
@@ -233,8 +248,12 @@ TILES = [
     <circle class="sensor-core" cx="8" cy="24" r="4.2"/>
     <circle class="sensor-hot" cx="7" cy="23" r="1.8"/>
   </g>"""),
-    signal_tile("signal-hv-main", "hv-main", 1, "H/V main signal for trains running right"),
-    signal_tile("signal-hv-main-distant", "hv-main-distant", 2, "H/V main signal with the distant signal below it on the same mast, for trains running right; two tiles wide"),
+    signal_tile("signal-hv-block", "hv-block", 1, "H/V block signal for trains running right"),
+    signal_tile("signal-hv-entry", "hv-entry", 1, "H/V entry signal for trains running right"),
+    signal_tile("signal-hv-departure", "hv-departure", 1, "H/V departure signal for trains running right"),
+    signal_tile("signal-hv-block-distant", "hv-block-distant", 2, "H/V block signal with the distant signal below it on the same mast, for trains running right; two tiles wide"),
+    signal_tile("signal-hv-entry-distant", "hv-entry-distant", 2, "H/V entry signal with the distant signal below it on the same mast, for trains running right; two tiles wide"),
+    signal_tile("signal-hv-departure-distant", "hv-departure-distant", 2, "H/V departure signal with the distant signal below it on the same mast, for trains running right; two tiles wide"),
     signal_tile("signal-hv-distant", "hv-distant", 1, "H/V distant signal for trains running right"),
     signal_tile("signal-ks-main", "ks-main", 1, "Ks main signal for trains running right"),
     signal_tile("signal-ks-multi", "ks-multi", 1, "Ks multi-section signal for trains running right"),
@@ -256,6 +275,22 @@ TILES = [
          PLATFORM + """  <path class="bar" d="M0 16 H32"/>
   <rect class="number-box" x="2" y="11" width="28" height="10" rx="1.2"/>
   <text class="number" x="16" y="18.8"></text>"""),
+    tile("lamp", "Lamp (street or building light): lit while on",
+         """  <circle class="glow" cx="16" cy="12" r="12"/>
+  <path class="bulb" d="M12.5 19.2 A8 8 0 1 1 19.5 19.2 L19 22 H13 Z"/>
+  <rect class="socket" x="13" y="22" width="6" height="5" rx="0.6"/>
+  <path class="thread" d="M13 23.7 H19 M13 25.4 H19"/>
+  <path class="socket" d="M14.5 27 H17.5 L16.6 29 H15.4 Z"/>"""),
+    tile("windmill", "Windmill: its sails turn while it runs",
+         """  <path class="mill" d="M12 29 L14 13 H18 L20 29 Z"/>
+  <g class="sails">
+    <path d="M16 11 L16 1.5 L19 2.5 Z M16 11 L25.5 11 L24.5 14 Z M16 11 L16 20.5 L13 19.5 Z M16 11 L6.5 11 L7.5 8 Z"/>
+    <circle cx="16" cy="11" r="1.4" fill="#3c2e20"/>
+  </g>"""),
+    tile("action", "Action (a Viessmann eMotion scene or another animated accessory): lit while it runs",
+         """  <rect class="action-box" x="5" y="5" width="22" height="22" rx="4"/>
+  <path class="action-icon" d="M13 10 L22 16 L13 22 Z"/>
+  <path class="action-icon" d="M8.5 9 l1 2 l2 1 l-2 1 l-1 2 l-1 -2 l-2 -1 l2 -1 Z"/>"""),
     tile("plate", "Name plate (track, signal or turnout name) in its own cell; the page sets its text",
          """  <rect class="plate" x="2" y="10" width="28" height="12"/>
   <text class="plate-text" x="16" y="18.6"></text>"""),
@@ -266,16 +301,23 @@ STATES = {
     "turnout-right": ["straight", "diverging", "route straight", "route diverging", "occupied diverging"],
     "turnout-left": ["straight", "diverging", "route straight", "route diverging", "occupied diverging"],
     "double-slip": ["straight", "diverging", "route straight", "route diverging", "occupied straight"],
-    "signal-hv-main": ["hp0", "hp1", "hp2", "route hp1 locked", "sh-lamp hp0 sh1", "zs1-lamp hp0 zs1"],
-    "signal-hv-main-distant": ["hp0 vr1", "hp1 vr0", "hp1 vr1", "route hp2 vr2", "extra-lamp hp1 vr0 short"],
+    "signal-hv-block": ["hp0", "hp1", "route hp1 locked"],
+    "signal-hv-entry": ["hp0", "hp1", "hp2", "route hp2"],
+    "signal-hv-departure": ["hp0", "one-red hp0", "hp1", "hp2", "hp0 sh1", "route hp1"],
+    "signal-hv-block-distant": ["hp0 vr1", "hp1 vr0", "hp1 vr1", "route hp1 vr2"],
+    "signal-hv-entry-distant": ["hp0 vr1", "hp1 vr1", "route hp2 vr2"],
+    "signal-hv-departure-distant": ["hp0 vr1", "hp1 vr0", "route hp2 vr2", "hp0 sh1"],
     "signal-hv-distant": ["vr0", "vr1", "vr2", "extra-lamp vr0 short"],
-    "signal-ks-main": ["hp0", "ks1", "sh-lamp hp0 sh1", "zs1-lamp hp0 zs1"],
+    "signal-ks-main": ["hp0", "ks1", "sh-lamp hp0 sh1"],
     "signal-ks-multi": ["hp0", "ks1", "ks2", "route ks2", "sh-lamp hp0 sh1"],
-    "signal-ks-distant": ["ks1", "ks2"],
+    "signal-ks-distant": ["ks1", "ks2", "extra-lamp ks2 short"],
     "signal-sh": ["sh0", "sh1", "route sh1"],
     "sensor-curve": ["", "occupied", "route"],
     "level-crossing": ["", "closed", "occupied closed"],
     "train-number": ["", "occupied", "platform-top platform-bottom occupied"],
+    "lamp": ["", "on"],
+    "windmill": ["", "on"],
+    "action": ["", "on"],
     "track-straight": ["", "route", "occupied", "platform-top platform-bottom", "platform-top route", "platform-bottom occupied"],
     "sensor": ["", "occupied", "route", "platform-top platform-bottom", "platform-top platform-bottom occupied"],
 }
@@ -307,7 +349,7 @@ def write_preview():
     # straight on, buffer stops; a route set into platform 1, platform 2 occupied by train
     # 2001. The curve below the turnout is turned to run from the top edge to the right.
     station = [
-        [t("district-border"), t("signal-hv-main", "route hp1"), t("turnout-right", "route diverging"), t("train-number", "occupied", text="2001"), t("buffer-stop", "occupied")],
+        [t("district-border"), t("signal-hv-departure", "route hp1"), t("turnout-right", "route diverging"), t("train-number", "occupied", text="2001"), t("buffer-stop", "occupied")],
         [blank, blank, t("track-curve", "route", "rotate(90deg) scaleY(-1)"), t("track-straight", "route"), t("buffer-stop", "route")],
         [blank, t("plate", text="A"), t("plate", text="W1"), t("plate", text="1"), blank],
     ]
@@ -365,8 +407,12 @@ PATHS = {
     "buffer-stop": {"end": ["W0"]},
     "sensor": STRAIGHT,
     "sensor-curve": {"through": ["W0", "S0"]},
-    "signal-hv-main": STRAIGHT,
-    "signal-hv-main-distant": {"through": ["W0", "E1"]},
+    "signal-hv-block": STRAIGHT,
+    "signal-hv-entry": STRAIGHT,
+    "signal-hv-departure": STRAIGHT,
+    "signal-hv-block-distant": {"through": ["W0", "E1"]},
+    "signal-hv-entry-distant": {"through": ["W0", "E1"]},
+    "signal-hv-departure-distant": {"through": ["W0", "E1"]},
     "signal-hv-distant": STRAIGHT,
     "signal-ks-main": STRAIGHT,
     "signal-ks-multi": STRAIGHT,
@@ -375,6 +421,9 @@ PATHS = {
     "level-crossing": STRAIGHT,
     "district-border": STRAIGHT,
     "train-number": STRAIGHT,
+    "lamp": {},
+    "windmill": {},
+    "action": {},
     "plate": {},
 }
 

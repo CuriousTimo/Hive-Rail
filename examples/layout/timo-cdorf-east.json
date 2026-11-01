@@ -402,7 +402,7 @@
    "track": "2b"
   },
   {
-   "tile": "signal-hv-main-distant",
+   "tile": "signal-hv-entry-distant",
    "x": 20,
    "y": 5,
    "turn": 2,
@@ -566,7 +566,7 @@
    "block": "ce_1"
   },
   {
-   "tile": "signal-hv-main",
+   "tile": "signal-hv-entry",
    "x": 15,
    "y": 6,
    "turn": 0,
@@ -780,7 +780,7 @@
    "block": "ce_3"
   },
   {
-   "tile": "signal-hv-main",
+   "tile": "signal-hv-entry",
    "x": 15,
    "y": 7,
    "turn": 0,
