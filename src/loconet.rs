@@ -280,6 +280,18 @@ impl LocoNetMessage {
         Self::with_checksum(&[OPC_SW_REQ, (wire & 0x7F) as u8, sw2])
     }
 
+    /// An `OPC_SW_REQ`'s turnout (1 to 2048), whether closed, and whether the output is on.
+    pub fn switch_request_of(&self) -> Option<(u16, bool, bool)> {
+        let b = &self.bytes;
+        (b.len() == 4 && b[0] == OPC_SW_REQ).then(|| {
+            (
+                eleven_bit_address(b[1], b[2]) + 1,
+                b[2] & 0x20 != 0,
+                b[2] & 0x10 != 0,
+            )
+        })
+    }
+
     /// `OPC_INPUT_REP`: a sensor (1 to 4096) reports high (occupied) or low.
     pub fn input_report(sensor: u16, high: bool) -> Self {
         let wire = sensor.saturating_sub(1);
@@ -498,6 +510,11 @@ mod tests {
             "{}",
             thrown.describe()
         );
+        assert_eq!(thrown.switch_request_of(), Some((137, false, false)));
+        for turnout in [1, 21, 128, 2048] {
+            let message = LocoNetMessage::switch_request(turnout, true, true);
+            assert_eq!(message.switch_request_of(), Some((turnout, true, true)));
+        }
         for sensor in [1, 2, 204, 227, 4096] {
             for high in [true, false] {
                 let report = LocoNetMessage::input_report(sensor, high);

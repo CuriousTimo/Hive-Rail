@@ -255,6 +255,24 @@ impl LocoRegister {
         Some((before, loco.clone()))
     }
 
+    /// The handoff: a loco whose train came into this node's district is in this district
+    /// now, so its command station drives it. The node whose LocoNet drives the loco (its
+    /// throttle) stays as it is. Returns the change, or None when it was here already.
+    pub fn enter_district(&mut self, address: u16) -> Option<Change> {
+        let here = self.node.clone();
+        let before = self.locos.get(&address).cloned();
+        if before.as_ref().and_then(|loco| loco.district.as_deref()) == Some(here.as_str()) {
+            return None;
+        }
+        let loco = self
+            .locos
+            .entry(address)
+            .or_insert_with(|| RegisteredLoco::new(address, &here));
+        loco.district = Some(here);
+        loco.version += 1;
+        Some((before, loco.clone()))
+    }
+
     /// Applies locos published by other nodes.
     pub fn merge(&mut self, locos: Vec<RegisteredLoco>) -> Merged {
         let mut merged = Merged::default();

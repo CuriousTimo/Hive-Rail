@@ -1,6 +1,7 @@
 use crate::{
     clock::FastClock,
     dccex::{self, BoardStatus, DccExEvent, DccExHandle, DccExMessage},
+    district_track::{Address, DistrictTrack, TrackChange},
     lbclient::{self, LbClientHandle},
     lbserver::{self, LbEvent, LbServerHandle},
     lnserial, lnudp,
@@ -8,6 +9,7 @@ use crate::{
     locos::{Change, LocoInfo, LocoNetEdge, LocoRegister, RegisteredLoco, SlotOwner},
     power::{PowerRequest, PowerState, SimulatedCommandStation},
     rocnet::{ClockAction, ClockUpdate, RocNetFrame},
+    train_tracking::{Followed, Tracker, TrainPicture},
     turnouts::Turnouts,
     ui::{command_for_key, ClockChange, Dashboard, PeerRow, TerminalUi, UiCommand},
 };
@@ -339,19 +341,70 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
             options.session, options.id
         ))
         .await?;
-    // With --layout: each district's part of the layout, for lite nodes that ask.
-    let layout_packages: BTreeMap<String, String> = match &options.layout {
+    // With --layout: each district's part of the layout, for lite nodes that ask, and this
+    // node's own district: what each device address on its buses means.
+    let (layout_packages, mut own_track, track_note) = match &options.layout {
         Some(path) => {
             let path = std::path::Path::new(path);
             let layout =
                 crate::layout::load(path, path.parent().unwrap_or(std::path::Path::new(".")))?;
-            crate::layout_share::district_packages(&layout)
+            let packages = crate::layout_share::district_packages(&layout)
                 .into_iter()
                 .map(|(district, package)| Ok((district, serde_json::to_string(&package)?)))
-                .collect::<Result<_, serde_json::Error>>()?
+                .collect::<Result<BTreeMap<String, String>, serde_json::Error>>()?;
+            // The trains are followed on the layout's graph for the whole run.
+            let topology: &'static crate::topology::Topology =
+                Box::leak(Box::new(crate::topology::Topology::build(&layout)));
+            match DistrictTrack::build(&layout, topology, &options.id) {
+                Ok(track) => {
+                    let note = format!(
+                        "Own track from {}: district {}, {}",
+                        path.display(),
+                        options.id,
+                        track.summary()
+                    );
+                    let trains = Tracker::new(topology, &options.id);
+                    (
+                        packages,
+                        Some(OwnTrack {
+                            track,
+                            trains,
+                            arrivals: Vec::new(),
+                        }),
+                        Some(note),
+                    )
+                }
+                Err(error) => (
+                    packages,
+                    None,
+                    Some(format!("No own track: {error}; sharing the layout only")),
+                ),
+            }
         }
-        None => BTreeMap::new(),
+        None => (BTreeMap::new(), None, None),
     };
+    // The district's track state, named (Hive-Rail's own state): blocks and turnouts.
+    let track_publisher = session
+        .declare_publisher(format!(
+            "hive/{}/node/{}/track",
+            options.session, options.id
+        ))
+        .await?;
+    // The trains this node follows, and every other district's (the replicated picture);
+    // an operator places a train with `--place-train`.
+    let trains_publisher = session
+        .declare_publisher(format!(
+            "hive/{}/node/{}/trains",
+            options.session, options.id
+        ))
+        .await?;
+    let pictures_subscriber = session
+        .declare_subscriber(format!("hive/{}/node/*/trains", options.session))
+        .await?;
+    let place_subscriber = session
+        .declare_subscriber(format!("hive/{}/train/place", options.session))
+        .await?;
+    let mut pictures: BTreeMap<String, TrainPicture> = BTreeMap::new();
     // Only a node with the layout answers; a querier gets no empty answers from the others.
     let layout_queryable = if layout_packages.is_empty() {
         None
@@ -475,6 +528,17 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
         outbox: Vec::new(),
         echo: tui.is_none(),
     };
+    if let Some(note) = track_note {
+        log.event(note);
+    }
+    if let Some(own) = &own_track {
+        track_publisher
+            .put(serde_json::to_vec(&own.track.state())?)
+            .await?;
+        trains_publisher
+            .put(serde_json::to_vec(&own.trains.picture())?)
+            .await?;
+    }
     let mut sequence = 0_u64;
     let mut clock = FastClock::new(Instant::now());
     // Last clock state written to LocoNet: minute of day, running, rate.
@@ -803,6 +867,14 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                         (None, Some(group)) => log.event(format!("LocoNet bus joined (UDP multicast {group})")),
                         (None, None) => log.event(format!("LocoNet bus connected (node board at {peer})")),
                     }
+                    // Ask the bus's detectors for their state, as JMRI and a Digitrax command
+                    // station do at start-up (the interrogate: switch commands to 1017 to 1020).
+                    if own_track.is_some() {
+                        let interrogate = (1017..=1020)
+                            .flat_map(|turnout| [true, false].map(|on| LocoNetMessage::switch_request(turnout, true, on)))
+                            .collect();
+                        send_to_side(&loconet_ports, LocoNetSide::Bus, interrogate, &mut log);
+                    }
                 }
                 Some(LbEvent::Disconnected { reason, .. }) if side == LocoNetSide::Bus => {
                     let reason = reason.unwrap_or_default();
@@ -887,6 +959,16 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                     // A detector on the node's bus: its own sensor, reported on the mesh.
                     if let (LocoNetSide::Bus, Some((address, occupied))) = (side, message.input_report_of()) {
                         own_sensor(&loconet_ports, &mut turnouts, &options, &sensor_publisher, rocnet_id, address, occupied, false, &mut log).await?;
+                        if let Some(own) = own_track.as_mut() {
+                            let change = own.track.sensor("LocoNet sensor", Address::Number(address), occupied);
+                            track_change(own, change, &format!("LocoNet sensor {address}"), &register, &track_publisher, &trains_publisher, &mut log).await?;
+                        }
+                    }
+                    // A switch command on either side sets a turnout of the district (or
+                    // switches another of its devices).
+                    if let (Some(own), Some((address, closed, true))) = (own_track.as_mut(), message.switch_request_of()) {
+                        let change = own.track.switch("LocoNet switch", Address::Number(address), closed);
+                        track_change(own, change, &format!("LocoNet switch {address}"), &register, &track_publisher, &trains_publisher, &mut log).await?;
                     }
                     if let Some(request) = message.power_request_kind() {
                         let origin = format!("{} LocoNet", options.id);
@@ -1000,6 +1082,50 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                     continue;
                 };
                 own_sensor(&loconet_ports, &mut turnouts, &options, &sensor_publisher, rocnet_id, detector.address, detector.occupied, true, &mut log).await?;
+                if let Some(own) = own_track.as_mut() {
+                    let change = own.track.sensor("LocoNet sensor", Address::Number(detector.address), detector.occupied);
+                    track_change(own, change, &format!("LocoNet sensor {}", detector.address), &register, &track_publisher, &trains_publisher, &mut log).await?;
+                }
+            }
+            sample = place_subscriber.recv_async() => {
+                let sample = sample?;
+                #[derive(Deserialize)]
+                struct Place { loco: u16, block: String }
+                let (Some(own), Ok(place)) = (own_track.as_mut(), serde_json::from_slice::<Place>(sample.payload().to_bytes().as_ref())) else {
+                    continue;
+                };
+                // Only the district the block is in places the train.
+                if own.trains.has_block(&place.block) {
+                    match own.trains.place(place.loco, &place.block) {
+                        Ok(placed) => {
+                            log.event(placed.to_string());
+                            trains_publisher.put(serde_json::to_vec(&own.trains.picture())?).await?;
+                        }
+                        Err(error) => log.event(format!("Cannot place train {}: {error}", place.loco)),
+                    }
+                }
+            }
+            sample = pictures_subscriber.recv_async() => {
+                let sample = sample?;
+                let Ok(picture) = serde_json::from_slice::<TrainPicture>(sample.payload().to_bytes().as_ref()) else {
+                    continue;
+                };
+                if picture.district != options.id
+                    && pictures.get(&picture.district).is_none_or(|known| known.version < picture.version)
+                {
+                    let trains: Vec<String> = picture.trains.iter().map(|t| format!("{} in {}", t.loco, t.blocks.first().unwrap_or(&t.last))).collect();
+                    log.line(format!("[trk ] <- {}'s trains, version {}: {}", picture.district, picture.version, if trains.is_empty() { "none".to_owned() } else { trains.join(", ") }));
+                    if let Some(own) = own_track.as_mut() {
+                        let version = own.trains.picture().version;
+                        for followed in own.trains.neighbour_picture(picture.clone()) {
+                            log.event(followed.to_string());
+                        }
+                        if own.trains.picture().version != version {
+                            trains_publisher.put(serde_json::to_vec(&own.trains.picture())?).await?;
+                        }
+                    }
+                    pictures.insert(picture.district.clone(), picture);
+                }
             }
             sample = observer_subscriber.recv_async() => {
                 let sample = sample?;
@@ -1204,6 +1330,44 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                         peers,
                         cli_output: log.lines.iter().cloned().collect(),
                     })?;
+                }
+            }
+        }
+        // Trains that came in from a neighbouring district: this district takes their locos,
+        // so its command station drives them (the handoff).
+        let arrivals = own_track
+            .as_mut()
+            .map(|own| std::mem::take(&mut own.arrivals))
+            .unwrap_or_default();
+        for address in arrivals {
+            let Some(change) = register.enter_district(address) else {
+                continue;
+            };
+            log.event(format!(
+                "Loco {address} is in this district now: its command station drives it"
+            ));
+            publish_locos(&loco_update_publisher, &options.id, vec![change.1.clone()]).await?;
+            let changes = vec![change];
+            drive_dccex(
+                outputs.dccex,
+                &mut dccex_locos,
+                &changes,
+                &options.id,
+                &mut log,
+            );
+            for (side, edge) in [
+                (LocoNetSide::Clients, &mut client_edge),
+                (LocoNetSide::Bus, &mut bus_edge),
+            ] {
+                if !loconet_ports.has(side) {
+                    continue;
+                }
+                let messages = edge.acquire(address);
+                if !messages.is_empty() {
+                    log.event(format!(
+                        "Loco {address} entered this district: taking it on the slot master"
+                    ));
+                    send_to_side(&loconet_ports, side, messages, &mut log);
                 }
             }
         }
@@ -1558,6 +1722,61 @@ async fn own_sensor(
         Err(_) => log.line(format!(
             "[rn  ] sensor {address} not reported on RocNet: a port is 0 to 255"
         )),
+    }
+    Ok(())
+}
+
+/// The node's own district, with `--layout`: what its addresses mean, and the trains it
+/// follows on it.
+struct OwnTrack {
+    track: DistrictTrack,
+    trains: Tracker<'static>,
+    /// Locos whose train came in from a neighbouring district, for the main loop to take
+    /// into this district.
+    arrivals: Vec<u16>,
+}
+
+/// A named change on the district's track: an event (so the dispatcher shows it too), and
+/// the track state on the mesh; a block's change also moves the trains followed. Addresses
+/// that are no device of the district are logged.
+#[allow(clippy::too_many_arguments)]
+async fn track_change(
+    own: &mut OwnTrack,
+    change: Option<TrackChange>,
+    source: &str,
+    register: &LocoRegister,
+    track_publisher: &zenoh::pubsub::Publisher<'_>,
+    trains_publisher: &zenoh::pubsub::Publisher<'_>,
+    log: &mut CliLog,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    match change {
+        None => {}
+        Some(change @ TrackChange::Unknown { .. }) => log.line(format!("[trk ] {change}")),
+        Some(change) => {
+            log.event(format!("{change} ({source})"));
+            track_publisher
+                .put(serde_json::to_vec(&own.track.state())?)
+                .await?;
+            if let TrackChange::Turnout { turnout, closed } = &change {
+                own.trains.set_turnout(turnout, *closed);
+            }
+            if let TrackChange::Block { block, occupied } = &change {
+                let version = own.trains.picture().version;
+                // A loco runs when the register has it above stop (LocoNet 0 stop, 1 emergency).
+                let moving = |loco: u16| register.get(loco).is_some_and(|l| l.speed >= 2);
+                for followed in own.trains.report(block, *occupied, &moving) {
+                    if let Followed::Arrived { loco, .. } = &followed {
+                        own.arrivals.push(*loco);
+                    }
+                    log.event(followed.to_string());
+                }
+                if own.trains.picture().version != version {
+                    trains_publisher
+                        .put(serde_json::to_vec(&own.trains.picture())?)
+                        .await?;
+                }
+            }
+        }
     }
     Ok(())
 }

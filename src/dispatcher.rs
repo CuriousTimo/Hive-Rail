@@ -688,6 +688,44 @@ pub async fn sim_hw(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync
     Ok(())
 }
 
+/// `--place-train <loco> --block <module/block> --session <name>`: an operator puts a train
+/// on the layout ("place loco here", Architecture §10.2): the node whose district the block
+/// is in follows it from there.
+pub async fn place_train(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let mut args = args.into_iter().peekable();
+    let loco: u16 = args
+        .next()
+        .and_then(|loco| loco.parse().ok())
+        .ok_or("expected a loco address after --place-train")?;
+    let mut block = None;
+    let mut rest = vec![
+        "--id".to_owned(),
+        "place-train".to_owned(),
+        "--plain".to_owned(),
+    ];
+    while let Some(arg) = args.next() {
+        if arg == "--block" {
+            block = Some(args.next().ok_or("expected <module/block> after --block")?);
+        } else {
+            rest.push(arg);
+        }
+    }
+    let block = block.ok_or("--place-train needs --block <module/block>")?;
+    let options = parse_args(rest)?;
+    let session = zenoh::open(zenoh_config(None, None, false)?).await?;
+    // Give scouting a moment to find the mesh before sending.
+    time::sleep(Duration::from_millis(1500)).await;
+    session
+        .put(
+            format!("hive/{}/train/place", options.session),
+            serde_json::json!({ "loco": loco, "block": block }).to_string(),
+        )
+        .await?;
+    time::sleep(Duration::from_millis(300)).await;
+    println!("train {loco} placed in {block}; the node of its district follows it");
+    Ok(())
+}
+
 /// `--transfer-loco <address> --to <node>`: a test tool that puts a loco into a district,
 /// as a handoff will. The loco gets that node as its district in the register; the node
 /// then takes it on its command station's slot master. `--speed`, `--forward`/`--reverse`

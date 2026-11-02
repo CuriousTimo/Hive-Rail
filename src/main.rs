@@ -2,6 +2,8 @@ mod clock;
 mod config;
 mod dccex;
 mod dispatcher;
+mod district_sim;
+mod district_track;
 mod layout;
 mod layout_share;
 mod layout_sim;
@@ -19,6 +21,7 @@ mod rocnet;
 mod simulation;
 mod tile_module;
 mod topology;
+mod train_tracking;
 mod turnouts;
 mod ui;
 mod web;
@@ -55,9 +58,11 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Some("--show-locos") => dispatcher::show_locos(args.collect()).await,
         Some("--transfer-loco") => dispatcher::transfer_loco(args.collect()).await,
         Some("--sim-hw") => dispatcher::sim_hw(args.collect()).await,
+        Some("--place-train") => dispatcher::place_train(args.collect()).await,
         Some("--check-layout") => check_layout(args.collect()),
         Some("--simulate-layout") => simulate_layout(args.collect()),
         Some("--web-sim") => web::run_sim(args.collect()).await,
+        Some("--sim-district") => district_sim::run(args.collect()).await,
         Some("--validate-profile") => {
             let path = args.next().ok_or("expected a profile path")?;
             let profile = profile::load(Path::new(&path))?;
@@ -199,23 +204,27 @@ fn print_help() {
          cargo run -- --mode node --session <name> --id <id> --loconet-tcp [port]\n\
          cargo run -- --mode node --session <name> --id <id> --dccex <serial port | host:2560>\n\
          cargo run -- --mode node --session <name> --id <id> --plain\n\
-         cargo run -- --mode node --session <name> --id <id> --layout <layout.json>   (share each district's part with lite nodes)\n\
+         cargo run -- --mode node --session <name> --id <id> --layout <layout.json>   (know its own district's track; share each district's part with lite nodes)\n\
          cargo run -- --mode node --session <name> --id <id> --lite-server   (serve lite nodes: a Zenoh router they find by scouting)\n\
          cargo run -- --mode dispatcher --session <name> [--plain] [--listen <endpoint> | --connect <endpoint>] [--lite-server]\n\
          cargo run -- --show-locos --session <name>\n\
          cargo run -- --sim-hw <district> <power_on|power_off|short|global_stop|global_go> --session <name>   (fake hardware of a lite node)\n\
+         cargo run -- --place-train <loco> --block <module/block> --session <name>   (put a train on the layout; its district's node follows it)\n\
          cargo run -- --transfer-loco <address> --to <node> --session <name> [--speed 0-126] [--forward|--reverse] [--lights|--no-lights]\n\
          cargo run -- --validate-profile <path>\n\
          cargo run -- --check-layout <layout.json> [--modules <dir>]\n\
          cargo run -- --simulate-layout <layout.json> [--seconds N]\n\
          cargo run -- --web-sim <layout.json> [--port 8080] [--speed 1] [--session <name>] [--modules <dir>]   (web view: http://localhost:8080)\n\
+         cargo run -- --sim-district <layout.json> --district <name> [--body <address>@<module>/<piece>[,length=600][,kmh=100][,heading=forward|backward][,along=<mm>]]...\n\
+           [--dccex-port 2560] [--loconet-port 1234] [--speed 1] [--session <name>]   (one district's hardware, as a node board;\n\
+           with --session, bodies cross into the neighbouring districts' simulators)\n\
          cargo run -- --config <file.toml> [more options]\n\
          cargo run -- --help\n\n\
          --config reads the options from a TOML file: each key is a flag without its dashes, a [table] a flag\n\
            prefix ([loconet] serial = ... is --loconet-serial ...); options on the command line win.\n\
          Interactive node mode shows a neighbor/heartbeat dashboard; --plain keeps log output.\n\
          Dashboard keys: 1 district power on, 0 district power off, h district emergency stop,\n\
-         E global emergency stop (every district), s simulate short,\n\
+         E global emergency stop (every district), G global go (ends it), s simulate short,\n\
          c fast clock run/pause, + - clock rate, [ ] clock hour back/forward.\n\
          With --plain, the same keys are read one per line from piped stdin (q quits).\n\
          --loconet-tcp serves LocoNet over TCP for Rocrail or JMRI, on port 1234 unless given;\n\
