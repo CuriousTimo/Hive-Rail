@@ -673,18 +673,30 @@ pub async fn sim_hw(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync
     let mut rest = vec!["--id".to_owned(), "sim-hw".to_owned(), "--plain".to_owned()];
     rest.extend(args);
     let options = parse_args(rest)?;
+    put_once(
+        format!("hive/{}/sim/{district}/hw", options.session),
+        action.clone(),
+        "sim-hw",
+    )
+    .await?;
+    println!("{district}: {action}");
+    Ok(())
+}
+
+/// A test tool's one message to the mesh: join it, give scouting a moment to find the
+/// nodes, send, and give the message a moment to go out before leaving.
+async fn put_once(
+    key: String,
+    payload: String,
+    sender: &str,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
     let session = zenoh::open(zenoh_config(None, None, false)?).await?;
-    // Give scouting a moment to find the mesh before sending.
     time::sleep(Duration::from_millis(1500)).await;
     session
-        .put(
-            format!("hive/{}/sim/{district}/hw", options.session),
-            action.clone(),
-        )
-        .attachment("sim-hw")
+        .put(key, payload)
+        .attachment(sender.to_owned())
         .await?;
     time::sleep(Duration::from_millis(300)).await;
-    println!("{district}: {action}");
     Ok(())
 }
 
@@ -712,16 +724,12 @@ pub async fn place_train(args: Vec<String>) -> Result<(), Box<dyn Error + Send +
     }
     let block = block.ok_or("--place-train needs --block <module/block>")?;
     let options = parse_args(rest)?;
-    let session = zenoh::open(zenoh_config(None, None, false)?).await?;
-    // Give scouting a moment to find the mesh before sending.
-    time::sleep(Duration::from_millis(1500)).await;
-    session
-        .put(
-            format!("hive/{}/train/place", options.session),
-            serde_json::json!({ "loco": loco, "block": block }).to_string(),
-        )
-        .await?;
-    time::sleep(Duration::from_millis(300)).await;
+    put_once(
+        format!("hive/{}/train/place", options.session),
+        serde_json::json!({ "loco": loco, "block": block }).to_string(),
+        "place-train",
+    )
+    .await?;
     println!("train {loco} placed in {block}; the node of its district follows it");
     Ok(())
 }

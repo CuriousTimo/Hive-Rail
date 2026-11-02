@@ -10,8 +10,8 @@
 //! CBUS or LCC (events) bring other kinds, which the `Address` type already has room for.
 //! An address only has to be unique within a district: each district has its own bus.
 
-use crate::layout::{address_space, Layout};
-use crate::topology::Topology;
+use crate::layout::Layout;
+use crate::topology::{occupancy_word, position_word, Topology};
 use std::collections::BTreeMap;
 
 /// A device's address on its bus.
@@ -76,18 +76,10 @@ impl std::fmt::Display for TrackChange {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             TrackChange::Block { block, occupied } => {
-                write!(
-                    f,
-                    "block {block} {}",
-                    if *occupied { "occupied" } else { "free" }
-                )
+                write!(f, "block {block} {}", occupancy_word(*occupied))
             }
             TrackChange::Turnout { turnout, closed } => {
-                write!(
-                    f,
-                    "turnout {turnout} {}",
-                    if *closed { "closed" } else { "thrown" }
-                )
+                write!(f, "turnout {turnout} {}", position_word(*closed))
             }
             TrackChange::Device { device, kind, on } => {
                 write!(f, "{kind} {device} {}", if *on { "on" } else { "off" })
@@ -133,33 +125,21 @@ impl DistrictTrack {
             return Err(format!("the layout has no district {district}"));
         }
         let drives: BTreeMap<String, String> = topology
-            .turnouts()
-            .filter(|t| t.district == district)
-            .filter_map(|t| Some((t.device.clone()?, format!("{}/{}", t.module, t.id))))
+            .turnouts_in(district)
+            .filter_map(|t| Some((t.device.clone()?, t.key())))
             .collect();
-        let mut map = BTreeMap::new();
-        for module_id in modules {
-            let Some((module, _)) = layout.modules.get(module_id) else {
-                continue;
-            };
-            for device in &module.devices {
-                let key = format!("{module_id}/{}", device.id);
-                // An occupancy detector's block: named by the device, or by the block.
-                let block = device.block.clone().or_else(|| {
-                    module
-                        .blocks
-                        .iter()
-                        .find(|block| block.occupancy.as_deref() == Some(device.id.as_str()))
-                        .map(|block| block.id.clone())
-                });
+        let map = topology
+            .devices_in(district)
+            .map(|device| {
+                let key = device.key();
                 let meaning = if let Some(turnout) = drives.get(&key) {
                     Meaning::Turnout {
                         turnout: turnout.clone(),
                         device: key,
                     }
-                } else if let Some(block) = block {
+                } else if let Some(block) = &device.block {
                     Meaning::Block {
-                        block: format!("{module_id}/{block}"),
+                        block: block.clone(),
                         device: key,
                     }
                 } else {
@@ -168,22 +148,16 @@ impl DistrictTrack {
                         kind: device.kind.clone(),
                     }
                 };
-                map.insert(
-                    (address_space(device), Address::Number(device.address)),
-                    meaning,
-                );
-            }
-        }
+                ((device.space, Address::Number(device.address)), meaning)
+            })
+            .collect();
         let blocks = topology
-            .blocks
-            .iter()
-            .filter(|(_, b)| b.district == district)
+            .blocks_in(district)
             .map(|(key, _)| (key.clone(), None))
             .collect();
         let turnouts = topology
-            .turnouts()
-            .filter(|t| t.district == district)
-            .map(|t| (format!("{}/{}", t.module, t.id), None))
+            .turnouts_in(district)
+            .map(|t| (t.key(), None))
             .collect();
         Ok(Self {
             district: district.to_owned(),
@@ -194,16 +168,18 @@ impl DistrictTrack {
     }
 
     /// What an address in an address space ("LocoNet sensor") is in this district.
-    pub fn meaning(&self, space: &str, address: Address) -> Option<&Meaning> {
-        self.map
-            .iter()
-            .find(|((s, a), _)| *s == space && *a == address)
-            .map(|(_, meaning)| meaning)
+    pub fn meaning(&self, space: &'static str, address: Address) -> Option<&Meaning> {
+        self.map.get(&(space, address))
     }
 
     /// A sensor input: a detector reports its block, another sensor itself. Repeats of a
     /// state already known change nothing and give `None`.
-    pub fn sensor(&mut self, space: &str, address: Address, on: bool) -> Option<TrackChange> {
+    pub fn sensor(
+        &mut self,
+        space: &'static str,
+        address: Address,
+        on: bool,
+    ) -> Option<TrackChange> {
         match self.meaning(space, address).cloned() {
             Some(Meaning::Block { block, .. }) => {
                 let state = self.blocks.entry(block.clone()).or_default();
@@ -231,7 +207,12 @@ impl DistrictTrack {
     }
 
     /// A switch command: the turnout it sets, or the device it switches.
-    pub fn switch(&mut self, space: &str, address: Address, closed: bool) -> Option<TrackChange> {
+    pub fn switch(
+        &mut self,
+        space: &'static str,
+        address: Address,
+        closed: bool,
+    ) -> Option<TrackChange> {
         match self.meaning(space, address).cloned() {
             Some(Meaning::Turnout { turnout, .. }) => {
                 let state = self.turnouts.entry(turnout.clone()).or_default();

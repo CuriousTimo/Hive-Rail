@@ -11,7 +11,7 @@
 //! occupied by another train.
 
 use crate::layout::{Layout, ModuleFile};
-use crate::topology::{Heading, Leg, PieceId, Topology};
+use crate::topology::{occupancy_word, Heading, Leg, PieceId, Topology, Trail};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// How far before the end of its destination piece a train stops, in mm.
@@ -293,7 +293,7 @@ pub struct Train {
     pub speed_mm_s: f64,
     pub head: Place,
     /// The pieces behind the head, oldest first; the head's own piece is not in it.
-    trail: Vec<(PieceId, Heading)>,
+    trail: Trail,
     pub state: TrainState,
     /// The route reserved to the next destination: every piece and heading from the head
     /// on. Empty until it could be reserved.
@@ -539,33 +539,14 @@ impl<'a> LayoutSim<'a> {
 
     /// As `covered`, with the heading the train runs along each piece.
     pub fn covered_with_heading(&self, train: &Train) -> Vec<(PieceId, Heading, f64, f64)> {
-        let mut spans = Vec::new();
-        let mut remaining = train.length_mm;
-        let mut place = (
-            train.head.piece.clone(),
-            train.head.heading,
-            train.head.along_mm,
-        );
-        let mut trail = train.trail.iter().rev();
-        loop {
-            let length = self.piece_length(&place.0);
-            let start = (place.2 - remaining).max(0.0);
-            let (a, b) = match place.1 {
-                Heading::Forward => (start, place.2),
-                Heading::Backward => (length - place.2, length - start),
-            };
-            spans.push((place.0.clone(), place.1, a, b));
-            remaining -= place.2 - start;
-            if remaining <= 0.0 {
-                break;
-            }
-            let Some((piece, heading)) = trail.next() else {
-                break;
-            };
-            let length = self.piece_length(piece);
-            place = (piece.clone(), *heading, length);
-        }
-        spans
+        let head = &train.head;
+        self.topology.spans(
+            &head.piece,
+            head.heading,
+            head.along_mm,
+            &train.trail,
+            train.length_mm,
+        )
     }
 
     /// The blocks occupied now, by any train.
@@ -1683,33 +1664,17 @@ impl<'a> LayoutSim<'a> {
     /// At a destination: the tail becomes the head, the train runs the other way, and the
     /// next stop of its plan is its destination.
     fn reverse(&mut self, index: usize, events: &mut Vec<(f64, SimEvent)>) {
-        let covered = self.covered(&self.trains[index]);
-        // The covered spans, head first; the last one holds the tail.
-        let Some((tail_piece, a, b)) = covered.last().cloned() else {
+        let train = &self.trains[index];
+        let head = &train.head;
+        let Some((tail_piece, new_heading, along, trail)) = self.topology.turned(
+            &head.piece,
+            head.heading,
+            head.along_mm,
+            &train.trail,
+            train.length_mm,
+        ) else {
             return;
         };
-        let tail_heading = if covered.len() == 1 {
-            self.trains[index].head.heading
-        } else {
-            self.trains[index].trail[self.trains[index].trail.len() + 1 - covered.len()].1
-        };
-        let length = self.piece_length(&tail_piece);
-        // Running the other way, the new head is at the tail's end of its span.
-        let new_heading = tail_heading.reversed();
-        let along = match new_heading {
-            Heading::Forward => b,
-            Heading::Backward => length - a,
-        };
-        // The new trail: the covered pieces from the old head back to the tail's piece,
-        // reversed in heading, oldest (the old head) first.
-        let train = &self.trains[index];
-        let mut pieces: Vec<(PieceId, Heading)> =
-            std::iter::once((train.head.piece.clone(), train.head.heading))
-                .chain(train.trail.iter().rev().cloned())
-                .take(covered.len())
-                .collect();
-        pieces.pop(); // the tail's piece is the new head
-        let trail = pieces.into_iter().map(|(p, h)| (p, h.reversed())).collect();
         let train = &mut self.trains[index];
         train.head = Place {
             piece: tail_piece,
@@ -1749,7 +1714,7 @@ impl std::fmt::Display for SimEvent {
             } => write!(
                 f,
                 "{district}: block {block} {}{}",
-                if *occupied { "occupied" } else { "free" },
+                occupancy_word(*occupied),
                 address(a)
             ),
             SimEvent::Sensor {

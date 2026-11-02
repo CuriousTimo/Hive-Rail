@@ -1,4 +1,5 @@
 use crate::power::PowerRequest;
+use crate::topology::position_word;
 use thiserror::Error;
 
 const OPC_BUSY: u8 = 0x81;
@@ -397,7 +398,7 @@ impl LocoNetMessage {
             OPC_SW_REQ => format!(
                 "SW_REQ      switch {} {} {}",
                 eleven_bit_address(b[1], b[2]) + 1,
-                if b[2] & 0x20 != 0 { "closed" } else { "thrown" },
+                position_word(b[2] & 0x20 != 0),
                 if b[2] & 0x10 != 0 { "on" } else { "off" }
             ),
             OPC_INPUT_REP => format!(

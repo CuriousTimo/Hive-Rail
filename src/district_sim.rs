@@ -17,7 +17,7 @@
 
 use crate::layout::{Layout, ModuleFile};
 use crate::layout_sim::Place;
-use crate::topology::{Heading, Leg, PieceId, Topology};
+use crate::topology::{occupancy_word, position_word, Heading, Leg, PieceId, Topology, Trail};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// The H0 scale, for speeds in scale km/h.
@@ -54,7 +54,7 @@ pub struct Body {
     /// The end running first; with `front_first` the loco's front, else its rear.
     pub head: Place,
     /// The pieces behind the head, oldest first; the head's own piece is not in it.
-    trail: Vec<(PieceId, Heading)>,
+    trail: Trail,
     /// Whether the head is the loco's front: then forward on the decoder runs head first.
     front_first: bool,
     pub decoder: Decoder,
@@ -88,6 +88,7 @@ impl Body {
             front_first: self.front_first,
             speed: self.decoder.speed,
             forward: self.decoder.forward,
+            from: None,
         }
     }
 
@@ -142,6 +143,9 @@ pub struct BodyWire {
     pub front_first: bool,
     pub speed: u8,
     pub forward: bool,
+    /// On a handover: the district it comes from.
+    #[serde(default)]
+    pub from: Option<String>,
 }
 
 /// A device on a bus: its bus (`loconet`, `dcc`, `dccex`, `board`) and address.
@@ -182,6 +186,8 @@ pub struct DistrictWorld<'a> {
     turnout_devices: BTreeMap<BusAddress, String>,
     /// Each block's detector, by `module/block`.
     detectors: BTreeMap<String, BusAddress>,
+    /// This district's blocks on each piece, with their cuts: for the occupancy.
+    blocks_on: BTreeMap<PieceId, Vec<(String, [u32; 2])>>,
     occupied: BTreeSet<String>,
     /// Track power from the district's command station; off while shorted.
     pub power: bool,
@@ -215,40 +221,27 @@ impl<'a> DistrictWorld<'a> {
         }
         let mut turnouts = BTreeMap::new();
         let mut turnout_devices = BTreeMap::new();
-        for turnout in topology.turnouts().filter(|t| t.district == district) {
-            let key = format!("{}/{}", turnout.module, turnout.id);
-            turnouts.insert(key.clone(), true);
-            let device = turnout.device.as_ref().and_then(|device| {
-                let (module, id) = device.split_once('/')?;
-                let (file, _) = layout.modules.get(module)?;
-                file.devices.iter().find(|d| d.id == id)
-            });
-            if let Some(device) = device {
-                turnout_devices.insert((device.bus.clone(), device.address), key);
+        for turnout in topology.turnouts_in(district) {
+            turnouts.insert(turnout.key(), true);
+            if let Some(device) = topology.drive_of(turnout) {
+                turnout_devices.insert((device.bus.clone(), device.address), turnout.key());
             }
         }
-        let mut detectors = BTreeMap::new();
-        for (key, block) in topology
-            .blocks
-            .iter()
-            .filter(|(_, b)| b.district == district)
-        {
-            let detector = layout.modules.get(&block.module).and_then(|(file, _)| {
-                let id = file
-                    .blocks
-                    .iter()
-                    .find(|b| b.id == block.id)?
-                    .occupancy
-                    .as_ref()?;
-                file.devices.iter().find(|d| &d.id == id)
-            });
-            if let Some(device) = detector {
-                detectors.insert(key.clone(), (device.bus.clone(), device.address));
-            }
+        let detectors = topology
+            .devices_in(district)
+            .filter_map(|d| Some((d.block.clone()?, (d.bus.clone(), d.address))))
+            .collect();
+        let mut blocks_on: BTreeMap<PieceId, Vec<(String, [u32; 2])>> = BTreeMap::new();
+        for (key, block) in topology.blocks_in(district) {
+            blocks_on
+                .entry(block.piece.clone())
+                .or_default()
+                .push((key.clone(), block.cuts_mm));
         }
         Ok(Self {
             layout,
             topology,
+            blocks_on,
             district: district.to_owned(),
             bodies: Vec::new(),
             turnouts,
@@ -431,32 +424,21 @@ impl<'a> DistrictWorld<'a> {
     /// The stretches of track a body covers, head first, per piece: (piece, heading, from,
     /// to), in mm from the piece's `from` point.
     pub fn covered(&self, body: &Body) -> Vec<(PieceId, Heading, f64, f64)> {
-        let mut spans = Vec::new();
-        let mut remaining = body.length_mm;
-        let mut place = (
-            body.head.piece.clone(),
-            body.head.heading,
-            body.head.along_mm,
-        );
-        let mut trail = body.trail.iter().rev();
-        loop {
-            let length = self.length(&place.0);
-            let start = (place.2 - remaining).max(0.0);
-            let (a, b) = match place.1 {
-                Heading::Forward => (start, place.2),
-                Heading::Backward => (length - place.2, length - start),
-            };
-            spans.push((place.0.clone(), place.1, a, b));
-            remaining -= place.2 - start;
-            if remaining <= 0.0 {
-                break;
-            }
-            let Some((piece, heading)) = trail.next() else {
-                break;
-            };
-            place = (piece.clone(), *heading, self.length(piece));
-        }
-        spans
+        let head = &body.head;
+        self.topology.spans(
+            &head.piece,
+            head.heading,
+            head.along_mm,
+            &body.trail,
+            body.length_mm,
+        )
+    }
+
+    /// Whether a body covers track of another district, so the neighbour must know of it.
+    pub fn spans_border(&self, body: &Body) -> bool {
+        self.covered(body)
+            .iter()
+            .any(|(piece, ..)| !self.here(piece))
     }
 
     /// Whether two of this district's bodies overlap on the track.
@@ -482,13 +464,8 @@ impl<'a> DistrictWorld<'a> {
             .chain(self.foreign.values().map(|(body, _)| body))
         {
             for (piece, _, a, b) in self.covered(body) {
-                for (key, block) in &self.topology.blocks {
-                    let [c0, c1] = block.cuts_mm;
-                    if block.district == self.district
-                        && block.piece == piece
-                        && a < f64::from(c1)
-                        && b > f64::from(c0)
-                    {
+                for (key, [c0, c1]) in self.blocks_on.get(&piece).into_iter().flatten() {
+                    if a < f64::from(*c1) && b > f64::from(*c0) {
                         occupied.insert(key.clone());
                     }
                 }
@@ -542,7 +519,10 @@ impl<'a> DistrictWorld<'a> {
             let mut body = self.bodies.remove(index);
             body.hops += 1;
             events.push(WorldEvent::Handover {
-                body: body.to_wire(&to),
+                body: BodyWire {
+                    from: Some(self.district.clone()),
+                    ..body.to_wire(&to)
+                },
                 to: to.clone(),
             });
             self.foreign.insert(body.id.clone(), (body, to));
@@ -566,28 +546,22 @@ impl<'a> DistrictWorld<'a> {
         if body.decoder.forward == body.front_first {
             return;
         }
-        let covered = self.covered(body);
-        let Some((tail_piece, tail_heading, a, b)) = covered.last().cloned() else {
+        let head = &body.head;
+        let Some((piece, heading, along_mm, trail)) = self.topology.turned(
+            &head.piece,
+            head.heading,
+            head.along_mm,
+            &body.trail,
+            body.length_mm,
+        ) else {
             return;
         };
-        let length = self.length(&tail_piece);
-        let heading = tail_heading.reversed();
-        let along = match heading {
-            Heading::Forward => b,
-            Heading::Backward => length - a,
-        };
-        let mut pieces: Vec<(PieceId, Heading)> =
-            std::iter::once((body.head.piece.clone(), body.head.heading))
-                .chain(body.trail.iter().rev().cloned())
-                .take(covered.len())
-                .collect();
-        pieces.pop(); // the tail's piece is the new head's
         let body = &mut self.bodies[index];
-        body.trail = pieces.into_iter().map(|(p, h)| (p, h.reversed())).collect();
+        body.trail = trail;
         body.head = Place {
-            piece: tail_piece,
+            piece,
             heading,
-            along_mm: along,
+            along_mm,
         };
         body.front_first = !body.front_first;
         body.held = None;
@@ -757,7 +731,11 @@ impl<'a> DistrictWorld<'a> {
             }
             self.foreign.remove(&wire.id);
             self.bodies.push(body);
-            let from = known.map_or_else(|| "a neighbour".to_owned(), |(_, owner)| owner);
+            let from = wire
+                .from
+                .clone()
+                .or(known.map(|(_, owner)| owner))
+                .unwrap_or_else(|| "a neighbour".to_owned());
             return Some(WorldEvent::Arrived {
                 id: wire.id.clone(),
                 from,
@@ -928,7 +906,7 @@ fn dccex_command(world: &mut DistrictWorld, frame: &str) -> Vec<String> {
                 {
                     log(format!(
                         "turnout {turnout} {} (DCC accessory {address})",
-                        if closed { "closed" } else { "thrown" }
+                        position_word(closed)
                     ));
                 }
             }
@@ -1056,16 +1034,16 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn std::error::Error + Se
                 ));
                 log(format!(
                     "block {block} {} (LocoNet sensor {address})",
-                    if occupied { "occupied" } else { "free" }
+                    occupancy_word(occupied)
                 ));
             }
             Some((bus, address)) => log(format!(
                 "block {block} {}: its detector is on bus {bus} ({address}), not simulated",
-                if occupied { "occupied" } else { "free" }
+                occupancy_word(occupied)
             )),
             None => log(format!(
                 "block {block} {} (no detector)",
-                if occupied { "occupied" } else { "free" }
+                occupancy_word(occupied)
             )),
         };
 
@@ -1092,6 +1070,7 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn std::error::Error + Se
     let mut simulators: BTreeMap<String, std::time::Instant> = BTreeMap::new();
     let mut heard: BTreeMap<String, std::time::Instant> = BTreeMap::new();
     let mut next_hello = std::time::Instant::now();
+    let mut published: BTreeSet<String> = BTreeSet::new();
 
     let mut tick = tokio::time::interval(TICK);
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -1102,7 +1081,7 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn std::error::Error + Se
                 for event in world.step(TICK.as_secs_f64() * speed) {
                     match event {
                         WorldEvent::Occupancy { block, detector, occupied } => report_detector(&detector, &block, occupied),
-                        WorldEvent::Turnout { turnout, closed } => log(format!("turnout {turnout} {}", if closed { "closed" } else { "thrown" })),
+                        WorldEvent::Turnout { turnout, closed } => log(format!("turnout {turnout} {}", position_word(closed))),
                         WorldEvent::Fault { what, short } => {
                             log(format!("FAULT {what}{}", if short { ": the track shorts" } else { "" }));
                             if short {
@@ -1126,9 +1105,19 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn std::error::Error + Se
                         next_hello = now + std::time::Duration::from_secs(1);
                         zenoh.put(format!("{prefix}/sim/{district}"), district.clone()).await?;
                     }
+                    // Only a body over a border concerns a neighbour: published while it is, and
+                    // once more when it is not, so the neighbour's blocks go free.
+                    let mut spanning = BTreeSet::new();
                     for body in &world.bodies {
-                        zenoh.put(format!("{prefix}/body/{}", body.id), serde_json::to_string(&body.to_wire(&district))?).await?;
+                        let over = world.spans_border(body);
+                        if over || published.contains(&body.id) {
+                            zenoh.put(format!("{prefix}/body/{}", body.id), serde_json::to_string(&body.to_wire(&district))?).await?;
+                        }
+                        if over {
+                            spanning.insert(body.id.clone());
+                        }
                     }
+                    published = spanning;
                     // A neighbour is there while it says so; its bodies while they are heard of.
                     let live: BTreeSet<String> = simulators
                         .iter()
@@ -1198,7 +1187,7 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn std::error::Error + Se
                     }
                     if let Some((address, closed, true)) = message.switch_request_of() {
                         if let Some(WorldEvent::Turnout { turnout, closed }) = world.switch("loconet", address, closed) {
-                            log(format!("turnout {turnout} {} (LocoNet switch {address})", if closed { "closed" } else { "thrown" }));
+                            log(format!("turnout {turnout} {} (LocoNet switch {address})", position_word(closed)));
                         }
                     }
                 }
@@ -1221,6 +1210,11 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn std::error::Error + Se
                     heard.insert(wire.id.clone(), std::time::Instant::now());
                     if let Some(WorldEvent::Arrived { id, from }) = world.receive(&wire) {
                         log(format!("loco {} came in from {from} (body {id}); this simulator moves it now", wire.address));
+                        // What the logic must prevent: a train running into a district whose
+                        // track has no power.
+                        if !world.power {
+                            log(format!("INVARIANT VIOLATED: loco {} ran into {district}, which has no track power", wire.address));
+                        }
                     }
                 }
             }

@@ -37,6 +37,27 @@ impl std::fmt::Display for PieceId {
     }
 }
 
+/// A block's state in words: "occupied" or "free".
+pub fn occupancy_word(occupied: bool) -> &'static str {
+    if occupied {
+        "occupied"
+    } else {
+        "free"
+    }
+}
+
+/// A turnout's position in words: "closed" (straight) or "thrown".
+pub fn position_word(closed: bool) -> &'static str {
+    if closed {
+        "closed"
+    } else {
+        "thrown"
+    }
+}
+
+/// The pieces behind a train's head, oldest first, each with the heading it ran along it.
+pub type Trail = Vec<(PieceId, Heading)>;
+
 /// Which way a train runs along a piece: `Forward` from its `from` point to its `to`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Heading {
@@ -133,9 +154,25 @@ pub struct DeviceInfo {
     pub kind: String,
     pub bus: String,
     pub address: u16,
+    /// Its address space on the bus (`address_space`): LocoNet sensors and switches apart.
+    pub space: &'static str,
     pub district: String,
     /// The block an occupancy detector covers, `module/block`.
     pub block: Option<String>,
+}
+
+impl DeviceInfo {
+    /// `module/device`.
+    pub fn key(&self) -> String {
+        format!("{}/{}", self.module, self.id)
+    }
+}
+
+impl TurnoutInfo {
+    /// `module/turnout`.
+    pub fn key(&self) -> String {
+        format!("{}/{}", self.module, self.id)
+    }
 }
 
 #[derive(Debug)]
@@ -274,6 +311,7 @@ impl Topology {
                     kind: device.kind.clone(),
                     bus: device.bus.clone(),
                     address: device.address,
+                    space: address_space(device),
                     district: district(module_id),
                     block: block.map(|block| format!("{module_id}/{block}")),
                 };
@@ -298,13 +336,45 @@ impl Topology {
         self.turnouts.iter()
     }
 
+    /// A district's turnouts.
+    pub fn turnouts_in<'b>(&'b self, district: &'b str) -> impl Iterator<Item = &'b TurnoutInfo> {
+        self.turnouts.iter().filter(move |t| t.district == district)
+    }
+
+    /// A district's blocks, by `module/block`.
+    pub fn blocks_in<'b>(
+        &'b self,
+        district: &'b str,
+    ) -> impl Iterator<Item = (&'b String, &'b BlockInfo)> {
+        self.blocks
+            .iter()
+            .filter(move |(_, b)| b.district == district)
+    }
+
+    /// A district's devices.
+    pub fn devices_in<'b>(&'b self, district: &'b str) -> impl Iterator<Item = &'b DeviceInfo> {
+        self.devices
+            .values()
+            .filter(move |d| d.district == district)
+    }
+
+    /// A device by `module/device`.
+    pub fn device_named(&self, key: &str) -> Option<&DeviceInfo> {
+        let (module, id) = key.split_once('/')?;
+        self.devices
+            .values()
+            .find(|d| d.module == module && d.id == id)
+    }
+
+    /// The device a turnout is switched by.
+    pub fn drive_of(&self, turnout: &TurnoutInfo) -> Option<&DeviceInfo> {
+        self.device_named(turnout.device.as_deref()?)
+    }
+
     /// The device at an address in a district: `space` as `address_space` names it, for
     /// example "LocoNet sensor".
-    pub fn device(&self, district: &str, space: &str, address: u16) -> Option<&DeviceInfo> {
-        self.devices
-            .iter()
-            .find(|((d, s, a), _)| d == district && *s == space && *a == address)
-            .map(|(_, info)| info)
+    pub fn device(&self, district: &str, space: &'static str, address: u16) -> Option<&DeviceInfo> {
+        self.devices.get(&(district.to_owned(), space, address))
     }
 
     /// Where a train running along `piece` in `heading` can go next. `closed` gives a
@@ -388,6 +458,77 @@ impl Topology {
             entry: *leg,
             options,
         })
+    }
+
+    fn length(&self, piece: &PieceId) -> f64 {
+        self.piece(piece).map_or(0.0, |p| f64::from(p.length_mm))
+    }
+
+    /// The stretches of track a train covers, head first, per piece: (piece, heading, from,
+    /// to), in mm from the piece's `from` point. The train: its head on `head` running in
+    /// `heading`, `along_mm` along it in that heading, the pieces behind it (`trail`,
+    /// oldest first, without the head's piece) and its length.
+    pub fn spans(
+        &self,
+        head: &PieceId,
+        heading: Heading,
+        along_mm: f64,
+        trail: &[(PieceId, Heading)],
+        length_mm: f64,
+    ) -> Vec<(PieceId, Heading, f64, f64)> {
+        let mut spans = Vec::new();
+        let mut remaining = length_mm;
+        let mut place = (head.clone(), heading, along_mm);
+        let mut behind = trail.iter().rev();
+        loop {
+            let length = self.length(&place.0);
+            let start = (place.2 - remaining).max(0.0);
+            let (a, b) = match place.1 {
+                Heading::Forward => (start, place.2),
+                Heading::Backward => (length - place.2, length - start),
+            };
+            spans.push((place.0.clone(), place.1, a, b));
+            remaining -= place.2 - start;
+            if remaining <= 0.0 {
+                break;
+            }
+            let Some((piece, heading)) = behind.next() else {
+                break;
+            };
+            place = (piece.clone(), *heading, self.length(piece));
+        }
+        spans
+    }
+
+    /// The same train turned round, its tail end the new head: the new head's piece,
+    /// heading and place along it, and the new trail (oldest first). None for a train
+    /// that covers nothing.
+    pub fn turned(
+        &self,
+        head: &PieceId,
+        heading: Heading,
+        along_mm: f64,
+        trail: &[(PieceId, Heading)],
+        length_mm: f64,
+    ) -> Option<(PieceId, Heading, f64, Trail)> {
+        let covered = self.spans(head, heading, along_mm, trail, length_mm);
+        // The covered spans, head first; the last one holds the tail.
+        let (tail_piece, tail_heading, a, b) = covered.last().cloned()?;
+        // Running the other way, the new head is at the tail's end of its span.
+        let new_heading = tail_heading.reversed();
+        let along = match new_heading {
+            Heading::Forward => b,
+            Heading::Backward => self.length(&tail_piece) - a,
+        };
+        // The new trail: the covered pieces from the old head back to the tail's piece,
+        // reversed in heading, oldest (the old head) first.
+        let mut pieces: Vec<(PieceId, Heading)> = std::iter::once((head.clone(), heading))
+            .chain(trail.iter().rev().cloned())
+            .take(covered.len())
+            .collect();
+        pieces.pop(); // the tail's piece is the new head
+        let trail = pieces.into_iter().map(|(p, h)| (p, h.reversed())).collect();
+        Some((tail_piece, new_heading, along, trail))
     }
 
     /// Every piece and heading reachable from a start, with every turnout free to choose.

@@ -1,4 +1,5 @@
 use crate::power::PowerRequest;
+use crate::topology::occupancy_word;
 use thiserror::Error;
 
 const HEADER_LENGTH: usize = 8;
@@ -326,7 +327,7 @@ impl RocNetFrame {
             (SENSOR_GROUP, SENSOR_REPORT_ACTION, _) => match self.sensor_report_of() {
                 Some((port, occupied)) => format!(
                     "sensor {port} {} (node {})",
-                    if occupied { "occupied" } else { "free" },
+                    occupancy_word(occupied),
                     self.sender_id()
                 ),
                 None => format!("sensor report {kind} (too short)"),
