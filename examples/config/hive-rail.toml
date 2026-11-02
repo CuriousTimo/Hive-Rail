@@ -12,7 +12,7 @@
 # example.
 
 # What to run: "node" (one module's computer) or "dispatcher" (the read-only screen for
-# the Zugleiter, which reads only session, id, listen, connect and plain).
+# the Zugleiter, which reads only session, id, listen, connect, plain and lite-server).
 mode = "node"
 
 # ---------------------------------------------------------------------------------------
@@ -44,6 +44,20 @@ rocnet-address = 101
 # rocnet-address; use one of the two, not both.
 #identify = false
 #send-rocnet-hex = "@0001230001020203304140"
+
+# Serve lite nodes (microcontrollers such as the M5StickC): run Zenoh as a router on
+# tcp/0.0.0.0:7447 (or listen), which the lite nodes find by scouting. Without at least
+# one lite server on the mesh, a lite node keeps "looking for lite servers". The
+# dispatcher reads this option too.
+#lite-server = false
+
+# A layout file: answer each district's request for its part of the layout (lite nodes
+# fetch theirs this way).
+#layout = "examples/layout/bench-m5.json"
+
+# Show sensors on a panel's turnout LEDs, such as an IB-Switch: turnout=sensor pairs,
+# green while the sensor is free, red while it is occupied.
+#show-sensors = "111=203,112=205"
 
 # ---------------------------------------------------------------------------------------
 # Command station

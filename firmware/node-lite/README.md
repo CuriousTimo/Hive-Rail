@@ -11,14 +11,15 @@ the nodes page. It started as the phase B0 test. See the
 ## Run it
 
 1. Copy `include/secrets.example.h` to `include/secrets.h` (not committed) and fill in the
-   Wi-Fi network and the address of the computer running a node.
-2. On that computer, start a node that listens for the ESP32:
-   `hive-rail --mode node --session bench --id MacBook --rocnet-address 101 --listen tcp/0.0.0.0:7447`
+   Wi-Fi network and an OTA password (and, as a fallback only, a full node's address).
+2. Start at least one **lite server**, a node (or the dispatcher) that the ESP32 finds by scouting:
+   `hive-rail --mode node --session bench --id MacBook --rocnet-address 101 --lite-server --layout examples/layout/bench-m5.json`
+   Without a lite server the screen keeps showing "looking for lite servers".
 3. Build and flash over USB: `pio run -e m5stick-c -t upload` (or `-e esp32dev`), then `pio device monitor`.
+   zenoh-pico's build needs CMake (`pip install cmake` next to PlatformIO).
    Afterwards over Wi-Fi: `PLATFORMIO_UPLOAD_FLAGS="--auth=<HIVE_OTA_PASS>" pio run -e m5stick-c-ota -t upload`.
 
 **Buttons, screen and lights:** see the wiki page [Node-Lite on the M5StickC](https://github.com/CuriousTimo/Hive-Rail/wiki/Node-Lite-M5StickC). In short: side button B switches district power (double press: fake short), the front button switches pages (double press: global emergency stop, triple press: global go).
-   zenoh-pico's build needs CMake (`pip install cmake` next to PlatformIO).
 
 ## Result (2026-10-31, M5StickC: ESP32-PICO-D4, zenoh-pico 1.10.1, Rust zenoh 1.10.1)
 
@@ -35,4 +36,5 @@ the nodes page. It started as the phase B0 test. See the
 "allocator ESP32-lite"), because the shared roles go to the online node with the lowest id and
 "ESP32-lite" sorts first. A lite node that cannot do those jobs must not get them: its heartbeat
 needs a flag (for example `"lite": true`) that full nodes use to leave it out of the shared roles
-(wiki NB-Q12).
+(wiki NB-Q12). **Since solved:** the heartbeat carries `"lite": true`, and lite nodes never take
+the shared roles.
