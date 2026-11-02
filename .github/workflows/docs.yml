@@ -1,0 +1,51 @@
+name: Code documentation
+
+# The code documentation (rustdoc, private items included) on GitHub Pages, from main.
+# Pages must be set to "GitHub Actions" once, under Settings > Pages > Source.
+on:
+  push:
+    branches: [main]
+    paths: ["src/**", "Cargo.toml", "Cargo.lock", ".github/workflows/docs.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  docs:
+    name: Build and publish
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build the documentation
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: |
+          cargo doc --locked --no-deps --document-private-items
+          echo '<meta http-equiv="refresh" content="0; url=hive_rail/index.html">' > target/doc/index.html
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: target/doc
+
+      - name: Publish
+        id: deploy
+        uses: actions/deploy-pages@v4

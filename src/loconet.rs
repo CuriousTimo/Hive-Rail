@@ -1,3 +1,9 @@
+//! The LocoNet codec: messages with their checksum, decoded from a byte stream, built for
+//! what Hive-Rail sends (power, slots, the fast clock in slot 123, switch commands, sensor
+//! reports) and described for the log. Protocol facts from the Digitrax LocoNet Personal
+//! Use Edition and JMRI (wiki "LocoNet Adapter" §5). The transports are [`crate::lbserver`],
+//! [`crate::lbclient`], [`crate::lnserial`] and [`crate::lnudp`].
+
 use crate::power::PowerRequest;
 use crate::topology::position_word;
 use thiserror::Error;

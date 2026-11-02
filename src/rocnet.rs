@@ -1,3 +1,8 @@
+//! RocNet frames as Hive-Rail carries them on the mesh: the 8-byte header and the groups it
+//! uses (command station power and halt, loco velocity, stationary identify, the fast clock,
+//! sensor reports), built, parsed and described for the log. After the public RocNet
+//! protocol page (wiki "RocNet on the Mesh" §3 and §4).
+
 use crate::power::PowerRequest;
 use crate::topology::occupancy_word;
 use thiserror::Error;

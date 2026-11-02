@@ -1,3 +1,8 @@
+//! `--mode simulation`: the first check of the simulator plan, that no rail segment is
+//! powered by two boosters at once (invariant I1 of the wiki's Architecture §9.2), on a
+//! fixed example. The layout and district simulators ([`crate::layout_sim`],
+//! [`crate::district_sim`]) are where simulation grew from here.
+
 use std::fmt;
 
 #[derive(Debug)]

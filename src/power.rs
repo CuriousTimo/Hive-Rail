@@ -1,3 +1,8 @@
+//! District power: what a node's district can be (ON, OFF, emergency STOP, SHORT), the
+//! requests that change it, a simulated command station for a node without DCC-EX, and the
+//! layout-wide `GLOBAL` line. Power is per district; the only layout-wide actions are the
+//! global emergency stop and the global go that ends it (wiki "RocNet on the Mesh" §6).
+
 use std::fmt;
 
 /// Power request for one district, from RocNet group 1 or LocoNet GPON/GPOFF/IDLE.

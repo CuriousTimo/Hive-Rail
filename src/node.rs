@@ -1,3 +1,23 @@
+//! A district's node (`--mode node`): the main loop that joins the mesh and ties the rest
+//! together.
+//!
+//! - **Heartbeats** every 250 ms on `hive/<session>/node/<id>/hb`, with the district's
+//!   power, its RocNet address and a checksum of its loco register; a peer silent for
+//!   750 ms is stale.
+//! - **District power** per district, the **global emergency stop** and the **global go**
+//!   on `rn/cs/all`, short circuits reported to every node ([`crate::power`]).
+//! - The **fast clock** ([`crate::clock`]), the **loco register** and throttle numbers
+//!   ([`crate::locos`]).
+//! - The **command station**: simulated, or DCC-EX ([`crate::dccex`]); **LocoNet** over TCP
+//!   for Rocrail and JMRI, and one LocoNet bus (a node board, a serial interface or a GCA101).
+//! - The district's **sensors** as RocNet sensor reports on `rn/node/<id>/sr`.
+//! - With `--layout`, its **own track** ([`crate::district_track`]) and the **trains** on it
+//!   ([`crate::train_tracking`]): named blocks and turnouts, trains followed and handed
+//!   over, and held before a border that is not clear (default Stop).
+//! - **Lite servers** for microcontroller lite nodes, and the district's part of the layout
+//!   for them ([`crate::layout_share`]).
+//! - The **dashboard** ([`crate::ui`]), or log lines with `--plain`.
+
 use crate::{
     clock::FastClock,
     dccex::{self, BoardStatus, DccExEvent, DccExHandle, DccExMessage},

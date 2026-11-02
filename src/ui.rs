@@ -1,3 +1,8 @@
+//! The node's terminal dashboard (ratatui): the fast clock, the district's power and the
+//! global state, the LocoNet and command station status, the node table with each peer's
+//! heartbeat, power and locos, and the log pane; and the keys that switch power, simulate a
+//! short and set the clock (also read from stdin with `--plain`).
+
 use crate::{
     locos::LocoInfo,
     power::{PowerRequest, PowerState},

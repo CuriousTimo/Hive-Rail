@@ -1,4 +1,5 @@
-//! Module and layout files (schema version 2), as designed in the wiki's "Module and
+//! Module and layout files (schema version 2, and version 3 through [`crate::tile_module`]),
+//! as designed in the wiki's "Module and
 //! Layout Files": every module owner describes their modules once, the planning team's
 //! layout file puts them together for one meeting, and Hive-Rail checks both before the
 //! meeting, so problems are found at home and not on the floor.

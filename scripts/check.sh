@@ -19,6 +19,8 @@ echo "== clippy"
 cargo clippy --locked --all-targets --all-features -- -D warnings
 echo "== test (native)"
 cargo test --locked
+echo "== doc"
+RUSTDOCFLAGS="-D warnings" cargo doc --locked --no-deps --document-private-items
 
 for target in "${TARGETS[@]}"; do
 	echo "== cross-build $target"

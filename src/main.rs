@@ -1,3 +1,61 @@
+//! # Hive-Rail
+//!
+//! Distributed train tracking for modular model railways: a small computer (a **node**)
+//! looks after each powered **district** of a layout, and the nodes share what they know
+//! over a **mesh** ([Zenoh](https://zenoh.io) on the LAN), speaking RocNet where a RocNet
+//! tool such as Rocrail should understand it and JSON for Hive-Rail's own state. The
+//! design is in the [wiki](https://github.com/CuriousTimo/Hive-Rail/wiki); this
+//! documentation is the code's side of it.
+//!
+//! ## What the program runs
+//!
+//! One binary, chosen by its first option (see `--help`):
+//!
+//! | Option | What runs | Module |
+//! | --- | --- | --- |
+//! | `--mode node` | A district's node: power, the fast clock, the loco register, its command station and LocoNet, its own track and the trains on it | [`node`] |
+//! | `--mode dispatcher` | The read-only screen of the whole layout (FREMO: Zugleiter) | [`dispatcher`] |
+//! | `--web-sim` | The layout simulator with its web view and module editor | [`web`], [`layout_sim`] |
+//! | `--sim-district` | One district's hardware, as a node board, for a node to run on | [`district_sim`] |
+//! | `--check-layout`, `--simulate-layout` | A layout's checks, and the simulation as text | [`layout`], [`layout_sim`] |
+//! | `--place-train`, `--transfer-loco`, `--sim-hw`, `--show-locos` | Test and operator tools on the mesh | [`dispatcher`] |
+//!
+//! ## The modules, by layer
+//!
+//! - **The layout:** [`layout`] reads module and layout files and checks them;
+//!   [`tile_module`] derives a module's track from its SpDrS60 tiles (schema version 3);
+//!   [`topology`] joins every module into one track graph and knows each device;
+//!   [`layout_share`] sends each district its part; [`profile`] is the older module profile.
+//! - **A node's own district:** [`district_track`] names what each bus address is;
+//!   [`train_tracking`] follows trains block by block and hands them over at a border.
+//! - **The mesh:** [`node`] (heartbeats, power, the global stop, sensors, the trains);
+//!   [`locos`] (the loco register shared by every node); [`clock`] (the fast clock);
+//!   [`rocnet`] (RocNet frames); [`power`] (district power states).
+//! - **Hardware adapters:** [`dccex`] (DCC-EX over USB or WiFi); [`loconet`] (the LocoNet
+//!   codec) with [`lbserver`], [`lbclient`], [`lnserial`] and [`lnudp`] (LocoNet over TCP,
+//!   a serial interface, UDP multicast); [`turnouts`] (answering turnout questions as a
+//!   command station does).
+//! - **Screens:** [`ui`] (the node's terminal dashboard), [`dispatcher`], [`web`] and
+//!   [`layout_view`] (the web view).
+//! - **Simulation:** [`layout_sim`] plays a whole layout, logic included;
+//!   [`district_sim`] plays one district's hardware and leaves the logic to the nodes;
+//!   [`simulation`] is the first booster-exclusivity check (`--mode simulation`).
+//!
+//! ## How an occupancy report travels
+//!
+//! A detector on a district's LocoNet reports `OPC_INPUT_REP` → the node's LocoNet adapter
+//! decodes it ([`loconet`]) → [`node`] reports it on the mesh as a RocNet sensor report and,
+//! with `--layout`, [`district_track`] names it ("block timo-adorf/adorf_1_b occupied") →
+//! [`train_tracking`] moves the train that can have entered that block, or reports a ghost
+//! → the node publishes its train picture, which every other node keeps; a train reaching
+//! a border is taken over by the neighbour's node, and held before it while that border is
+//! not clear.
+//!
+//! ## Working on it
+//!
+//! `scripts/check.sh` runs what CI runs (fmt, Clippy, tests); `tools/district_sim_step1.py`
+//! to `step6.py` run nodes on district simulators. See `CONTRIBUTING.md`.
+
 mod clock;
 mod config;
 mod dccex;

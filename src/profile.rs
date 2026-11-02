@@ -1,3 +1,7 @@
+//! The module profile of the first design (`module_profile.json`, `--validate-profile`):
+//! a module's identity, ports and devices, with its first checks. Superseded by the module
+//! and layout files ([`crate::layout`]), and kept until those cover what it does.
+
 #![allow(dead_code)]
 
 use serde::Deserialize;

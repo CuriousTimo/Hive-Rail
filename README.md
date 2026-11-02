@@ -154,6 +154,8 @@ cargo run -- --config examples/config/intellibox.toml
 
 GitHub Actions runs formatting, Clippy, tests, and a build on Linux, macOS, and Windows for pull requests, beta tags, and manual runs (**Run workflow** on GitHub). Pushes to `main` do not run CI; run the checks locally instead. These checks cover desktop software only; they do not test Raspberry Pi or Orange Pi boards or any real railway hardware.
 
+**Working on the code:** [CONTRIBUTING.md](CONTRIBUTING.md) has the house rules and where to start; the code documentation is `cargo doc --no-deps --document-private-items --open` (an overview of every module at the top of `src/main.rs`), published on GitHub Pages from `main`.
+
 ### Local checks and builds
 
 On a Mac, the same checks and the cross-builds run locally without Docker. They need the Rust targets `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu` and `x86_64-pc-windows-gnu`, plus [cargo-zigbuild](https://github.com/rust-cross/cargo-zigbuild) with Zig (`pip3 install --user ziglang`) and, for packages, `cargo-deb`.
