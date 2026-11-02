@@ -2,8 +2,9 @@
 """Step 6 of the district simulators (wiki "District Simulators and Train Tracking"):
 default Stop at the border. As step 5, but the M5StickC's district is switched off first:
 MacBook's node holds the train before the border at speed 0 although the throttle drives
-it, and lets it go once the M5StickC has power again; neither simulator sees a train run
-into a district without power.
+it and sets its boundary signal to Hp 0, and lets it go (Hp 1) once the M5StickC has power
+again; neither simulator sees a train run into a district without power. The faults that
+take the neighbour away are tools/district_sim_step6_lost.py and step6_split.py.
 
     cargo build && python3 tools/district_sim_step6.py [target/debug/hive-rail]
 """
@@ -27,6 +28,9 @@ def scenario(bench):
                 wait_for(node, rf"EVENT\s+STOP train {LOCO} held before the border to M5StickC \(timo-2e96-border/edge_1\): M5StickC is OFF", 5))
     time.sleep(3)
     text = read(node)
+    bench.check("its boundary signal shows Hp 0",
+                wait_for(node, r"EVENT\s+Signal timo-2e96-border/signal_13 at the border to M5StickC: Hp 0, M5StickC is OFF", 5)
+                and wait_for(bench.log("sim-MacBook"), r"signal timo-2e96-border/signal_13 shows Hp 0 \(LocoNet switch 131\)", 5))
     bench.check("its DCC-EX keeps the loco at speed 0 although the throttle drives it",
                 re.search(rf"\[DCC-EX\] -> <t {LOCO} 0 1>", text) and not re.search(rf"\[DCC-EX\] -> <t {LOCO} [1-9]\d* 1>", text))
     time.sleep(8)
@@ -35,6 +39,8 @@ def scenario(bench):
     throttles["M5StickC"].power(True)
     bench.check("once the M5StickC has power again the border is clear",
                 wait_for(node, rf"EVENT\s+PROCEED train {LOCO}: the border is clear", 5))
+    bench.check("the boundary signal shows Hp 1",
+                wait_for(bench.log("sim-MacBook"), r"signal timo-2e96-border/signal_13 shows Hp 1 \(LocoNet switch 131\)", 5))
     bench.check("and the loco gets its speed back", wait_for(node, rf"\[DCC-EX\] -> <t {LOCO} [1-9]\d* 1>", 5))
     bench.check("it crosses, and the M5StickC's node takes it",
                 wait_for(bench.log("node-M5StickC"), rf"EVENT\s+train {LOCO} came in from MacBook", 30))

@@ -16,7 +16,7 @@ Each test is a function that gets a `Bench`:
 
 The run exits non-zero when a check fails; the logs stay in a temporary folder.
 """
-import os, re, socket, subprocess, sys, tempfile, time, traceback
+import os, re, signal, socket, subprocess, sys, tempfile, time, traceback
 
 BINARY = sys.argv[1] if len(sys.argv) > 1 else "target/debug/hive-rail"
 LAYOUT = "examples/layout/bench-m5.json"
@@ -96,6 +96,7 @@ class Bench:
         self.logs = tempfile.mkdtemp(prefix=f"district-sim-{name}-")
         self.session = f"district-sim-{name}-{os.getpid()}"
         self.processes, self.checks = [], []
+        self.named = {}
 
     def log(self, name):
         return os.path.join(self.logs, f"{name}.log")
@@ -106,9 +107,25 @@ class Bench:
         return ok
 
     def start(self, name, args, stdin=False):
-        self.processes.append(subprocess.Popen(
+        # Appended to, so a process started again keeps the log of its first run.
+        process = subprocess.Popen(
             [BINARY, *args], stdin=subprocess.PIPE if stdin else None,
-            stdout=open(self.log(name), "w"), stderr=subprocess.STDOUT))
+            stdout=open(self.log(name), "a"), stderr=subprocess.STDOUT)
+        self.processes.append(process)
+        self.named[name] = process
+
+    def stop(self, name):
+        """Stops a process, as a node that dies."""
+        self.named[name].terminate()
+        self.named[name].wait(5)
+
+    def freeze(self, name):
+        """Freezes a process: it sends and answers nothing, as a node cut off by a network
+        split; `thaw` lets it run on, as the network joining again."""
+        self.named[name].send_signal(signal.SIGSTOP)
+
+    def thaw(self, name):
+        self.named[name].send_signal(signal.SIGCONT)
 
     def sim(self, district, bodies=(), world=False):
         """A district simulator; with `world`, on this bench's world channel."""
@@ -167,6 +184,7 @@ def run(name, scenario):
         bench.check("the test itself runs without an error", False)
     finally:
         for process in reversed(bench.processes):
+            process.send_signal(signal.SIGCONT)
             process.terminate()
         for process in bench.processes:
             process.wait(5)

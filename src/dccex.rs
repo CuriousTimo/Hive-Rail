@@ -220,17 +220,19 @@ impl DccExMessage {
 /// power on (EX-RAIL `POWERON`, `<1 MAIN>`) has no overall `<p1>`.
 #[derive(Debug, Default)]
 pub struct DistrictTracks {
-    /// Track letter to (is a MAIN track, has power).
-    tracks: BTreeMap<char, (bool, bool)>,
+    /// Track letter to (is a MAIN track, its power once reported).
+    tracks: BTreeMap<char, (bool, Option<bool>)>,
 }
 
 impl DistrictTracks {
     /// Updates the track state and returns the district's power if this message tells it.
     pub fn update(&mut self, message: &DccExMessage) -> Option<bool> {
         match message {
+            // A track's mode may come after its power (`<s>` before `<=>`): the power then
+            // counts from here.
             DccExMessage::TrackMode { track, mode } => {
                 self.tracks.entry(*track).or_default().0 = mode.starts_with("MAIN");
-                None
+                self.main_power()
             }
             DccExMessage::Power {
                 on,
@@ -240,7 +242,7 @@ impl DistrictTracks {
                 let (Some(letter), None) = (letters.next(), letters.next()) else {
                     return None; // MAIN, PROG and JOIN summarise the per-track lines
                 };
-                self.tracks.entry(letter).or_default().1 = *on;
+                self.tracks.entry(letter).or_default().1 = Some(*on);
                 self.main_power()
             }
             // Without known MAIN tracks (no motor shield) the overall state is all there is.
@@ -252,10 +254,15 @@ impl DistrictTracks {
         }
     }
 
+    /// The MAIN tracks' power, once any of them has reported it: on while one is on.
     fn main_power(&self) -> Option<bool> {
-        let mut main = self.tracks.values().filter(|(main, _)| *main).peekable();
-        main.peek()?;
-        Some(main.any(|(_, on)| *on))
+        let mut reported = self
+            .tracks
+            .values()
+            .filter_map(|(main, on)| main.then_some(*on).flatten())
+            .peekable();
+        reported.peek()?;
+        Some(reported.any(|on| on))
     }
 }
 
@@ -652,6 +659,14 @@ mod tests {
 
         // Only the programming track on: the district stays off.
         assert_eq!(feed("p1 B"), Some(false));
+
+        // A track's power before its mode (`<s>` answered before `<=>`, as after a node
+        // restarts on a running command station): it counts once the mode is known.
+        let mut district = DistrictTracks::default();
+        let mut feed = |frame: &str| district.update(&DccExMessage::parse(frame));
+        assert_eq!(feed("p1 A"), None);
+        assert_eq!(feed("= A MAIN"), Some(true));
+        assert_eq!(feed("= B PROG"), Some(true));
     }
 
     #[test]

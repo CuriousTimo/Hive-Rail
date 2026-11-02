@@ -278,6 +278,34 @@ impl<'a> Tracker<'a> {
         found
     }
 
+    /// The heading along an edge block's piece that leads towards a neighbouring district:
+    /// the way a boundary signal in it faces.
+    pub fn heading_towards(&self, edge: &str, district: &str) -> Option<Heading> {
+        let piece = &self.topology.blocks.get(edge)?.piece;
+        let district_of = |piece: &PieceId| self.topology.piece(piece).map(|p| p.district.as_str());
+        [Heading::Forward, Heading::Backward]
+            .into_iter()
+            .find(|heading| {
+                let mut seen = BTreeSet::new();
+                let mut todo = vec![(piece.clone(), *heading, 0_usize)];
+                while let Some((piece, heading, depth)) = todo.pop() {
+                    if depth > MAX_PIECES || !seen.insert((piece.clone(), heading)) {
+                        continue;
+                    }
+                    for (next, next_heading) in self.topology.next(&piece, heading, |_, _| None) {
+                        match district_of(&next) {
+                            Some(d) if d == district => return true,
+                            Some(d) if d == self.district => {
+                                todo.push((next, next_heading, depth + 1))
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                false
+            })
+    }
+
     /// A neighbour's train at the border, in front of one edge block: one of its trains that
     /// holds a block next to it (on the same track, so double track stays two seams).
     pub fn neighbour_at_border(&self, district: &str, edge: &str) -> Option<u16> {

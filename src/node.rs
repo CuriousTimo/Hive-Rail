@@ -384,12 +384,15 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                         track.summary()
                     );
                     let trains = Tracker::new(topology, &options.id);
+                    let signals = boundary_signals(&layout, topology, &trains);
                     (
                         packages,
                         Some(OwnTrack {
                             track,
                             trains,
                             arrivals: Vec::new(),
+                            signals,
+                            aspects: BTreeMap::new(),
                         }),
                         Some(note),
                     )
@@ -561,8 +564,19 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
     }
     for (district, edges) in &borders {
         let edges: Vec<&str> = edges.iter().map(String::as_str).collect();
+        let signals: Vec<String> = own_track
+            .iter()
+            .flat_map(|own| &own.signals)
+            .filter(|signal| signal.district == *district)
+            .map(|signal| format!("{} ({} {})", signal.key, signal.bus, signal.address))
+            .collect();
+        let signals = if signals.is_empty() {
+            "none".to_owned()
+        } else {
+            signals.join(", ")
+        };
         log.event(format!(
-            "Border to {district}: edge blocks {}",
+            "Border to {district}: edge blocks {}; boundary signals {signals}",
             edges.join(", ")
         ));
     }
@@ -645,7 +659,27 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                 // Default Stop at the border: a train running towards one is held unless the
                 // neighbour is on the mesh, both districts have power and no train of the
                 // neighbour's stands at that border.
-                if let Some(own) = &own_track {
+                if let Some(own) = own_track.as_mut() {
+                    // The boundary signals show the same: Hp 1 only while their border is clear.
+                    let aspects: Vec<(usize, Option<String>)> = own
+                        .signals
+                        .iter()
+                        .enumerate()
+                        .map(|(i, signal)| (i, border_state(&own.trains, &signal.district, &signal.edge, &peers, power.station.state())))
+                        .collect();
+                    for (i, reason) in aspects {
+                        let signal = &own.signals[i];
+                        let proceed = reason.is_none();
+                        if own.aspects.insert(signal.key.clone(), proceed) != Some(proceed) {
+                            log.event(format!(
+                                "Signal {} at the border to {}: {}",
+                                signal.key,
+                                signal.district,
+                                reason.map_or("Hp 1, the border is clear".to_owned(), |r| format!("Hp 0, {r}"))
+                            ));
+                            signal_output(&loconet_ports, outputs.dccex, signal, proceed, &mut log);
+                        }
+                    }
                     let reasons = border_holds(&own.trains, &borders, &peers, power.station.state());
                     if reasons != held {
                         let changed: Vec<u16> = reasons.keys().chain(held.keys()).copied().collect::<std::collections::BTreeSet<u16>>().into_iter()
@@ -760,6 +794,12 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                             if clock.known() {
                                 publish_clock(&clock_publisher, rocnet_id, ClockAction::Sync, &clock, &mut log).await?;
                             }
+                            // A node that comes (back) online learns this district's track
+                            // and trains at once, not at their next change.
+                            if let Some(own) = &own_track {
+                                publishers.track(own).await?;
+                                publishers.trains(own).await?;
+                            }
                             let snapshot = register.snapshot();
                             if lowest_online(&peers, &options.id) && !snapshot.is_empty() {
                                 log.line(format!("[mesh] -> loco register, {} locos, for {}", snapshot.len(), message.node));
@@ -846,11 +886,9 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                     if !matches!(message, DccExMessage::Display(_)) {
                         log.line(format!("[DCC-EX] <- {}", message.describe()));
                     }
-                    if matches!(message, DccExMessage::TrackMode { .. }) {
-                        dccex_tracks.update(&message);
-                    }
                     let changed = match &message {
-                        DccExMessage::Power { .. } => {
+                        // A track's mode may tell the power too, when it came after it.
+                        DccExMessage::Power { .. } | DccExMessage::TrackMode { .. } => {
                             let Some(on) = dccex_tracks.update(&message) else { continue };
                             let changed = power.station.report_power(on);
                             // Requested changes are applied before DCC-EX confirms them, so
@@ -1793,25 +1831,108 @@ fn border_holds(
     peers: &HashMap<String, PeerState>,
     own_power: PowerState,
 ) -> BTreeMap<u16, String> {
-    let mut holds = BTreeMap::new();
-    for (loco, district, edge) in trains.towards_borders(borders) {
-        let reason = if own_power != PowerState::On {
-            Some("this district has no power".to_owned())
-        } else {
-            match peers.get(&district) {
-                None => Some(format!("{district} is not on the mesh")),
-                Some(peer) if !peer.online => Some(format!("{district} is not heard from")),
-                Some(peer) if peer.power != "ON" => Some(format!("{district} is {}", peer.power)),
-                _ => trains
-                    .neighbour_at_border(&district, &edge)
-                    .map(|other| format!("train {other} of {district} is at it")),
+    trains
+        .towards_borders(borders)
+        .into_iter()
+        .filter_map(|(loco, district, edge)| {
+            let reason = border_state(trains, &district, &edge, peers, own_power)?;
+            Some((loco, format!("border to {district} ({edge}): {reason}")))
+        })
+        .collect()
+}
+
+/// Why the border to `district` at one edge block is not clear, or None when it is: the
+/// neighbour is on the mesh, both districts are ON, and no train of the neighbour's holds
+/// the block in front of the edge block.
+fn border_state(
+    trains: &Tracker<'_>,
+    district: &str,
+    edge: &str,
+    peers: &HashMap<String, PeerState>,
+    own_power: PowerState,
+) -> Option<String> {
+    if own_power != PowerState::On {
+        return Some("this district has no power".to_owned());
+    }
+    match peers.get(district) {
+        None => Some(format!("{district} is not on the mesh")),
+        Some(peer) if !peer.online => Some(format!("{district} is not heard from")),
+        Some(peer) if peer.power != "ON" => Some(format!("{district} is {}", peer.power)),
+        _ => trains
+            .neighbour_at_border(district, edge)
+            .map(|other| format!("train {other} of {district} is at it")),
+    }
+}
+
+/// A signal in an edge block facing the border: it shows Hp 1 only while the border is
+/// clear (Architecture §4.2).
+struct BoundarySignal {
+    /// `module/signal`.
+    key: String,
+    district: String,
+    edge: String,
+    bus: String,
+    address: u16,
+}
+
+/// The district's boundary signals: the signals in its edge blocks that face the border.
+fn boundary_signals(
+    layout: &crate::layout::Layout,
+    topology: &crate::topology::Topology,
+    trains: &Tracker<'_>,
+) -> Vec<BoundarySignal> {
+    let signals = crate::layout_sim::signals(layout);
+    let mut found = Vec::new();
+    for (district, edges) in trains.borders() {
+        for edge in edges {
+            let (Some(block), Some(heading)) = (
+                topology.blocks.get(&edge),
+                trains.heading_towards(&edge, &district),
+            ) else {
+                continue;
+            };
+            for signal in signals
+                .iter()
+                .filter(|s| s.piece == block.piece && s.heading == heading)
+            {
+                found.push(BoundarySignal {
+                    key: signal.key.clone(),
+                    district: district.clone(),
+                    edge: edge.clone(),
+                    bus: signal.bus.clone(),
+                    address: signal.address,
+                });
             }
-        };
-        if let Some(reason) = reason {
-            holds.insert(loco, format!("border to {district} ({edge}): {reason}"));
         }
     }
-    holds
+    found
+}
+
+/// Sets a boundary signal: on LocoNet a switch command to its address (closed, green: Hp 1;
+/// thrown, red: Hp 0, as a two-aspect signal decoder takes it), on DCC an accessory
+/// command through DCC-EX.
+fn signal_output(
+    ports: &LocoNetPorts,
+    dccex: Option<&DccExHandle>,
+    signal: &BoundarySignal,
+    proceed: bool,
+    log: &mut CliLog,
+) {
+    match signal.bus.as_str() {
+        "loconet" => {
+            let messages = vec![
+                LocoNetMessage::switch_request(signal.address, proceed, true),
+                LocoNetMessage::switch_request(signal.address, proceed, false),
+            ];
+            send_to_side(ports, LocoNetSide::Bus, messages.clone(), log);
+            send_to_side(ports, LocoNetSide::Clients, messages, log);
+        }
+        "dcc" => send_to_dccex(dccex, vec![dccex::accessory(signal.address, proceed)], log),
+        bus => log.line(format!(
+            "[trk ] signal {} is on bus {bus}, which this node does not drive",
+            signal.key
+        )),
+    }
 }
 
 /// The node's own district, with `--layout`: what its addresses mean, and the trains it
@@ -1822,6 +1943,9 @@ struct OwnTrack {
     /// Locos whose train came in from a neighbouring district, for the main loop to take
     /// into this district.
     arrivals: Vec<u16>,
+    /// The boundary signals, and the aspect each was last set to (true: Hp 1).
+    signals: Vec<BoundarySignal>,
+    aspects: BTreeMap<String, bool>,
 }
 
 /// Where the node publishes its own district: the track state and the trains it follows.
@@ -2493,6 +2617,39 @@ mod tests {
         assert!(
             super::border_holds(&trains, &borders, &m5(true, "ON"), PowerState::On)[&4444]
                 .ends_with("train 5 of M5StickC is at it")
+        );
+    }
+
+    /// MacBook's boundary signal towards the M5StickC is signal 13 (LocoNet 131) in its
+    /// edge block on track 1, facing the border; none faces the border from track 2,
+    /// where trains come in.
+    #[test]
+    fn the_boundary_signals_face_the_border() {
+        use crate::train_tracking::Tracker;
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/layout");
+        let layout = crate::layout::load(&dir.join("bench-m5.json"), &dir).unwrap();
+        let topology = crate::topology::Topology::build(&layout);
+        let trains = Tracker::new(&topology, "MacBook");
+        let signals = super::boundary_signals(&layout, &topology, &trains);
+        let found: Vec<(&str, &str, &str, u16)> = signals
+            .iter()
+            .map(|s| {
+                (
+                    s.key.as_str(),
+                    s.district.as_str(),
+                    s.edge.as_str(),
+                    s.address,
+                )
+            })
+            .collect();
+        assert_eq!(
+            found,
+            [(
+                "timo-2e96-border/signal_13",
+                "M5StickC",
+                "timo-2e96-border/edge_1",
+                131
+            )]
         );
     }
 }

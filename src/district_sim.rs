@@ -162,6 +162,8 @@ pub enum WorldEvent {
     },
     /// A turnout moved (closed: straight).
     Turnout { turnout: String, closed: bool },
+    /// A signal's decoder was set: Hp 1 (green) or Hp 0 (red).
+    Signal { signal: String, proceed: bool },
     /// Something the logic must prevent; `short` when it shorts the track.
     Fault { what: String, short: bool },
     /// A body's head reached the end of this district's track, towards `district`, and
@@ -184,6 +186,9 @@ pub struct DistrictWorld<'a> {
     pub turnouts: BTreeMap<String, bool>,
     /// The turnout each switching device's bus address moves.
     turnout_devices: BTreeMap<BusAddress, String>,
+    /// This district's signals by their decoder's bus address, and what each shows.
+    signals: BTreeMap<BusAddress, String>,
+    pub aspects: BTreeMap<String, bool>,
     /// Each block's detector, by `module/block`.
     detectors: BTreeMap<String, BusAddress>,
     /// This district's blocks on each piece, with their cuts: for the occupancy.
@@ -227,6 +232,11 @@ impl<'a> DistrictWorld<'a> {
                 turnout_devices.insert((device.bus.clone(), device.address), turnout.key());
             }
         }
+        let signals = topology
+            .devices_in(district)
+            .filter(|d| d.kind == "signal")
+            .map(|d| ((d.bus.clone(), d.address), d.key()))
+            .collect();
         let detectors = topology
             .devices_in(district)
             .filter_map(|d| Some((d.block.clone()?, (d.bus.clone(), d.address))))
@@ -242,6 +252,8 @@ impl<'a> DistrictWorld<'a> {
             layout,
             topology,
             blocks_on,
+            signals,
+            aspects: BTreeMap::new(),
             district: district.to_owned(),
             bodies: Vec::new(),
             turnouts,
@@ -388,10 +400,17 @@ impl<'a> DistrictWorld<'a> {
     /// A switching device on a bus: a DCC accessory decoder (`<a address 1|0>`, closed 1)
     /// or a LocoNet one (`OPC_SW_REQ`). Moves its turnout, if it is one of this district's.
     pub fn switch(&mut self, bus: &str, address: u16, closed: bool) -> Option<WorldEvent> {
-        let key = self
-            .turnout_devices
-            .get(&(bus.to_owned(), address))?
-            .clone();
+        let device = (bus.to_owned(), address);
+        if let Some(signal) = self.signals.get(&device).cloned() {
+            // Closed (green) is Hp 1, thrown (red) Hp 0, as a two-aspect decoder takes it.
+            return (self.aspects.insert(signal.clone(), closed) != Some(closed)).then_some(
+                WorldEvent::Signal {
+                    signal,
+                    proceed: closed,
+                },
+            );
+        }
+        let key = self.turnout_devices.get(&device)?.clone();
         let position = self.turnouts.get_mut(&key)?;
         if *position == closed {
             return None;
@@ -837,6 +856,21 @@ fn log(line: impl std::fmt::Display) {
     println!("{} {line}", chrono::Local::now().format("%H:%M:%S"));
 }
 
+/// What a switch command moved, for the log: a turnout or a signal.
+fn log_switched(event: Option<WorldEvent>, source: &str) {
+    match event {
+        Some(WorldEvent::Turnout { turnout, closed }) => log(format!(
+            "turnout {turnout} {} ({source})",
+            position_word(closed)
+        )),
+        Some(WorldEvent::Signal { signal, proceed }) => log(format!(
+            "signal {signal} shows {} ({source})",
+            if proceed { "Hp 1" } else { "Hp 0" }
+        )),
+        _ => {}
+    }
+}
+
 /// DCC-EX's broadcast of a loco's state: `<l cab register speedByte functions>`, the speed
 /// byte 0 stop, 1 emergency stop, else the step plus one, with 128 for forward.
 fn loco_broadcast(address: u16, speed: i16, forward: bool) -> String {
@@ -901,14 +935,10 @@ fn dccex_command(world: &mut DistrictWorld, frame: &str) -> Vec<String> {
         }
         ["a", address, activate] => {
             if let Ok(address) = address.parse() {
-                if let Some(WorldEvent::Turnout { turnout, closed }) =
-                    world.switch("dcc", address, *activate == "1")
-                {
-                    log(format!(
-                        "turnout {turnout} {} (DCC accessory {address})",
-                        position_word(closed)
-                    ));
-                }
+                log_switched(
+                    world.switch("dcc", address, *activate == "1"),
+                    &format!("DCC accessory {address}"),
+                );
             }
             Vec::new()
         }
@@ -1081,7 +1111,7 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn std::error::Error + Se
                 for event in world.step(TICK.as_secs_f64() * speed) {
                     match event {
                         WorldEvent::Occupancy { block, detector, occupied } => report_detector(&detector, &block, occupied),
-                        WorldEvent::Turnout { turnout, closed } => log(format!("turnout {turnout} {}", position_word(closed))),
+                        event @ (WorldEvent::Turnout { .. } | WorldEvent::Signal { .. }) => log_switched(Some(event), "the simulator"),
                         WorldEvent::Fault { what, short } => {
                             log(format!("FAULT {what}{}", if short { ": the track shorts" } else { "" }));
                             if short {
@@ -1186,9 +1216,7 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn std::error::Error + Se
                         }
                     }
                     if let Some((address, closed, true)) = message.switch_request_of() {
-                        if let Some(WorldEvent::Turnout { turnout, closed }) = world.switch("loconet", address, closed) {
-                            log(format!("turnout {turnout} {} (LocoNet switch {address})", position_word(closed)));
-                        }
+                        log_switched(world.switch("loconet", address, closed), &format!("LocoNet switch {address}"));
                     }
                 }
                 crate::lbserver::LbEvent::Disconnected { peer, .. } => log(format!("LocoNet client {peer} disconnected")),

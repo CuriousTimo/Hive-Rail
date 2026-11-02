@@ -167,20 +167,21 @@ fn transfers(topology: &Topology) -> BTreeMap<String, Transfer> {
 
 /// A signal on a piece, facing trains running in `heading` along it.
 #[derive(Debug, Clone)]
-struct SignalInfo {
-    key: String,
-    district: String,
-    piece: PieceId,
-    heading: Heading,
+pub(crate) struct SignalInfo {
+    pub(crate) key: String,
+    pub(crate) district: String,
+    pub(crate) piece: PieceId,
+    pub(crate) heading: Heading,
     /// Where it stands, in mm from the piece's `from` point.
-    at_mm: Option<f64>,
-    aspects: Vec<String>,
-    address: u16,
+    pub(crate) at_mm: Option<f64>,
+    pub(crate) aspects: Vec<String>,
+    pub(crate) bus: String,
+    pub(crate) address: u16,
 }
 
 /// The signals of every module: devices of type `signal` on a track, with their running
 /// direction turned into a heading along the piece (from the module's geometry).
-fn signals(layout: &Layout) -> Vec<SignalInfo> {
+pub(crate) fn signals(layout: &Layout) -> Vec<SignalInfo> {
     let mut signals = Vec::new();
     for (module_id, (module, _)) in &layout.modules {
         for device in module.devices.iter().filter(|d| d.kind == "signal") {
@@ -209,6 +210,7 @@ fn signals(layout: &Layout) -> Vec<SignalInfo> {
                 heading,
                 at_mm: device.at_mm.map(f64::from),
                 aspects,
+                bus: device.bus.clone(),
                 address: device.address,
             });
         }
