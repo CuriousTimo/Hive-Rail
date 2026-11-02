@@ -17,7 +17,7 @@ PORT = 8090
 
 
 def scenario(bench):
-    two_districts(bench, layout=True, bodies=[f"{LOCO}@timo-cdorf-east/1,heading=forward,along=600,length=300,kmh=80"])
+    two_districts(bench, layout=True, bodies=[f"{LOCO}@timo-cdorf/1,heading=forward,along=1475,length=300,kmh=80"])
     bench.web_mesh(PORT, truth=True)
     bench.check("the web view starts", wait_for(bench.log("web-mesh"), r"drawn from session", 10))
     bench.place(LOCO, A)

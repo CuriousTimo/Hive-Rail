@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Step 7 of the district simulators (wiki "District Simulators and Train Tracking"):
-simulated operators. Two districts as in step 5, train 4444 placed in Cdorf east (MacBook),
+simulated operators. Two districts as in step 5, train 4444 placed in Cdorf (MacBook),
 and an operator that runs it back and forth to the M5StickC's t1 through the nodes, as a
 person does: it sets the way, leaves, stops, waits and turns back. Checks two round trips:
 the train crosses the border and is handed over both ways, it arrives at both stops, and
@@ -13,11 +13,11 @@ import re
 from district_sim_harness import read, run, wait_for
 from district_sim_step2 import LOCO, two_districts
 
-A, B = "timo-cdorf-east/ce_1", "m5-2e96-in/t1"
+A, B = "timo-cdorf/ce_1", "m5-2e96-in/t1"
 
 
 def scenario(bench):
-    two_districts(bench, layout=True, bodies=[f"{LOCO}@timo-cdorf-east/1,heading=forward,along=600,length=300,kmh=80"])
+    two_districts(bench, layout=True, bodies=[f"{LOCO}@timo-cdorf/1,heading=forward,along=1475,length=300,kmh=80"])
     bench.place(LOCO, A)
     bench.check(f"MacBook's node follows train {LOCO} in {A}",
                 wait_for(bench.log("node-MacBook"), rf"EVENT\s+train {LOCO} placed in block {A}", 5))

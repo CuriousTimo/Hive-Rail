@@ -497,6 +497,25 @@ impl ModuleFile {
     pub fn check(&self, report: &mut Report) {
         let name = &self.module_id;
         let error = |report: &mut Report, text: String| report.error(format!("{name}: {text}"));
+        // Its boxes, if it is split to transport it: together exactly the module's length.
+        if let Some(grid) = self.tiles.as_ref().filter(|grid| !grid.boxes.is_empty()) {
+            let total: f64 = grid.boxes.iter().map(|b| b.length_mm).sum();
+            if (total - grid.size_mm[0]).abs() > 1.0
+                || grid.boxes.iter().any(|b| b.length_mm <= 0.0)
+            {
+                error(
+                    report,
+                    format!(
+                        "its boxes are {total} mm together, but the module is {} mm long",
+                        grid.size_mm[0]
+                    ),
+                );
+            }
+            let ids: BTreeSet<&str> = grid.boxes.iter().map(|b| b.id.as_str()).collect();
+            if ids.len() != grid.boxes.len() {
+                error(report, "two of its boxes have the same id".to_owned());
+            }
+        }
         if self.schema_version != SCHEMA_VERSION {
             error(
                 report,
@@ -963,6 +982,21 @@ impl Layout {
                 ));
             }
         }
+        // A station, a passing loop, anything always used in one composition, is one module:
+        // designed and built as one, and split into boxes only to take it to a meeting. Its
+        // name in two modules means it was split.
+        let mut stations: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+        for (id, (module, _)) in &self.modules {
+            for station in module.stations.iter().chain(&module.passing_loops) {
+                stations.entry(&station.name).or_default().push(id);
+            }
+        }
+        for (name, modules) in stations.iter().filter(|(_, modules)| modules.len() > 1) {
+            report.error(format!(
+                "layout: station {name} is in modules {}; a station is one module, even when it is split into boxes to transport it",
+                modules.join(" and ")
+            ));
+        }
         for (id, (module, sum)) in &self.modules {
             if &module.module_id != id {
                 report.error(format!(
@@ -1192,6 +1226,56 @@ mod tests {
         let borders = layout.borders();
         assert_eq!(borders.len(), 1);
         assert_eq!(borders[0].districts, ("MacBook".into(), "Windows".into()));
+    }
+
+    /// Cdorf is one module of two boxes, meeting at 1200 mm; boxes that do not add up to the
+    /// module's length are an error.
+    #[test]
+    fn a_module_split_into_boxes_adds_up() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/layout");
+        let mut layout = load(&dir.join("bench-m5.json"), &dir).unwrap();
+        let grid = layout.modules["timo-cdorf"].0.tiles.clone().unwrap();
+        assert_eq!(grid.boxes.len(), 2);
+        assert_eq!(grid.joints_mm(), [1200.0]);
+        let tiles = layout
+            .modules
+            .get_mut("timo-cdorf")
+            .unwrap()
+            .0
+            .tiles
+            .as_mut()
+            .unwrap();
+        tiles.boxes[1].length_mm = 900.0;
+        let errors = layout.check().errors;
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("its boxes are 2100 mm together")),
+            "{errors:?}"
+        );
+    }
+
+    /// A station is one module: the same station in two modules is an error.
+    #[test]
+    fn a_station_split_over_two_modules_is_an_error() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/layout");
+        let mut layout = load(&dir.join("bench-m5.json"), &dir).unwrap();
+        assert!(layout.check().errors.is_empty());
+        let adorf = layout.modules["timo-adorf"].0.stations[0].clone();
+        layout
+            .modules
+            .get_mut("timo-2e96-west")
+            .unwrap()
+            .0
+            .stations
+            .push(adorf);
+        let errors = layout.check().errors;
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("station Adorf is in modules")),
+            "{errors:?}"
+        );
     }
 
     #[test]

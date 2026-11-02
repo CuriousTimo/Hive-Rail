@@ -176,3 +176,12 @@ th { font-weight: 600; color: var(--muted); font-size: 12px; }
   main { flex-direction: column; }
   aside { width: auto; border-left: 0; border-top: 1px solid var(--line); max-height: 45%; }
 }
+
+/* Where the boxes of a module meet: one module, split only to transport it. */
+.box-joint {
+  stroke: #e0a040;
+  stroke-width: 2;
+  stroke-dasharray: 6 4;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}

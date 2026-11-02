@@ -14,13 +14,15 @@ LOCO = 4444
 BODY = f"{LOCO}@timo-2e96-border/1,heading=forward,along=300,length=300,kmh=80"
 
 
-def two_districts(bench, layout=False, bodies=(BODY,)):
+def two_districts(bench, layout=False, bodies=(BODY,), m5_lite=False):
     """MacBook (with loco 4444 at its border, or the given bodies) and the M5StickC, both
-    powered; MacBook's throttle, and the M5StickC's."""
+    powered; MacBook's throttle, and the M5StickC's. With `m5_lite`, the M5StickC is a
+    lite node carried by MacBook."""
     bench.sim("MacBook", bodies=list(bodies), world=True)
     bench.sim("M5StickC", world=True)
-    for district in ("MacBook", "M5StickC"):
-        bench.node(district, layout=layout)
+    bench.node("MacBook", layout=layout)
+    # The M5StickC as a lite node carried by MacBook, or as a full node.
+    bench.node("M5StickC", layout=layout and not m5_lite, lite_via="MacBook" if m5_lite else None)
     bench.check("the simulators find each other on the world channel",
                 wait_for(bench.log("sim-MacBook"), r"M5StickC's simulator is on the world channel", 15)
                 and wait_for(bench.log("sim-M5StickC"), r"MacBook's simulator is on the world channel", 15))

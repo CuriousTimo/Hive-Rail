@@ -77,6 +77,9 @@ pub struct ModuleView {
 pub struct TilesView {
     pub matrix: [f64; 6],
     pub tiles: Vec<crate::tile_module::PlacedTile>,
+    /// Where the module's boxes meet, as lines across it in tile units: [x, height].
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub joints: Vec<[f64; 2]>,
 }
 
 /// The tile units of one cell, as the tiles are drawn (assets/spdrs60).
@@ -114,7 +117,16 @@ impl TilesView {
                 ..t.clone()
             })
             .collect();
-        TilesView { matrix, tiles }
+        let joints = grid
+            .joints_mm()
+            .into_iter()
+            .map(|at| [at / a1, f64::from(grid.cells[1]) * TILE_UNITS])
+            .collect();
+        TilesView {
+            matrix,
+            tiles,
+            joints,
+        }
     }
 }
 

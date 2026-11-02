@@ -9,10 +9,7 @@
       "module_id": "timo-2e96-west"
     },
     {
-      "module_id": "timo-cdorf-west"
-    },
-    {
-      "module_id": "timo-cdorf-east"
+      "module_id": "timo-cdorf"
     },
     {
       "module_id": "timo-2e96-border"
@@ -40,14 +37,10 @@
     },
     {
       "a": "timo-2e96-west.B",
-      "b": "timo-cdorf-west.A"
+      "b": "timo-cdorf.A"
     },
     {
-      "a": "timo-cdorf-west.B",
-      "b": "timo-cdorf-east.A"
-    },
-    {
-      "a": "timo-cdorf-east.B",
+      "a": "timo-cdorf.B",
       "b": "timo-2e96-border.A"
     },
     {
@@ -77,8 +70,7 @@
       "modules": [
         "timo-adorf",
         "timo-2e96-west",
-        "timo-cdorf-west",
-        "timo-cdorf-east",
+        "timo-cdorf",
         "timo-2e96-border"
       ]
     },

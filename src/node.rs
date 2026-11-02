@@ -97,6 +97,9 @@ struct NodeArgs {
     layout: Option<String>,
     /// Serve lite nodes: Zenoh in router mode, found by their scouting.
     lite_server: bool,
+    /// `--lite-via <node>`: behave as a lite node carried by that node: no train tracking of
+    /// its own (the carrying node adopts its district), holds before a border taken from it.
+    lite_via: Option<String>,
     /// `--show-sensors`: turnouts of a panel (an IB-Switch) that show sensors: turnout and
     /// sensor, green while the sensor is free, red while occupied.
     show_sensors: Vec<(u16, u16)>,
@@ -363,19 +366,22 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
         .await?;
     // With --layout: each district's part of the layout, for lite nodes that ask, and this
     // node's own district: what each device address on its buses means.
-    let (layout_packages, mut own_track, track_note) = match &options.layout {
+    let (layout_packages, mut own_track, track_note, layout_ref) = match &options.layout {
         Some(path) => {
             let path = std::path::Path::new(path);
-            let layout =
-                crate::layout::load(path, path.parent().unwrap_or(std::path::Path::new(".")))?;
-            let packages = crate::layout_share::district_packages(&layout)
+            // Kept for the whole run: districts of lite nodes may be adopted later.
+            let layout: &'static crate::layout::Layout = Box::leak(Box::new(crate::layout::load(
+                path,
+                path.parent().unwrap_or(std::path::Path::new(".")),
+            )?));
+            let packages = crate::layout_share::district_packages(layout)
                 .into_iter()
                 .map(|(district, package)| Ok((district, serde_json::to_string(&package)?)))
                 .collect::<Result<BTreeMap<String, String>, serde_json::Error>>()?;
             // The trains are followed on the layout's graph for the whole run.
             let topology: &'static crate::topology::Topology =
-                Box::leak(Box::new(crate::topology::Topology::build(&layout)));
-            match DistrictTrack::build(&layout, topology, &options.id) {
+                Box::leak(Box::new(crate::topology::Topology::build(layout)));
+            match DistrictTrack::build(layout, topology, &options.id) {
                 Ok(track) => {
                     let note = format!(
                         "Own track from {}: district {}, {}",
@@ -384,7 +390,7 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                         track.summary()
                     );
                     let trains = Tracker::new(topology, &options.id);
-                    let signals = boundary_signals(&layout, topology, &trains);
+                    let signals = boundary_signals(layout, topology, &trains);
                     (
                         packages,
                         Some(OwnTrack {
@@ -395,16 +401,18 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                             aspects: BTreeMap::new(),
                         }),
                         Some(note),
+                        Some((layout, topology)),
                     )
                 }
                 Err(error) => (
                     packages,
                     None,
                     Some(format!("No own track: {error}; sharing the layout only")),
+                    Some((layout, topology)),
                 ),
             }
         }
-        None => (BTreeMap::new(), None, None),
+        None => (BTreeMap::new(), None, None, None),
     };
     // The district's track state, named (Hive-Rail's own state): blocks and turnouts; and
     // the trains this node follows. Every other district's trains come in below (the
@@ -430,6 +438,19 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
         .declare_subscriber(format!("hive/{}/train/place", options.session))
         .await?;
     let mut pictures: BTreeMap<String, TrainPicture> = BTreeMap::new();
+    // The districts of the lite nodes that reach the mesh through this node, which this node
+    // follows the trains of (with `--layout`); their detectors report as RocNet sensors.
+    let mut adopted: BTreeMap<String, Adopted> = BTreeMap::new();
+    let lite_sensors = session
+        .declare_subscriber(format!("hive/{}/rn/node/*/sr", options.session))
+        .await?;
+    // As a lite node (`--lite-via`): the holds before a border its carrying node decides.
+    let holds_subscriber = session
+        .declare_subscriber(format!(
+            "hive/{}/node/{}/holds",
+            options.session, options.id
+        ))
+        .await?;
     // The borders of this district, and the trains held before one (default Stop).
     let borders = own_track
         .as_ref()
@@ -665,7 +686,7 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                         .signals
                         .iter()
                         .enumerate()
-                        .map(|(i, signal)| (i, border_state(&own.trains, &signal.district, &signal.edge, &peers, power.station.state())))
+                        .map(|(i, signal)| (i, border_state(&own.trains, &signal.district, &signal.edge, &neighbour_view(&peers, &options.id, power.station.state()), power.station.state())))
                         .collect();
                     let mut signals_changed = false;
                     for (i, reason) in aspects {
@@ -685,20 +706,27 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                     if signals_changed {
                         publishers.track(own).await?;
                     }
-                    let reasons = border_holds(&own.trains, &borders, &peers, power.station.state(), &|loco| loco_forward(&register, loco));
+                    let reasons = border_holds(&own.trains, &borders, &neighbour_view(&peers, &options.id, power.station.state()), power.station.state(), &|loco| loco_forward(&register, loco));
                     if reasons != held {
-                        let changed: Vec<u16> = reasons.keys().chain(held.keys()).copied().collect::<std::collections::BTreeSet<u16>>().into_iter()
-                            .filter(|loco| reasons.contains_key(loco) != held.contains_key(loco))
-                            .collect();
-                        for loco in &changed {
-                            match reasons.get(loco) {
-                                Some(reason) => log.event(format!("STOP train {loco} held before the {reason}")),
-                                None => log.event(format!("PROCEED train {loco}: the border is clear")),
-                            }
-                        }
+                        let changed = hold_changes(&reasons, &held, &mut log);
                         held = reasons;
                         let changes: Vec<Change> = changed.iter().filter_map(|loco| register.get(*loco)).map(|loco| (None, loco.clone())).collect();
                         drive_dccex(outputs.dccex, &mut dccex_locos, &changes, &options.id, &held, &mut log);
+                    }
+                }
+                // The districts this node adopted hold their trains the same way; their
+                // lite node applies the holds on its command station.
+                for (district, adopted) in adopted.iter_mut() {
+                    let lite_power = match peers.get(district) {
+                        Some(peer) if peer.online && peer.power == "ON" => PowerState::On,
+                        _ => PowerState::Off,
+                    };
+                    let view = neighbour_view(&peers, &options.id, power.station.state());
+                    let reasons = border_holds(&adopted.own.trains, &adopted.borders, &view, lite_power, &|loco| loco_forward(&register, loco));
+                    if reasons != adopted.holds {
+                        hold_changes(&reasons, &adopted.holds, &mut log);
+                        session.put(format!("hive/{}/node/{district}/holds", options.session), serde_json::to_vec(&reasons)?).await?;
+                        adopted.holds = reasons;
                     }
                 }
                 sequence += 1;
@@ -710,8 +738,8 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                     locos: register.locos(),
                     register: Some(register.checksum()),
                     zid: Some(session.zid().to_string()),
-                    lite: false,
-                    via: None,
+                    lite: options.lite_via.is_some(),
+                    via: options.lite_via.clone(),
                     lite_server: options.lite_server,
                 };
                 publisher.put(serde_json::to_vec(&message)?).await?;
@@ -781,6 +809,34 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                         register: message.register,
                         lite: message.lite,
                     });
+                    // A lite node that reaches the mesh through this node: its district is
+                    // adopted, and given up when the lite node moves to another lite server.
+                    let carried = message.lite && message.via.as_deref() == Some(options.id.as_str());
+                    if let (true, false, Some((layout, topology))) = (carried, adopted.contains_key(&message.node), layout_ref) {
+                        if let Ok(track) = DistrictTrack::build(layout, topology, &message.node) {
+                            log.event(format!(
+                                "Adopting district {}: its lite node reaches the mesh through this node, which follows its trains ({})",
+                                message.node,
+                                track.summary()
+                            ));
+                            let trains = Tracker::new(topology, &message.node);
+                            let borders = trains.borders();
+                            let publishers = TrackPublishers {
+                                track: session.declare_publisher(format!("hive/{}/node/{}/track", options.session, message.node)).await?,
+                                trains: session.declare_publisher(format!("hive/{}/node/{}/trains", options.session, message.node)).await?,
+                            };
+                            let own = OwnTrack { track, trains, arrivals: Vec::new(), signals: Vec::new(), aspects: BTreeMap::new() };
+                            publishers.track(&own).await?;
+                            publishers.trains(&own).await?;
+                            adopted.insert(message.node.clone(), Adopted { own, publishers, borders, holds: BTreeMap::new() });
+                        }
+                    } else if message.lite && !carried && adopted.remove(&message.node).is_some() {
+                        log.event(format!(
+                            "District {} is no longer adopted: its lite node reaches the mesh through {}",
+                            message.node,
+                            message.via.as_deref().unwrap_or("another node")
+                        ));
+                    }
                     match previous {
                         Some((true, previous_power)) if previous_power != message.power => {
                             log.event(format!("Peer {} district power {} -> {}", message.node, previous_power, message.power));
@@ -804,6 +860,10 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                             if let Some(own) = &own_track {
                                 publishers.track(own).await?;
                                 publishers.trains(own).await?;
+                            }
+                            for adopted in adopted.values() {
+                                adopted.publishers.track(&adopted.own).await?;
+                                adopted.publishers.trains(&adopted.own).await?;
                             }
                             let snapshot = register.snapshot();
                             if lowest_online(&peers, &options.id) && !snapshot.is_empty() {
@@ -963,7 +1023,7 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                     }
                     // Ask the bus's detectors for their state, as JMRI and a Digitrax command
                     // station do at start-up (the interrogate: switch commands to 1017 to 1020).
-                    if own_track.is_some() {
+                    if own_track.is_some() || options.lite_via.is_some() {
                         let interrogate = (1017..=1020)
                             .flat_map(|turnout| [true, false].map(|on| LocoNetMessage::switch_request(turnout, true, on)))
                             .collect();
@@ -1179,21 +1239,53 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                 let Ok(picture) = serde_json::from_slice::<TrainPicture>(sample.payload().to_bytes().as_ref()) else {
                     continue;
                 };
-                if picture.district != options.id
-                    && pictures.get(&picture.district).is_none_or(|known| known.version < picture.version)
-                {
-                    let trains: Vec<String> = picture.trains.iter().map(|t| format!("{} in {}", t.loco, t.blocks.first().unwrap_or(&t.last))).collect();
-                    log.line(format!("[trk ] <- {}'s trains, version {}: {}", picture.district, picture.version, if trains.is_empty() { "none".to_owned() } else { trains.join(", ") }));
-                    if let Some(own) = own_track.as_mut() {
+                if pictures.get(&picture.district).is_none_or(|known| known.version < picture.version) {
+                    if picture.district != options.id {
+                        let trains: Vec<String> = picture.trains.iter().map(|t| format!("{} in {}", t.loco, t.blocks.first().unwrap_or(&t.last))).collect();
+                        log.line(format!("[trk ] <- {}'s trains, version {}: {}", picture.district, picture.version, if trains.is_empty() { "none".to_owned() } else { trains.join(", ") }));
+                    }
+                    // Every district this node follows learns of its neighbours' trains,
+                    // its own district and the adopted ones of each other's too.
+                    let followed = own_track
+                        .iter_mut()
+                        .map(|own| (own, &publishers))
+                        .chain(adopted.values_mut().map(|a| (&mut a.own, &a.publishers)));
+                    for (own, publishers) in followed {
+                        if own.trains.district == picture.district {
+                            continue;
+                        }
                         let version = own.trains.version();
-                        for followed in own.trains.neighbour_picture(picture.clone()) {
-                            log.event(followed.to_string());
+                        for found in own.trains.neighbour_picture(picture.clone()) {
+                            log.event(found.to_string());
                         }
                         if own.trains.version() != version {
                             publishers.trains(own).await?;
                         }
                     }
                     pictures.insert(picture.district.clone(), picture);
+                }
+            }
+            sample = lite_sensors.recv_async() => {
+                // An adopted district's detector, reported by its lite node.
+                let sample = sample?;
+                let district = sample.key_expr().as_str().split('/').nth(4).unwrap_or("").to_owned();
+                let Some(adopted) = adopted.get_mut(&district) else { continue };
+                let Ok(frame) = RocNetFrame::from_bytes(&sample.payload().to_bytes()) else { continue };
+                let Some((port, occupied)) = frame.sensor_report_of() else { continue };
+                let change = adopted.own.track.sensor("LocoNet sensor", Address::Number(port.into()), occupied);
+                track_change(&mut adopted.own, change, &format!("{district}'s sensor {port}"), &register, &adopted.publishers, &mut log).await?;
+            }
+            sample = holds_subscriber.recv_async() => {
+                let sample = sample?;
+                if options.lite_via.is_none() {
+                    continue;
+                }
+                let Ok(reasons) = serde_json::from_slice::<BTreeMap<u16, String>>(&sample.payload().to_bytes()) else { continue };
+                if reasons != held {
+                    let changed = hold_changes(&reasons, &held, &mut log);
+                    held = reasons;
+                    let changes: Vec<Change> = changed.iter().filter_map(|loco| register.get(*loco)).map(|loco| (None, loco.clone())).collect();
+                    drive_dccex(outputs.dccex, &mut dccex_locos, &changes, &options.id, &held, &mut log);
                 }
             }
             sample = observer_subscriber.recv_async() => {
@@ -1433,6 +1525,16 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                 true,
                 &mut log,
             );
+        }
+        // Trains that came into an adopted district: its lite node's command station drives
+        // them, from the register.
+        for (district, adopted) in adopted.iter_mut() {
+            for address in std::mem::take(&mut adopted.own.arrivals) {
+                if let Some(change) = register.enter_district_for(address, district) {
+                    log.event(format!("Loco {address} is in {district} now: its lite node's command station drives it"));
+                    publish_locos(&loco_update_publisher, &options.id, vec![change.1]).await?;
+                }
+            }
         }
     }
 
@@ -1833,7 +1935,7 @@ fn follow_district(
 fn border_holds(
     trains: &Tracker<'_>,
     borders: &BTreeMap<String, std::collections::BTreeSet<String>>,
-    peers: &HashMap<String, PeerState>,
+    peers: &dyn Fn(&str) -> Option<(bool, String)>,
     own_power: PowerState,
     forward: &dyn Fn(u16) -> Option<bool>,
 ) -> BTreeMap<u16, String> {
@@ -1852,6 +1954,46 @@ fn loco_forward(register: &LocoRegister, loco: u16) -> Option<bool> {
     register.get(loco).map(|l| l.dirf & 0x20 == 0)
 }
 
+/// How a neighbouring district is: (heard from, its power), counting this node itself, which
+/// is the neighbour of a district it adopted.
+fn neighbour_view<'a>(
+    peers: &'a HashMap<String, PeerState>,
+    own_id: &'a str,
+    own_power: PowerState,
+) -> impl Fn(&str) -> Option<(bool, String)> + 'a {
+    move |district| {
+        if district == own_id {
+            return Some((true, own_power.label().to_owned()));
+        }
+        peers
+            .get(district)
+            .map(|peer| (peer.online, peer.power.clone()))
+    }
+}
+
+/// The locos whose hold before a border changed, with STOP and PROCEED events for them.
+fn hold_changes(
+    reasons: &BTreeMap<u16, String>,
+    held: &BTreeMap<u16, String>,
+    log: &mut CliLog,
+) -> Vec<u16> {
+    let changed: Vec<u16> = reasons
+        .keys()
+        .chain(held.keys())
+        .copied()
+        .collect::<std::collections::BTreeSet<u16>>()
+        .into_iter()
+        .filter(|loco| reasons.contains_key(loco) != held.contains_key(loco))
+        .collect();
+    for loco in &changed {
+        match reasons.get(loco) {
+            Some(reason) => log.event(format!("STOP train {loco} held before the {reason}")),
+            None => log.event(format!("PROCEED train {loco}: the border is clear")),
+        }
+    }
+    changed
+}
+
 /// Why the border to `district` at one edge block is not clear, or None when it is: the
 /// neighbour is on the mesh, both districts are ON, and no train of the neighbour's holds
 /// the block in front of the edge block.
@@ -1859,16 +2001,16 @@ fn border_state(
     trains: &Tracker<'_>,
     district: &str,
     edge: &str,
-    peers: &HashMap<String, PeerState>,
+    peers: &dyn Fn(&str) -> Option<(bool, String)>,
     own_power: PowerState,
 ) -> Option<String> {
     if own_power != PowerState::On {
         return Some("this district has no power".to_owned());
     }
-    match peers.get(district) {
+    match peers(district) {
         None => Some(format!("{district} is not on the mesh")),
-        Some(peer) if !peer.online => Some(format!("{district} is not heard from")),
-        Some(peer) if peer.power != "ON" => Some(format!("{district} is {}", peer.power)),
+        Some((false, _)) => Some(format!("{district} is not heard from")),
+        Some((true, power)) if power != "ON" => Some(format!("{district} is {power}")),
         _ => trains
             .neighbour_at_border(district, edge)
             .map(|other| format!("train {other} of {district} is at it")),
@@ -1957,6 +2099,15 @@ struct OwnTrack {
     /// The boundary signals, and the aspect each was last set to (true: Hp 1).
     signals: Vec<BoundarySignal>,
     aspects: BTreeMap<String, bool>,
+}
+
+/// A lite node's district that this node follows the trains of.
+struct Adopted {
+    own: OwnTrack,
+    publishers: TrackPublishers,
+    borders: BTreeMap<String, std::collections::BTreeSet<String>>,
+    /// The holds before a border last sent to the lite node.
+    holds: BTreeMap<u16, String>,
 }
 
 /// Where the node publishes its own district: the track state and the trains it follows.
@@ -2231,6 +2382,7 @@ fn parse_args(args: Vec<String>) -> Result<NodeArgs, Box<dyn Error + Send + Sync
     let mut plain = false;
     let mut layout_file = None;
     let mut lite_server = false;
+    let mut lite_via = None;
     let mut show_sensors = Vec::new();
     let mut args = args.into_iter().peekable();
 
@@ -2246,6 +2398,7 @@ fn parse_args(args: Vec<String>) -> Result<NodeArgs, Box<dyn Error + Send + Sync
             "--dccex" => dccex = Some(next_value(&mut args, &flag)?),
             "--layout" => layout_file = Some(next_value(&mut args, &flag)?),
             "--lite-server" => lite_server = true,
+            "--lite-via" => lite_via = Some(next_value(&mut args, &flag)?),
             "--show-sensors" => {
                 let value = next_value(&mut args, &flag)?;
                 for pair in value.split(',').filter(|p| !p.is_empty()) {
@@ -2390,6 +2543,7 @@ fn parse_args(args: Vec<String>) -> Result<NodeArgs, Box<dyn Error + Send + Sync
         plain,
         layout: layout_file,
         lite_server,
+        lite_via,
         show_sensors,
     })
 }
@@ -2619,7 +2773,14 @@ mod tests {
             lite: true,
         };
         let reason = |peers: &HashMap<String, PeerState>, power| {
-            super::border_holds(&trains, &borders, peers, power, &|_| Some(true)).remove(&4444)
+            super::border_holds(
+                &trains,
+                &borders,
+                &super::neighbour_view(peers, "MacBook", power),
+                power,
+                &|_| Some(true),
+            )
+            .remove(&4444)
         };
         let m5 = |online, power| HashMap::from([("M5StickC".to_owned(), peer(online, power))]);
         assert!(reason(&HashMap::new(), PowerState::On)
@@ -2640,12 +2801,14 @@ mod tests {
         theirs.report("m5-2e96-in/t1", true, &|_| true);
         theirs.place(5, "m5-2e96-in/t1").unwrap();
         trains.neighbour_picture(theirs.picture());
-        assert!(
-            super::border_holds(&trains, &borders, &m5(true, "ON"), PowerState::On, &|_| {
-                Some(true)
-            })[&4444]
-                .ends_with("train 5 of M5StickC is at it")
-        );
+        assert!(super::border_holds(
+            &trains,
+            &borders,
+            &super::neighbour_view(&m5(true, "ON"), "MacBook", PowerState::On),
+            PowerState::On,
+            &|_| { Some(true) }
+        )[&4444]
+            .ends_with("train 5 of M5StickC is at it"));
     }
 
     /// MacBook's boundary signal towards the M5StickC is signal 13 (LocoNet 131) in its

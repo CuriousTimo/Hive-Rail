@@ -53,3 +53,12 @@ kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--line); border-
 .properties .placing { border-left: 3px solid var(--accent); padding-left: 8px; }
 .properties .muted { color: var(--muted); font-size: 12px; }
 #board .tile-label { fill: #1d1d1d; font: 5.5px system-ui, sans-serif; pointer-events: none; }
+
+/* Where the boxes of a module meet: one module, split only to transport it. */
+.box-joint {
+  stroke: #e0a040;
+  stroke-width: 2;
+  stroke-dasharray: 6 4;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}

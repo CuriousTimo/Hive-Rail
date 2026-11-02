@@ -246,6 +246,13 @@ function render() {
   const pattern = el("pattern", { id: "grid", width: CELL, height: CELL, patternUnits: "userSpaceOnUse" }, defs);
   el("rect", { class: "sp-tile", x: 0, y: 0, width: CELL, height: CELL }, pattern);
   el("rect", { x: 0, y: 0, width: w, height: h, fill: "url(#grid)" }, board);
+  // Where the module's boxes meet (`boxes` in the module file): no turnout or signal there.
+  let joint = 0;
+  for (const box of (module.boxes || []).slice(0, -1)) {
+    joint += box.length_mm;
+    const x = (joint / SPDRS60_CELL_MM) * CELL;
+    el("line", { class: "box-joint", x1: x, y1: 0, x2: x, y2: h }, board);
+  }
   module.tiles.forEach((t) => tileGroup(t, board));
   for (const t of module.tiles) {
     const label = tileLabel(t);

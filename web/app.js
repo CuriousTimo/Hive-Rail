@@ -353,6 +353,10 @@ function drawTiles(layout) {
     // Behind the tiles: each tile of a block, coloured by the district feeding the block
     // while it is a transfer block that a district feeds (see updateTiles).
     const underlays = el("g", {}, group);
+    // Where the module's boxes meet: one module, split only to transport it.
+    for (const [x, height] of module.tiles.joints || []) {
+      el("line", { class: "box-joint", x1: x, y1: 0, x2: x, y2: height }, group);
+    }
     for (const tile of module.tiles.tiles) {
       // A name plate has no track to turn: it reads upright on its module.
       const placed = tile.tile === "plate" ? { ...tile, turn: 0, mirror: false } : tile;

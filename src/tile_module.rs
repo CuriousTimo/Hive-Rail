@@ -44,6 +44,9 @@ struct ModuleV3 {
     #[serde(default)]
     scale: Option<String>,
     size_mm: [f64; 2],
+    /// The boxes it is built of, from end A: one module, split only to transport it.
+    #[serde(default)]
+    boxes: Vec<ModuleBox>,
     #[serde(default)]
     ends: Vec<EndV3>,
     #[serde(default)]
@@ -98,6 +101,15 @@ struct TileV3 {
     text: Option<String>,
 }
 
+/// One box of a module: a station, a passing loop, anything always used in one composition
+/// is one module, designed and built as one, but split into boxes that go in a car and
+/// through a door. Boxes run from end A along the module's length.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ModuleBox {
+    pub id: String,
+    pub length_mm: f64,
+}
+
 /// A module's tiles as the map draws them: the grid and each tile with what it shows, so
 /// its lamps can follow the layout.
 #[derive(Debug, Clone, Serialize)]
@@ -106,6 +118,21 @@ pub struct TileGrid {
     pub cells: [i32; 2],
     pub size_mm: [f64; 2],
     pub tiles: Vec<PlacedTile>,
+    /// The boxes it is built of; none for a module in one piece.
+    pub boxes: Vec<ModuleBox>,
+}
+
+impl TileGrid {
+    /// Where one box meets the next, in mm from end A.
+    pub fn joints_mm(&self) -> Vec<f64> {
+        let mut at = 0.0;
+        let mut joints = Vec::new();
+        for module_box in self.boxes.iter().take(self.boxes.len().saturating_sub(1)) {
+            at += module_box.length_mm;
+            joints.push(at);
+        }
+        joints
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1089,6 +1116,7 @@ pub fn read(bytes: &[u8]) -> Result<ModuleFile, String> {
         cells: [w, h],
         size_mm: module.size_mm,
         tiles: placed,
+        boxes: module.boxes,
     };
 
     let geometry = Geometry {

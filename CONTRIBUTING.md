@@ -7,7 +7,7 @@ Hive-Rail is distributed train tracking for modular model railways: a node per d
 | You want | Look at |
 | --- | --- |
 | What the system is meant to do, and why | The wiki: [Architecture](https://github.com/CuriousTimo/Hive-Rail/wiki/Hive%E2%80%90Rail:-Architecture-and-Design-Specification), [RocNet on the Mesh](https://github.com/CuriousTimo/Hive-Rail/wiki/RocNet-on-the-Mesh), [District Simulators and Train Tracking](https://github.com/CuriousTimo/Hive-Rail/wiki/District-Simulators-and-Train-Tracking) |
-| The code: every module, what it does and how a report travels through them | The code documentation: `cargo doc --no-deps --document-private-items --open`, or on GitHub Pages once it is set up (below). The overview is at the top of `src/main.rs` |
+| The code: every module, what it does and how a report travels through them | The code documentation at [https://curioustimo.github.io/Hive-Rail](https://curioustimo.github.io/Hive-Rail/), or locally `cargo doc --no-deps --document-private-items --open`. The overview is at the top of `src/main.rs` |
 | What works today and what is next | The roadmap in the [README](README.md) |
 | How to run it | The README, and `--help` |
 
@@ -55,4 +55,4 @@ Each step test is short; the bench they share is `tools/district_sim_harness.py`
 
 ## The code documentation on GitHub Pages
 
-`.github/workflows/docs.yml` builds the documentation on every push to `main` that changes the code and publishes it on GitHub Pages. It needs one setting, once: **Settings → Pages → Source: GitHub Actions**.
+`.github/workflows/docs.yml` builds the documentation on every push to `main` that changes the code and publishes it at https://curioustimo.github.io/Hive-Rail/ (Pages source: GitHub Actions).

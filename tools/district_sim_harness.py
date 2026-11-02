@@ -140,14 +140,17 @@ class Bench:
         if not wait_for(self.log(f"sim-{district}"), r"join it with", 10):
             raise RuntimeError(f"{district}'s simulator did not start")
 
-    def node(self, district, layout=False, board=True):
+    def node(self, district, layout=False, board=True, lite_via=None):
         """A node for the district, on its simulator as on a node board, with LocoNet
-        over TCP for a throttle; with `layout`, knowing its track."""
+        over TCP for a throttle; with `layout`, knowing its track; with `lite_via`, a lite
+        node carried by that node, which adopts its district."""
         dccex, bus, throttle, rocnet = DISTRICTS[district]
         args = ["--mode", "node", "--session", self.session, "--id", district,
                 "--rocnet-address", str(rocnet), "--plain"]
         if layout:
             args += ["--layout", LAYOUT]
+        if lite_via:
+            args += ["--lite-via", lite_via]
         if board:
             args += ["--dccex", f"127.0.0.1:{dccex}",
                      "--loconet-connect", f"127.0.0.1:{bus}", "--loconet-connect-slots", "node",

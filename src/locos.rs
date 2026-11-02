@@ -260,6 +260,12 @@ impl LocoRegister {
     /// throttle) stays as it is. Returns the change, or None when it was here already.
     pub fn enter_district(&mut self, address: u16) -> Option<Change> {
         let here = self.node.clone();
+        self.enter_district_for(address, &here)
+    }
+
+    /// The same for a district this node adopted: the loco is in `district` now.
+    pub fn enter_district_for(&mut self, address: u16, district: &str) -> Option<Change> {
+        let here = district.to_owned();
         let before = self.locos.get(&address).cloned();
         if before.as_ref().and_then(|loco| loco.district.as_deref()) == Some(here.as_str()) {
             return None;
