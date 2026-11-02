@@ -627,21 +627,126 @@ impl ViewBuilder {
         view
     }
 
+    /// A train's line on the map, head first, from the stretches of track it covers.
+    fn train_points(&self, spans: Vec<(PieceId, Heading, f64, f64)>) -> Vec<Point> {
+        let mut points = Vec::new();
+        for (piece, heading, a, b) in spans {
+            let mut span = self.span(&piece, a, b);
+            // Head first: a span runs from the piece's `from`; running forward along the
+            // piece, the train's front end is at the far end.
+            if heading == Heading::Forward {
+                span.reverse();
+            }
+            points.extend(span);
+        }
+        points
+    }
+
+    /// The live state from the mesh, for `--web-mesh`: what the nodes publish of their
+    /// districts (the blocks occupied, turnout positions, boundary signals) and the trains
+    /// they follow, drawn over the blocks they hold (the nodes know no more than that).
+    /// With `truth`, the district simulators' bodies over them, for testing.
+    pub fn mesh_snapshot<'b>(
+        &self,
+        time_s: f64,
+        topology: &Topology,
+        tracks: impl Iterator<Item = &'b crate::district_track::TrackState>,
+        pictures: impl Iterator<Item = &'b crate::train_tracking::TrainPicture>,
+        truth: &[crate::district_sim::Body],
+    ) -> Snapshot {
+        let mut occupied = Vec::new();
+        let mut signals = BTreeMap::new();
+        let mut turnouts: BTreeMap<String, bool> =
+            topology.turnouts().map(|t| (t.key(), true)).collect();
+        for track in tracks {
+            occupied.extend(track.occupied.iter().cloned());
+            signals.extend(track.signals.clone());
+            turnouts.extend(track.turnouts.clone());
+        }
+        let block_span = |block: &String| {
+            let info = topology.blocks.get(block)?;
+            let [a, b] = info.cuts_mm.map(f64::from);
+            Some((info.piece.clone(), Heading::Backward, a, b))
+        };
+        // One train per loco: during a handover both districts hold it (the head in one, the
+        // tail in the other); it is drawn over all its blocks, in the district that took it
+        // last (more hops).
+        let mut followed: BTreeMap<u16, (String, u32, Vec<String>, bool)> = BTreeMap::new();
+        for picture in pictures {
+            for train in &picture.trains {
+                let held: Vec<String> = if train.blocks.is_empty() {
+                    vec![train.last.clone()]
+                } else {
+                    train.blocks.clone()
+                };
+                let entry = followed
+                    .entry(train.loco)
+                    .or_insert_with(|| (picture.district.clone(), train.hops, Vec::new(), true));
+                if train.hops > entry.1 {
+                    (entry.0, entry.1) = (picture.district.clone(), train.hops);
+                }
+                entry.2.extend(held);
+                entry.3 &= train.blocks.is_empty();
+            }
+        }
+        let mut trains: Vec<TrainView> = Vec::new();
+        for (loco, (district, _, blocks, between)) in followed {
+            trains.push(TrainView {
+                name: format!("train {loco}"),
+                address: loco,
+                points: self.train_points(blocks.iter().filter_map(block_span).collect()),
+                district,
+                state: if between {
+                    "Between blocks"
+                } else {
+                    "Followed"
+                }
+                .to_owned(),
+                waiting_for: None,
+                signal: None,
+                stop: None,
+                departs_in_min: None,
+                speed_kmh: None,
+            });
+        }
+        for body in truth {
+            trains.push(TrainView {
+                name: format!("simulator: loco {}", body.address),
+                address: body.address,
+                points: self.train_points(body.spans(topology)),
+                district: topology
+                    .piece(&body.head.piece)
+                    .map(|p| p.district.clone())
+                    .unwrap_or_default(),
+                state: "Truth".to_owned(),
+                waiting_for: None,
+                signal: None,
+                stop: None,
+                departs_in_min: None,
+                speed_kmh: Some(crate::district_sim::scale_kmh(body.speed_mm_s())),
+            });
+        }
+        occupied.sort();
+        occupied.dedup();
+        Snapshot {
+            time_s,
+            occupied,
+            reserved: BTreeMap::new(),
+            signals,
+            feeds: BTreeMap::new(),
+            turnouts,
+            crossings_closed: Vec::new(),
+            trains,
+            boards: BTreeMap::new(),
+        }
+    }
+
     pub fn snapshot(&self, sim: &LayoutSim<'_>, topology: &Topology) -> Snapshot {
         let trains = sim
             .trains
             .iter()
             .map(|train| {
-                let mut points = Vec::new();
-                for (piece, heading, a, b) in sim.covered_with_heading(train) {
-                    let mut span = self.span(&piece, a, b);
-                    // Head first: a span runs from the piece's `from`; running forward
-                    // along the piece, the train's front end is at the far end.
-                    if heading == Heading::Forward {
-                        span.reverse();
-                    }
-                    points.extend(span);
-                }
+                let points = self.train_points(sim.covered_with_heading(train));
                 TrainView {
                     name: train.name.clone(),
                     address: train.address,

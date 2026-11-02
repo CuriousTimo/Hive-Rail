@@ -667,6 +667,7 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                         .enumerate()
                         .map(|(i, signal)| (i, border_state(&own.trains, &signal.district, &signal.edge, &peers, power.station.state())))
                         .collect();
+                    let mut signals_changed = false;
                     for (i, reason) in aspects {
                         let signal = &own.signals[i];
                         let proceed = reason.is_none();
@@ -678,9 +679,13 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> 
                                 reason.map_or("Hp 1, the border is clear".to_owned(), |r| format!("Hp 0, {r}"))
                             ));
                             signal_output(&loconet_ports, outputs.dccex, signal, proceed, &mut log);
+                            signals_changed = true;
                         }
                     }
-                    let reasons = border_holds(&own.trains, &borders, &peers, power.station.state());
+                    if signals_changed {
+                        publishers.track(own).await?;
+                    }
+                    let reasons = border_holds(&own.trains, &borders, &peers, power.station.state(), &|loco| loco_forward(&register, loco));
                     if reasons != held {
                         let changed: Vec<u16> = reasons.keys().chain(held.keys()).copied().collect::<std::collections::BTreeSet<u16>>().into_iter()
                             .filter(|loco| reasons.contains_key(loco) != held.contains_key(loco))
@@ -1830,15 +1835,21 @@ fn border_holds(
     borders: &BTreeMap<String, std::collections::BTreeSet<String>>,
     peers: &HashMap<String, PeerState>,
     own_power: PowerState,
+    forward: &dyn Fn(u16) -> Option<bool>,
 ) -> BTreeMap<u16, String> {
     trains
-        .towards_borders(borders)
+        .towards_borders(borders, forward)
         .into_iter()
         .filter_map(|(loco, district, edge)| {
             let reason = border_state(trains, &district, &edge, peers, own_power)?;
             Some((loco, format!("border to {district} ({edge}): {reason}")))
         })
         .collect()
+}
+
+/// A loco's direction in the register: forward unless its `DIRF` direction bit is set.
+fn loco_forward(register: &LocoRegister, loco: u16) -> Option<bool> {
+    register.get(loco).map(|l| l.dirf & 0x20 == 0)
 }
 
 /// Why the border to `district` at one edge block is not clear, or None when it is: the
@@ -1956,9 +1967,18 @@ struct TrackPublishers {
 
 impl TrackPublishers {
     async fn track(&self, own: &OwnTrack) -> Result<(), Box<dyn Error + Send + Sync>> {
-        self.track
-            .put(serde_json::to_vec(&own.track.state())?)
-            .await?;
+        let mut state = own.track.state();
+        state.signals = own
+            .aspects
+            .iter()
+            .map(|(signal, proceed)| {
+                (
+                    signal.clone(),
+                    if *proceed { "green" } else { "red" }.to_owned(),
+                )
+            })
+            .collect();
+        self.track.put(serde_json::to_vec(&state)?).await?;
         Ok(())
     }
 
@@ -2027,6 +2047,12 @@ async fn track_change(
                 // A loco runs when the register has it above stop (LocoNet 0 stop, 1 emergency).
                 let moving = |loco: u16| register.get(loco).is_some_and(|l| l.speed >= 2);
                 for followed in own.trains.report(block, *occupied, &moving) {
+                    if let Followed::Arrived { loco, .. } | Followed::Entered { loco, .. } =
+                        &followed
+                    {
+                        own.trains
+                            .note_direction(*loco, loco_forward(register, *loco));
+                    }
                     if let Followed::Arrived { loco, .. } = &followed {
                         own.arrivals.push(*loco);
                     }
@@ -2593,7 +2619,7 @@ mod tests {
             lite: true,
         };
         let reason = |peers: &HashMap<String, PeerState>, power| {
-            super::border_holds(&trains, &borders, peers, power).remove(&4444)
+            super::border_holds(&trains, &borders, peers, power, &|_| Some(true)).remove(&4444)
         };
         let m5 = |online, power| HashMap::from([("M5StickC".to_owned(), peer(online, power))]);
         assert!(reason(&HashMap::new(), PowerState::On)
@@ -2615,7 +2641,9 @@ mod tests {
         theirs.place(5, "m5-2e96-in/t1").unwrap();
         trains.neighbour_picture(theirs.picture());
         assert!(
-            super::border_holds(&trains, &borders, &m5(true, "ON"), PowerState::On)[&4444]
+            super::border_holds(&trains, &borders, &m5(true, "ON"), PowerState::On, &|_| {
+                Some(true)
+            })[&4444]
                 .ends_with("train 5 of M5StickC is at it")
         );
     }

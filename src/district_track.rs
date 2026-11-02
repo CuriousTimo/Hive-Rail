@@ -100,6 +100,10 @@ pub struct TrackState {
     pub occupied: Vec<String>,
     /// Turnout positions as last set, `module/turnout` → closed; unknown ones left out.
     pub turnouts: BTreeMap<String, bool>,
+    /// The boundary signals' aspects by `module/signal`, as the node set them: `red` (Hp 0)
+    /// or `green` (Hp 1), the words the web view and the layout simulator use.
+    #[serde(default)]
+    pub signals: BTreeMap<String, String>,
 }
 
 pub struct DistrictTrack {
@@ -248,6 +252,7 @@ impl DistrictTrack {
                 .iter()
                 .filter_map(|(turnout, closed)| Some((turnout.clone(), (*closed)?)))
                 .collect(),
+            signals: BTreeMap::new(),
         }
     }
 

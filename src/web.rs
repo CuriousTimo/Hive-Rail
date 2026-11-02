@@ -62,20 +62,7 @@ pub async fn run_sim(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Syn
             _ => return Err(format!("unknown --web-sim option: {flag}").into()),
         }
     }
-    let layout = layout::load(&path, path.parent().unwrap_or(Path::new(".")))?;
-    let report = layout.check();
-    if !report.errors.is_empty() {
-        return Err(format!(
-            "the layout has errors; run --check-layout {}",
-            path.display()
-        )
-        .into());
-    }
-    // The simulation borrows the layout and its graph for the whole run.
-    let layout: &'static layout::Layout = Box::leak(Box::new(layout));
-    let topology: &'static Topology = Box::leak(Box::new(Topology::build(layout)));
-    let view = ViewBuilder::new(layout, topology);
-    let layout_json = serde_json::to_string(&view.layout(layout, topology))?;
+    let (layout, topology, view, layout_json) = load_layout(&path)?;
     let mut sim = LayoutSim::new(layout, topology);
     layout_sim::example_trains(&mut sim);
 
@@ -105,15 +92,7 @@ pub async fn run_sim(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Syn
     // What the loco register was last told of each train: district, speed step, direction.
     let mut published = std::collections::HashMap::new();
 
-    let (publish, state) = watch::channel(String::new());
-    let shared = Arc::new(Shared {
-        layout_json,
-        state,
-        modules,
-    });
-    let listener = TcpListener::bind(("0.0.0.0", port)).await?;
-    println!("Hive-Rail web view of {} on http://localhost:{port} (and this computer's address on the network)", layout.file.meeting);
-    let server = tokio::spawn(accept(listener, Arc::clone(&shared)));
+    let (publish, server) = start_server(port, layout_json, modules, &layout.file.meeting).await?;
 
     let step = 0.1;
     let mut tick = time::interval(Duration::from_millis(100));
@@ -160,17 +139,177 @@ pub async fn run_sim(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Syn
                 json["log"] = serde_json::Value::from(log.iter().cloned().collect::<Vec<_>>());
                 // The layout's fast clock, as the nodes keep it (only on the mesh).
                 if let Some(publisher) = &mesh {
-                    let clock = &publisher.clock;
-                    let now = tokio::time::Instant::now();
-                    let minute = clock.minute_of_day(now);
-                    json["clock"] = serde_json::json!({
-                        "known": clock.known(),
-                        "time": format!("{:02}:{:02}", minute / 60, minute % 60),
-                        "minute": minute,
-                        "running": clock.running(),
-                        "rate": clock.rate(),
-                    });
+                    json["clock"] = clock_json(&publisher.clock);
                 }
+                let _ = publish.send(json.to_string());
+            }
+        }
+    }
+    server.abort();
+    Ok(())
+}
+
+/// A checked layout for the web view, kept for the whole run, with its track graph, how
+/// to draw it, and the drawing as the page loads it (`/api/layout`).
+#[allow(clippy::type_complexity)]
+fn load_layout(
+    path: &Path,
+) -> Result<
+    (
+        &'static layout::Layout,
+        &'static Topology,
+        ViewBuilder,
+        String,
+    ),
+    Box<dyn Error + Send + Sync>,
+> {
+    let layout = layout::load(path, path.parent().unwrap_or(Path::new(".")))?;
+    if !layout.check().errors.is_empty() {
+        return Err(format!(
+            "the layout has errors; run --check-layout {}",
+            path.display()
+        )
+        .into());
+    }
+    let layout: &'static layout::Layout = Box::leak(Box::new(layout));
+    let topology: &'static Topology = Box::leak(Box::new(Topology::build(layout)));
+    let view = ViewBuilder::new(layout, topology);
+    let layout_json = serde_json::to_string(&view.layout(layout, topology))?;
+    Ok((layout, topology, view, layout_json))
+}
+
+/// Serves the page on `port`: what is sent on the returned channel goes to every page as
+/// the live state.
+async fn start_server(
+    port: u16,
+    layout_json: String,
+    modules: std::path::PathBuf,
+    meeting: &str,
+) -> Result<(watch::Sender<String>, tokio::task::JoinHandle<()>), Box<dyn Error + Send + Sync>> {
+    let (publish, state) = watch::channel(String::new());
+    let shared = Arc::new(Shared {
+        layout_json,
+        state,
+        modules,
+    });
+    let listener = TcpListener::bind(("0.0.0.0", port)).await?;
+    println!("Hive-Rail web view of {meeting} on http://localhost:{port} (and this computer's address on the network)");
+    Ok((publish, tokio::spawn(accept(listener, shared))))
+}
+
+/// The layout's fast clock for the page.
+fn clock_json(clock: &crate::clock::FastClock) -> serde_json::Value {
+    let minute = clock.minute_of_day(tokio::time::Instant::now());
+    serde_json::json!({
+        "known": clock.known(),
+        "time": format!("{:02}:{:02}", minute / 60, minute % 60),
+        "minute": minute,
+        "running": clock.running(),
+        "rate": clock.rate(),
+    })
+}
+
+/// `--web-mesh <layout.json> --session <name> [--port 8080] [--truth] [--modules <dir>]`:
+/// the web view from the mesh instead of the layout simulator: the blocks, turnouts and
+/// boundary signals each node publishes of its district, the trains they follow, their
+/// events and the fast clock. With `--truth`, the district simulators' trains over them.
+pub async fn run_mesh(args: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let mut args = args.into_iter();
+    let path = args
+        .next()
+        .ok_or("expected a layout file after --web-mesh")?;
+    let path = Path::new(&path).to_path_buf();
+    let (mut port, mut session, mut truth) = (8080_u16, None, false);
+    let mut modules = std::path::PathBuf::from("examples/layout");
+    while let Some(flag) = args.next() {
+        let mut value = || {
+            args.next()
+                .ok_or_else(|| format!("expected a value after {flag}"))
+        };
+        match flag.as_str() {
+            "--port" => port = value()?.parse().map_err(|_| "invalid --port")?,
+            "--session" => session = Some(value()?),
+            "--modules" => modules = value()?.into(),
+            "--truth" => truth = true,
+            _ => return Err(format!("unknown --web-mesh option: {flag}").into()),
+        }
+    }
+    let session = session.ok_or("--web-mesh needs --session <name>")?;
+    let (layout, topology, view, layout_json) = load_layout(&path)?;
+    let mut observer = crate::dispatcher::LocoPublisher::open(&session, "web-mesh").await?;
+    let zenoh = zenoh::open(crate::node::zenoh_config(None, None, false)?).await?;
+    let tracks_in = zenoh
+        .declare_subscriber(format!("hive/{session}/node/*/track"))
+        .await?;
+    let trains_in = zenoh
+        .declare_subscriber(format!("hive/{session}/node/*/trains"))
+        .await?;
+    let events_in = zenoh
+        .declare_subscriber(format!("hive/{session}/node/*/event"))
+        .await?;
+    let truth_in = zenoh
+        .declare_subscriber(format!("hive-sim/{session}/world/truth/*"))
+        .await?;
+    let (publish, server) = start_server(port, layout_json, modules, &layout.file.meeting).await?;
+    println!(
+        "drawn from session {session}'s nodes{}",
+        if truth {
+            ", with the simulators' trains over them"
+        } else {
+            ""
+        }
+    );
+
+    let mut tracks: std::collections::BTreeMap<String, crate::district_track::TrackState> =
+        Default::default();
+    let mut pictures: std::collections::BTreeMap<String, crate::train_tracking::TrainPicture> =
+        Default::default();
+    let mut bodies: std::collections::BTreeMap<
+        String,
+        (crate::district_sim::Body, tokio::time::Instant),
+    > = Default::default();
+    let mut log: VecDeque<String> = VecDeque::new();
+    let started = tokio::time::Instant::now();
+    let mut tick = time::interval(Duration::from_millis(200));
+    tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
+    loop {
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => break,
+            followed = observer.follow_clock() => followed?,
+            sample = tracks_in.recv_async() => {
+                if let Ok(state) = serde_json::from_slice::<crate::district_track::TrackState>(&sample?.payload().to_bytes()) {
+                    tracks.insert(state.district.clone(), state);
+                }
+            }
+            sample = trains_in.recv_async() => {
+                if let Ok(picture) = serde_json::from_slice::<crate::train_tracking::TrainPicture>(&sample?.payload().to_bytes()) {
+                    pictures.insert(picture.district.clone(), picture);
+                }
+            }
+            sample = events_in.recv_async() => {
+                let sample = sample?;
+                let node = sample.key_expr().as_str().split('/').nth(3).unwrap_or("?").to_owned();
+                let line = format!("{node}: {}", String::from_utf8_lossy(&sample.payload().to_bytes()));
+                if log.len() == LOG_LINES {
+                    log.pop_front();
+                }
+                log.push_back(line);
+            }
+            sample = truth_in.recv_async() => {
+                if let Ok(wire) = serde_json::from_slice::<crate::district_sim::BodyWire>(&sample?.payload().to_bytes()) {
+                    bodies.insert(wire.id.clone(), (crate::district_sim::Body::from_wire(&wire), tokio::time::Instant::now()));
+                }
+            }
+            _ = tick.tick() => {
+                observer.drain();
+                // A body the simulators no longer tell of is gone.
+                bodies.retain(|_, (_, seen)| seen.elapsed() < Duration::from_secs(2));
+                let shown: Vec<crate::district_sim::Body> =
+                    if truth { bodies.values().map(|(body, _)| body.clone()).collect() } else { Vec::new() };
+                let snapshot = view.mesh_snapshot(started.elapsed().as_secs_f64(), topology, tracks.values(), pictures.values(), &shown);
+                let mut json = serde_json::to_value(&snapshot)?;
+                json["log"] = serde_json::Value::from(log.iter().cloned().collect::<Vec<_>>());
+                json["clock"] = clock_json(&observer.clock);
                 let _ = publish.send(json.to_string());
             }
         }

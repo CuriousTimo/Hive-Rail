@@ -436,7 +436,7 @@ function updateTiles(state) {
     if (tile.signal) {
       const aspect = state.signals[tile.signal] || "red";
       if (tile.tile === "signal-sh") classes.push(aspect === "red" ? "sh0" : "sh1");
-      else classes.push(...ASPECT_CLASSES[aspect]);
+      else classes.push(...(ASPECT_CLASSES[aspect] || ASPECT_CLASSES.red));
     }
     if (tile.crossing && closed.has(tile.crossing)) classes.push("closed");
     if ((tile.tile === "lamp" && night) || (tile.tile === "windmill" && !night)) classes.push("on");

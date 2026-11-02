@@ -14,10 +14,10 @@ LOCO = 4444
 BODY = f"{LOCO}@timo-2e96-border/1,heading=forward,along=300,length=300,kmh=80"
 
 
-def two_districts(bench, layout=False):
-    """MacBook (with loco 4444 at its border) and the M5StickC, both powered; MacBook's
-    throttle, and the M5StickC's."""
-    bench.sim("MacBook", bodies=[BODY], world=True)
+def two_districts(bench, layout=False, bodies=(BODY,)):
+    """MacBook (with loco 4444 at its border, or the given bodies) and the M5StickC, both
+    powered; MacBook's throttle, and the M5StickC's."""
+    bench.sim("MacBook", bodies=list(bodies), world=True)
     bench.sim("M5StickC", world=True)
     for district in ("MacBook", "M5StickC"):
         bench.node(district, layout=layout)

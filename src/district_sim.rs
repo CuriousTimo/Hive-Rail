@@ -67,6 +67,39 @@ impl Body {
         self.top_mm_s * f64::from(self.decoder.speed) / 126.0
     }
 
+    /// The stretches of track it covers, head first (`Topology::spans`).
+    pub fn spans(&self, topology: &Topology) -> Vec<(PieceId, Heading, f64, f64)> {
+        let head = &self.head;
+        topology.spans(
+            &head.piece,
+            head.heading,
+            head.along_mm,
+            &self.trail,
+            self.length_mm,
+        )
+    }
+
+    /// Where its leading end is when its decoder runs it `forward`: the head when that runs
+    /// it head first, else the tail end (the body turned round).
+    pub fn leading_end(
+        &self,
+        topology: &Topology,
+        forward: bool,
+    ) -> Option<(PieceId, Heading, f64)> {
+        let head = &self.head;
+        if forward == self.front_first {
+            return Some((head.piece.clone(), head.heading, head.along_mm));
+        }
+        let (piece, heading, along, _) = topology.turned(
+            &head.piece,
+            head.heading,
+            head.along_mm,
+            &self.trail,
+            self.length_mm,
+        )?;
+        Some((piece, heading, along))
+    }
+
     pub fn to_wire(&self, owner: &str) -> BodyWire {
         let place = |piece: &PieceId, heading: Heading| {
             (
@@ -443,14 +476,7 @@ impl<'a> DistrictWorld<'a> {
     /// The stretches of track a body covers, head first, per piece: (piece, heading, from,
     /// to), in mm from the piece's `from` point.
     pub fn covered(&self, body: &Body) -> Vec<(PieceId, Heading, f64, f64)> {
-        let head = &body.head;
-        self.topology.spans(
-            &head.piece,
-            head.heading,
-            head.along_mm,
-            &body.trail,
-            body.length_mm,
-        )
+        body.spans(self.topology)
     }
 
     /// Whether a body covers track of another district, so the neighbour must know of it.
@@ -1101,6 +1127,7 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn std::error::Error + Se
     let mut heard: BTreeMap<String, std::time::Instant> = BTreeMap::new();
     let mut next_hello = std::time::Instant::now();
     let mut published: BTreeSet<String> = BTreeSet::new();
+    let mut next_truth = std::time::Instant::now();
 
     let mut tick = tokio::time::interval(TICK);
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -1134,6 +1161,14 @@ pub async fn run(args: Vec<String>) -> Result<(), Box<dyn std::error::Error + Se
                     if now >= next_hello {
                         next_hello = now + std::time::Duration::from_secs(1);
                         zenoh.put(format!("{prefix}/sim/{district}"), district.clone()).await?;
+                    }
+                    // The truth, for simulated operators and tests (never read by Hive-Rail):
+                    // where every body of this district is, five times a second.
+                    if now >= next_truth {
+                        next_truth = now + std::time::Duration::from_millis(200);
+                        for body in &world.bodies {
+                            zenoh.put(format!("{prefix}/truth/{}", body.id), serde_json::to_string(&body.to_wire(&district))?).await?;
+                        }
                     }
                     // Only a body over a border concerns a neighbour: published while it is, and
                     // once more when it is not, so the neighbour's blocks go free.

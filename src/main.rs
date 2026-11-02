@@ -76,6 +76,7 @@ mod node;
 mod power;
 mod profile;
 mod rocnet;
+mod sim_operators;
 mod simulation;
 mod tile_module;
 mod topology;
@@ -120,7 +121,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Some("--check-layout") => check_layout(args.collect()),
         Some("--simulate-layout") => simulate_layout(args.collect()),
         Some("--web-sim") => web::run_sim(args.collect()).await,
+        Some("--web-mesh") => web::run_mesh(args.collect()).await,
         Some("--sim-district") => district_sim::run(args.collect()).await,
+        Some("--sim-operators") => sim_operators::run(args.collect()).await,
         Some("--validate-profile") => {
             let path = args.next().ok_or("expected a profile path")?;
             let profile = profile::load(Path::new(&path))?;
@@ -276,6 +279,9 @@ fn print_help() {
          cargo run -- --sim-district <layout.json> --district <name> [--body <address>@<module>/<piece>[,length=600][,kmh=100][,heading=forward|backward][,along=<mm>]]...\n\
            [--dccex-port 2560] [--loconet-port 1234] [--speed 1] [--session <name>]   (one district's hardware, as a node board;\n\
            with --session, bodies cross into the neighbouring districts' simulators)\n\
+         cargo run -- --sim-operators <layout.json> --session <name> --throttle <district>=<host:port>... --train <loco>@<block>,<block>[,speed=64][,dwell=10]...\n\
+           (simulated operators: trains back and forth between two blocks, through the nodes)\n\
+         cargo run -- --web-mesh <layout.json> --session <name> [--port 8080] [--truth] [--modules <dir>]   (web view from the nodes on the mesh)\n\
          cargo run -- --config <file.toml> [more options]\n\
          cargo run -- --help\n\n\
          --config reads the options from a TOML file: each key is a flag without its dashes, a [table] a flag\n\

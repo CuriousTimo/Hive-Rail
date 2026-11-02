@@ -37,6 +37,10 @@ pub struct FollowedTrain {
     /// a border or away from it. None for a train just placed.
     #[serde(default)]
     pub came_from: Option<String>,
+    /// The decoder's direction (forward) when the head entered that block: a train whose
+    /// decoder runs the other way now has turned back.
+    #[serde(default)]
+    pub entered_forward: Option<bool>,
 }
 
 /// The train picture of one district, as its node publishes it on
@@ -256,12 +260,23 @@ impl<'a> Tracker<'a> {
         borders
     }
 
-    /// The trains whose head is in an edge block and that did not come in over that border:
-    /// they run towards it. With the neighbouring district each runs towards, and the edge
-    /// block it is in.
+    /// The decoder's direction as the train's head entered the block it is in, from the
+    /// loco register: what tells later whether it has turned back.
+    pub fn note_direction(&mut self, loco: u16, forward: Option<bool>) {
+        if let Some(train) = self.trains.get_mut(&loco) {
+            train.entered_forward = forward;
+        }
+    }
+
+    /// The trains whose head is in an edge block and that run towards its border: they came
+    /// in from this district's side and run on, or came in over the border and turned back.
+    /// `forward` gives a loco's direction now, from the register. A train only placed there
+    /// counts as running towards it: which way it faces is not known yet. With the
+    /// neighbouring district each runs towards, and the edge block it is in.
     pub fn towards_borders(
         &self,
         borders: &BTreeMap<String, BTreeSet<String>>,
+        forward: &dyn Fn(u16) -> Option<bool>,
     ) -> Vec<(u16, String, String)> {
         let district_of = |block: &str| self.topology.blocks.get(block).map(|b| b.district.clone());
         let mut found = Vec::new();
@@ -270,7 +285,11 @@ impl<'a> Tracker<'a> {
             for (district, edges) in borders {
                 let came_over_it =
                     train.came_from.as_deref().and_then(district_of).as_ref() == Some(district);
-                if edges.contains(head) && !came_over_it {
+                let turned_back = train
+                    .entered_forward
+                    .zip(forward(train.loco))
+                    .is_some_and(|(then, now)| then != now);
+                if edges.contains(head) && came_over_it == turned_back {
                     found.push((train.loco, district.clone(), head.clone()));
                 }
             }
@@ -376,6 +395,7 @@ impl<'a> Tracker<'a> {
                 hops: 0,
                 handing_to: None,
                 came_from: None,
+                entered_forward: None,
             },
         );
         self.version += 1;
@@ -518,6 +538,7 @@ impl<'a> Tracker<'a> {
                 hops: train.hops + 1,
                 handing_to: None,
                 came_from: train.blocks.first().or(Some(&train.last)).cloned(),
+                entered_forward: None,
             },
         );
         Some(Followed::Arrived {
@@ -831,7 +852,7 @@ mod tests {
         macbook.report(edge, true, &|_| true);
         macbook.place(4444, edge).unwrap();
         assert_eq!(
-            macbook.towards_borders(&borders),
+            macbook.towards_borders(&borders, &|_| Some(true)),
             [(4444, "M5StickC".to_owned(), edge.to_owned())]
         );
         // The M5StickC's train in t1, in front of edge_1, is at the border.
@@ -850,7 +871,63 @@ mod tests {
             macbook.report(edge, true, &|_| true).as_slice(),
             [Followed::Arrived { .. }]
         ));
-        assert!(macbook.towards_borders(&borders).is_empty());
+        assert!(macbook
+            .towards_borders(&borders, &|_| Some(true))
+            .is_empty());
+    }
+
+    /// A train that ran into the edge block from inside and has turned back runs away from
+    /// the border; one that came in over it and turned back runs towards it again.
+    #[test]
+    fn a_train_that_turns_back_runs_the_other_way() {
+        let topology = topology();
+        let (inner, edge, t1) = (
+            "timo-2e96-west/line_1",
+            "timo-2e96-border/edge_1",
+            "m5-2e96-in/t1",
+        );
+        let mut macbook = Tracker::new(&topology, "MacBook");
+        let borders = macbook.borders();
+        // From inside: the edge block's neighbour on MacBook's side.
+        let inside = macbook
+            .neighbours(edge)
+            .find(|b| b.starts_with("timo-"))
+            .cloned()
+            .unwrap_or_else(|| inner.to_owned());
+        macbook.report(&inside, true, &|_| true);
+        macbook.place(4444, &inside).unwrap();
+        macbook.report(edge, true, &|_| true);
+        macbook.note_direction(4444, Some(true));
+        assert_eq!(
+            macbook.towards_borders(&borders, &|_| Some(true)).len(),
+            1,
+            "runs on towards it"
+        );
+        assert!(
+            macbook
+                .towards_borders(&borders, &|_| Some(false))
+                .is_empty(),
+            "turned back"
+        );
+        // Came in over the border, then turned back towards it.
+        let mut m5 = Tracker::new(&topology, "M5StickC");
+        m5.report(t1, true, &|_| true);
+        m5.place(6, t1).unwrap();
+        let mut macbook = Tracker::new(&topology, "MacBook");
+        macbook.neighbour_picture(m5.picture());
+        macbook.report(edge, true, &|_| true);
+        macbook.note_direction(6, Some(false));
+        assert!(
+            macbook
+                .towards_borders(&borders, &|_| Some(false))
+                .is_empty(),
+            "runs in"
+        );
+        assert_eq!(
+            macbook.towards_borders(&borders, &|_| Some(true)).len(),
+            1,
+            "turned back to it"
+        );
     }
 
     /// Without a neighbour's picture, the occupancy at the border is a ghost.

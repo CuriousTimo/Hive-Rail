@@ -531,6 +531,53 @@ impl Topology {
         Some((tail_piece, new_heading, along, trail))
     }
 
+    /// The shortest way along the track from a piece, running in `heading`, to the piece
+    /// `to`: the turnouts on it and the position each must have (`module/turnout`, closed),
+    /// a facing turnout to the leg the way takes, a trailing one to the leg it comes from.
+    /// None when `to` cannot be reached that way.
+    pub fn route(
+        &self,
+        from: &PieceId,
+        heading: Heading,
+        to: &PieceId,
+    ) -> Option<Vec<(String, bool)>> {
+        let mut back: HashMap<(PieceId, Heading), (PieceId, Heading)> = HashMap::new();
+        let mut todo = std::collections::VecDeque::from([(from.clone(), heading)]);
+        let mut found = None;
+        while let Some((piece, heading)) = todo.pop_front() {
+            if &piece == to {
+                found = Some((piece, heading));
+                break;
+            }
+            for next in self.next(&piece, heading, |_, _| None) {
+                if next.0 != *from && !back.contains_key(&next) {
+                    back.insert(next.clone(), (piece.clone(), heading));
+                    todo.push_back(next);
+                }
+            }
+        }
+        let mut step = found?;
+        let mut settings = Vec::new();
+        while let Some(previous) = back.get(&step).cloned() {
+            if let Some(turnout) = self.turnout_ahead(&previous.0, previous.1) {
+                let closed = match turnout.entry {
+                    Leg::Trunk => turnout
+                        .options
+                        .iter()
+                        .find(|(_, piece, heading)| *piece == step.0 && *heading == step.1)
+                        .map(|(leg, ..)| *leg == Leg::Straight),
+                    leg => Some(leg == Leg::Straight),
+                };
+                if let Some(closed) = closed {
+                    settings.push((format!("{}/{}", turnout.module, turnout.id), closed));
+                }
+            }
+            step = previous;
+        }
+        settings.reverse();
+        Some(settings)
+    }
+
     /// Every piece and heading reachable from a start, with every turnout free to choose.
     pub fn reachable(&self, piece: &PieceId, heading: Heading) -> BTreeSet<(PieceId, Heading)> {
         let mut seen = BTreeSet::new();
@@ -660,6 +707,39 @@ mod tests {
                 ),
             ]
         );
+    }
+
+    /// The way from Adorf's inbound main to platform 3 sets every turnout it passes; the
+    /// way to the piece a train is on needs none.
+    #[test]
+    fn a_route_sets_the_turnouts_it_passes() {
+        let topology = example();
+        let route = topology
+            .route(
+                &piece("timo-adorf", "in"),
+                Heading::Forward,
+                &piece("timo-adorf", "3"),
+            )
+            .unwrap();
+        assert!(!route.is_empty());
+        let closed = |id: &str| {
+            topology
+                .turnouts()
+                .any(|t| t.module == "timo-adorf" && t.id == id)
+        };
+        assert!(
+            route
+                .iter()
+                .all(|(t, _)| closed(t.split_once('/').unwrap().1)),
+            "{route:?}"
+        );
+        assert!(topology
+            .route(
+                &piece("timo-adorf", "in"),
+                Heading::Forward,
+                &piece("timo-adorf", "in")
+            )
+            .is_some_and(|r| r.is_empty()));
     }
 
     /// The same LocoNet sensor number means a different device in each district.

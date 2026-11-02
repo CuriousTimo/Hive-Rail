@@ -16,7 +16,7 @@ Each test is a function that gets a `Bench`:
 
 The run exits non-zero when a check fails; the logs stay in a temporary folder.
 """
-import os, re, signal, socket, subprocess, sys, tempfile, time, traceback
+import json, os, re, signal, socket, subprocess, sys, tempfile, time, traceback, urllib.request
 
 BINARY = sys.argv[1] if len(sys.argv) > 1 else "target/debug/hive-rail"
 LAYOUT = "examples/layout/bench-m5.json"
@@ -42,11 +42,12 @@ def read(path):
         return log.read()
 
 
-def wait_for(path, pattern, seconds):
-    """Whether `pattern` turns up in the log within `seconds`."""
+def wait_for(path, pattern, seconds, after=0):
+    """Whether `pattern` turns up in the log within `seconds`, past the first `after`
+    characters (what was there before, from `len(read(path))`)."""
     deadline = time.time() + seconds
     while time.time() < deadline:
-        if re.search(pattern, read(path)):
+        if re.search(pattern, read(path)[after:]):
             return True
         time.sleep(0.2)
     return False
@@ -161,6 +162,21 @@ class Bench:
     def dispatcher(self):
         self.start("dispatcher", ["--mode", "dispatcher", "--session", self.session, "--plain"], stdin=True)
 
+    def operators(self, trains):
+        """Simulated operators (`--sim-operators`) with a throttle on every node of the
+        bench, driving `trains` (`<loco>@<block>,<block>[,speed=..][,dwell=..]`)."""
+        args = ["--sim-operators", LAYOUT, "--session", self.session]
+        for district, (_, _, throttle, _) in DISTRICTS.items():
+            if f"node-{district}" in self.named:
+                args += ["--throttle", f"{district}=127.0.0.1:{throttle}"]
+        args += [arg for train in trains for arg in ("--train", train)]
+        self.start("operators", args)
+
+    def web_mesh(self, port, truth=False):
+        """The web view from the mesh (`--web-mesh`) on `port`."""
+        args = ["--web-mesh", LAYOUT, "--session", self.session, "--port", str(port)]
+        self.start("web-mesh", args + (["--truth"] if truth else []))
+
     def place(self, loco, block):
         subprocess.run([BINARY, "--place-train", str(loco), "--block", block, "--session", self.session],
                        stdout=subprocess.DEVNULL, check=True)
@@ -190,3 +206,14 @@ def run(name, scenario):
             process.wait(5)
         print(f"logs in {bench.logs}")
         sys.exit(1 if not bench.checks or any(not ok for _, ok in bench.checks) else 0)
+
+
+def snapshots(port, seconds):
+    """The web view's live states (`/events`, Server-Sent Events) for `seconds`."""
+    states, deadline = [], time.time() + seconds
+    with urllib.request.urlopen(f"http://127.0.0.1:{port}/events", timeout=5) as stream:
+        while time.time() < deadline:
+            line = stream.readline().decode()
+            if line.startswith("data: "):
+                states.append(json.loads(line[6:]))
+    return states
